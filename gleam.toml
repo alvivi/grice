@@ -1,0 +1,20 @@
+name = "grice"
+version = "0.1.0"
+description = "A type-aware linter for Gleam, with clear, compiler-style diagnostics."
+licences = ["Apache-2.0"]
+repository = { type = "github", user = "alvivi", repo = "grice" }
+# The oldest compiler grice is checked on: CI's floor job builds and tests with
+# it. grice will depend on girard, so this can't drop below girard's floor.
+gleam = ">= 1.15.4"
+
+[documentation]
+pages = [{ title = "Changelog", path = "changelog.html", source = "CHANGELOG.md" }]
+
+[dependencies]
+# The standard library. Any other dependency is added by the change that first
+# uses it, so nothing here goes unused.
+gleam_stdlib = ">= 0.44.0 and < 2.0.0"
+
+[dev_dependencies]
+# Test runner for `gleam test`.
+gleeunit = ">= 1.0.0 and < 2.0.0"
