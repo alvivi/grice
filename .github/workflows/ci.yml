@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The pinned pair, read from `.tool-versions`: every gate.
+          - name: pinned
+            version-file: .tool-versions
+            format: true
+          # The oldest compiler grice supports: the `gleam` floor in
+          # `gleam.toml`. It skips `gleam format --check`: formatter output is
+          # not stable across Gleam minors, and a format diff on an old
+          # compiler is not a defect.
+          - name: floor
+            gleam: "1.15.4"
+            erlang: "28.4.2"
+            format: false
+
+    name: ${{ matrix.name }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # setup-beam takes each version from the YAML or from the version file,
+      # never both, so each matrix row sets only one of them.
+      - uses: erlef/setup-beam@v1
+        with:
+          version-file: ${{ matrix.version-file }}
+          gleam-version: ${{ matrix.gleam }}
+          otp-version: ${{ matrix.erlang }}
+          version-type: strict
+
+      - name: Download dependencies
+        run: gleam deps download
+
+      - name: Check formatting
+        if: matrix.format
+        run: gleam format --check src/ test/
+
+      - name: Build (warnings as errors)
+        run: gleam build --warnings-as-errors
+
+      - name: Run tests
+        run: gleam test
