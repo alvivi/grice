@@ -16,11 +16,8 @@ What sets it apart from a syntactic linter is that rules can ask
 expression and for which definition any name or field access resolved to, and
 that its diagnostics follow the Gleam compiler's layout.
 
-**Status:** early development. The repository holds the project scaffold, CI
-and conventions; no grice code has landed yet. `src/` holds only a `.gitkeep`:
-the compiler needs `src/` to exist, git can't track an empty directory, and a
-module with no public definitions is a warning, which CI treats as an error.
-Remove the `.gitkeep` when the first module lands.
+**Status:** early development. The diagnostic model (`grice/diagnostic`) has
+landed; there are no rules, no runner and no CLI yet.
 
 ## Build and Test
 
@@ -37,22 +34,22 @@ Tests use **gleeunit** and live in `test/`.
 
 ## Architecture
 
-Nothing below exists yet except where noted; this is the planned shape, so new
-code has a place to go.
+Most of the table below is the planned shape, so new code has a place to go.
+Rows marked **Exists** have landed.
 
 The supported API will be the `grice` module plus a few documented modules (the
 rule API, diagnostics builders and the testing kit). Everything under
 `src/grice/internal/` is an implementation detail and can change without
 notice.
 
-| File (planned) | Responsibility |
+| File | Responsibility |
 |---|---|
 | `src/grice.gleam` | Entry points: `main()` for the built-in rule set, `run(rules)` for a client's own set, plus `load_project`, `lint` and the renderers |
 | `src/grice/rule.gleam` | Rule builders |
 | `src/grice/facts.gleam` | Per-module facts queries and the `Unknown` type |
 | `src/grice/types.gleam` | Type predicates over girard's `Type` |
 | `src/grice/visit.gleam` | glance AST traversal |
-| `src/grice/diagnostic.gleam` | Report, label and fix builders |
+| `src/grice/diagnostic.gleam` | **Exists:** the diagnostic model (`Diagnostic`, `Severity`, `Location`, `Label`, `Span`, `Fix`, `Edit`). Planned: report, label and fix builders |
 | `src/grice/testing.gleam` | Testing kit for rule authors |
 | `src/grice/internal/config.gleam` | `[tools.grice]` parsing and validation |
 | `src/grice/internal/loader.gleam` | Discovery, reading, parsing, comments |
