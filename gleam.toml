@@ -14,6 +14,8 @@ pages = [{ title = "Changelog", path = "changelog.html", source = "CHANGELOG.md"
 # The standard library. Any other dependency is added by the change that first
 # uses it, so nothing here goes unused.
 gleam_stdlib = ">= 0.44.0 and < 2.0.0"
+# Display widths and tab stops, to line up the carets under a source line.
+string_width = ">= 3.4.3 and < 4.0.0"
 
 [dev_dependencies]
 # Test runner for `gleam test`.
