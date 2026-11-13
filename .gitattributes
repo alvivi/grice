@@ -1,8 +1,8 @@
-# grice reports source spans as byte offsets and will snapshot its rendered
-# diagnostics, which embed both source excerpts and those offsets. A CRLF
-# checkout (e.g. Windows with core.autocrlf=true) adds a byte per line,
-# shifting every span so the snapshots no longer match: the tests fail with no
-# semantic change. Force LF in the working tree for all text files.
+# grice reports source spans as byte offsets, and its tests embed both source
+# text and those offsets. A CRLF checkout (e.g. Windows with
+# core.autocrlf=true) adds a byte per line, shifting every span so the tests
+# fail with no semantic change. Force LF in the working tree for all text
+# files.
 * text=auto eol=lf
 
 # Sources whose byte offsets grice reports, pinned explicitly so the intent
