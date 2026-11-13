@@ -53,7 +53,7 @@ notice.
 | `src/grice/testing.gleam` | Testing kit for rule authors |
 | `src/grice/internal/config.gleam` | `[tools.grice]` parsing and validation |
 | `src/grice/internal/loader.gleam` | Discovery, reading, parsing, comments |
-| `src/grice/internal/line_index.gleam` | Byte offset to line and column |
+| `src/grice/internal/line_index.gleam` | **Exists:** byte offset to line and column, line ranges, span checks |
 | `src/grice/internal/typing.gleam` | girard integration, type index, resolver |
 | `src/grice/internal/runner.gleam` | Planning, running rules, resolving reports |
 | `src/grice/internal/suppress.gleam` | Suppression directives and unused-suppression reports |
