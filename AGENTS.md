@@ -57,7 +57,7 @@ notice.
 | `src/grice/internal/typing.gleam` | girard integration, type index, resolver |
 | `src/grice/internal/runner.gleam` | Planning, running rules, resolving reports |
 | `src/grice/internal/suppress.gleam` | Suppression directives and unused-suppression reports |
-| `src/grice/internal/render/human.gleam` | Compiler-style human output |
+| `src/grice/internal/render/human.gleam` | **Exists:** human output in a layout modelled on the compiler's |
 | `src/grice/internal/render/json.gleam` | Versioned JSON output |
 | `src/grice/internal/parallel.gleam` | Parallel map (Erlang FFI) |
 | `src/grice/internal/platform.gleam` | File system and terminal access (Erlang FFI) |
