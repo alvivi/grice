@@ -53,7 +53,7 @@ notice.
 | `src/grice/diagnostic.gleam` | **Exists:** the diagnostic model (`Diagnostic`, `Severity`, `Location`, `Label`, `Span`, `Fix`, `Edit`). Planned: report, label and fix builders |
 | `src/grice/testing.gleam` | Testing kit for rule authors |
 | `src/grice/internal/glob.gleam` | **Exists:** the glob syntax of `include`, `exclude` and `ignore`, and path matching |
-| `src/grice/internal/config.gleam` | `[tools.grice]` parsing and validation |
+| `src/grice/internal/config.gleam` | **Exists:** `[tools.grice]` and `target` parsing and validation |
 | `src/grice/internal/loader.gleam` | Discovery, reading, parsing, comments |
 | `src/grice/internal/line_index.gleam` | **Exists:** byte offset to line and column, line ranges, span checks |
 | `src/grice/internal/typing.gleam` | girard integration, type index, resolver |

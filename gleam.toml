@@ -16,6 +16,9 @@ pages = [{ title = "Changelog", path = "changelog.html", source = "CHANGELOG.md"
 gleam_stdlib = ">= 0.44.0 and < 2.0.0"
 # Display widths and tab stops, to line up the carets under a source line.
 string_width = ">= 3.4.3 and < 4.0.0"
+# TOML parsing, to read the `[tools.grice]` table and `target` from
+# `gleam.toml`.
+tom = ">= 2.1.0 and < 3.0.0"
 
 [dev_dependencies]
 # Test runner for `gleam test`.
