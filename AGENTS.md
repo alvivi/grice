@@ -17,8 +17,9 @@ expression and for which definition any name or field access resolved to, and
 that its diagnostics follow the Gleam compiler's layout.
 
 **Status:** early development. The diagnostic model (`grice/diagnostic`), the
-line index and the human renderer have landed; there are no rules, no runner
-and no CLI yet.
+line index, the human renderer and project loading (configuration, discovery,
+the load set and dependency sources) have landed; there are no rules, no
+runner and no CLI yet.
 
 ## Build and Test
 
@@ -54,7 +55,7 @@ notice.
 | `src/grice/testing.gleam` | Testing kit for rule authors |
 | `src/grice/internal/glob.gleam` | **Exists:** the glob syntax of `include`, `exclude` and `ignore`, and path matching |
 | `src/grice/internal/config.gleam` | **Exists:** `[tools.grice]` and `target` parsing and validation |
-| `src/grice/internal/loader.gleam` | Discovery, reading, parsing, comments |
+| `src/grice/internal/loader.gleam` | **Exists:** discovery, the load set, reading, parsing and dependency sources |
 | `src/grice/internal/line_index.gleam` | **Exists:** byte offset to line and column, line ranges, span checks |
 | `src/grice/internal/typing.gleam` | girard integration, type index, resolver |
 | `src/grice/internal/runner.gleam` | Planning, running rules, resolving reports |
@@ -62,7 +63,7 @@ notice.
 | `src/grice/internal/render/human.gleam` | **Exists:** human output in a layout modelled on the compiler's |
 | `src/grice/internal/render/json.gleam` | Versioned JSON output |
 | `src/grice/internal/parallel.gleam` | Parallel map (Erlang FFI) |
-| `src/grice/internal/platform.gleam` | File system and terminal access (Erlang FFI) |
+| `src/grice/internal/platform.gleam` | Terminal access, arguments and exit (Erlang FFI) |
 
 ### Pipeline (planned)
 
