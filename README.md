@@ -4,9 +4,9 @@
 
 A type-aware linter for Gleam, with clear, compiler-style diagnostics.
 
-> **Status: early development.** grice has no rules and no public API yet,
-> and it is not published on Hex. This repository currently holds the
-> project scaffold and its conventions.
+> **Status: early development.** grice has no rules, no runner and no CLI
+> yet, and it is not published on Hex. So far it holds the diagnostic model
+> and a renderer that prints diagnostics in the compiler's style.
 
 ## Why?
 

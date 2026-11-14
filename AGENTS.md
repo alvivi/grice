@@ -16,8 +16,9 @@ What sets it apart from a syntactic linter is that rules can ask
 expression and for which definition any name or field access resolved to, and
 that its diagnostics follow the Gleam compiler's layout.
 
-**Status:** early development. The diagnostic model (`grice/diagnostic`) has
-landed; there are no rules, no runner and no CLI yet.
+**Status:** early development. The diagnostic model (`grice/diagnostic`), the
+line index and the human renderer have landed; there are no rules, no runner
+and no CLI yet.
 
 ## Build and Test
 
