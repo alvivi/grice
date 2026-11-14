@@ -14,6 +14,14 @@ pages = [{ title = "Changelog", path = "changelog.html", source = "CHANGELOG.md"
 # The standard library. Any other dependency is added by the change that first
 # uses it, so nothing here goes unused.
 gleam_stdlib = ">= 0.44.0 and < 2.0.0"
+# The Gleam parser. Each loaded module is parsed once, and its syntax tree
+# is what rules see.
+glance = ">= 7.0.0 and < 8.0.0"
+# glance's lexer, used directly for the text of the token a parse error
+# points at. It must be a direct dependency to be imported.
+glexer = ">= 2.5.0 and < 3.0.0"
+# File system access: walking the source directories and reading files.
+simplifile = ">= 2.4.0 and < 3.0.0"
 # Display widths and tab stops, to line up the carets under a source line.
 string_width = ">= 3.4.3 and < 4.0.0"
 # TOML parsing, to read the `[tools.grice]` table and `target` from
