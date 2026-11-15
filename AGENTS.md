@@ -62,7 +62,7 @@ notice.
 | `src/grice/internal/suppress.gleam` | Suppression directives and unused-suppression reports |
 | `src/grice/internal/render/human.gleam` | **Exists:** human output in a layout modelled on the compiler's |
 | `src/grice/internal/render/json.gleam` | Versioned JSON output |
-| `src/grice/internal/parallel.gleam` | Parallel map (Erlang FFI) |
+| `src/grice/internal/parallel.gleam` | **Exists:** an order-keeping parallel map, as an Erlang FFI in `src/grice_ffi.erl` |
 | `src/grice/internal/platform.gleam` | Terminal access, arguments and exit (Erlang FFI) |
 
 ### Pipeline (planned)
