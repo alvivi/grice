@@ -50,7 +50,7 @@ notice.
 | `src/grice/rule.gleam` | Rule builders |
 | `src/grice/facts.gleam` | Per-module facts queries and the `Unknown` type |
 | `src/grice/types.gleam` | Type predicates over girard's `Type` |
-| `src/grice/visit.gleam` | glance AST traversal |
+| `src/grice/visit.gleam` | **Exists:** the glance syntax tree walk, in source order, with a hook per kind of node |
 | `src/grice/diagnostic.gleam` | **Exists:** the diagnostic model (`Diagnostic`, `Severity`, `Location`, `Label`, `Span`, `Fix`, `Edit`). Planned: report, label and fix builders |
 | `src/grice/testing.gleam` | Testing kit for rule authors |
 | `src/grice/internal/glob.gleam` | **Exists:** the glob syntax of `include`, `exclude` and `ignore`, and path matching |

@@ -14,3 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   message paragraphs, a hint, and an optional `Location` that owns the file
   path, the primary and secondary `Label`s and a reserved `Fix`. Spans are
   byte offsets into the file's source.
+- **A syntax tree walk.** The new `grice/visit` module walks a glance
+  module, or a single expression, and calls a hook for each import, custom
+  type, type alias, constant, function, statement, expression, pattern and
+  type it meets, threading an accumulator through them. The walk follows
+  source order, definitions of every kind included, and functions and
+  expressions also have exit hooks, called after their children. Attribute
+  arguments and the sizes in bit array patterns aren't walked. grice has no
+  command line yet, so nothing runs a walk over a project.
