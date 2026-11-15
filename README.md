@@ -4,10 +4,12 @@
 
 A type-aware linter for Gleam, with clear, compiler-style diagnostics.
 
-> **Status: early development.** grice has no rules, no runner and no CLI
-> yet, and it is not published on Hex. So far it holds the diagnostic model,
-> a renderer that prints diagnostics in the compiler's style, and the loader
-> that reads a project's configuration, modules and dependencies.
+> **Status: early development.** grice has no built-in rules and no CLI yet,
+> and it is not published on Hex. So far it holds the diagnostic model, a
+> renderer that prints diagnostics in the compiler's style, the loader that
+> reads a project's configuration, modules and dependencies, and the API for
+> writing rules, with a runner that runs them over a loaded project. Rules
+> can't be run from the command line yet.
 
 ## Why?
 

@@ -85,6 +85,12 @@ pub fn diagnostic(
   )
 }
 
+/// The dotted key of the rule codes ignored under `pattern`, as messages
+/// name it, such as `tools.grice.ignore."test/**"`.
+pub fn ignore_key(pattern: String) -> String {
+  "tools.grice.ignore." <> string.inspect(pattern)
+}
+
 /// Why the TOML parser rejected a file, for a message that names the file.
 pub fn describe_toml_error(error: tom.ParseError) -> String {
   case error {
@@ -199,7 +205,7 @@ fn parse_ignore_entry(
 ) -> Result(#(Glob, List(String)), List(Diagnostic)) {
   let #(pattern, value) = entry
   let pattern_glob = parse_glob(pattern, "tools.grice.ignore", "has the key")
-  let key = "tools.grice.ignore." <> string.inspect(pattern)
+  let key = ignore_key(pattern)
   let codes = parse_strings(value, key, "rule code", Ok)
   case pattern_glob, codes {
     Ok(pattern_glob), Ok(codes) -> Ok(#(pattern_glob, codes))

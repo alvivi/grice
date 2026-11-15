@@ -22,3 +22,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   expressions also have exit hooks, called after their children. Attribute
   arguments and the sizes in bit array patterns aren't walked. grice has no
   command line yet, so nothing runs a walk over a project.
+- **Rules.** The new `grice/rule` module builds rules. A module rule looks
+  at one module at a time: `rule.module` names it, `rule.with_context` gives
+  it the context it threads through the module, the `on_*` functions add
+  hooks, called during a `grice/visit` walk, and `rule.build` makes the
+  `Rule`. A project rule summarises each linted module with
+  `rule.per_module` and reports on all of them together with `rule.final`.
+  Hooks return `Report`s, built from glance spans, with a primary label,
+  secondary labels, a message and a hint. Rules report warnings unless
+  `rule.with_severity` sets another severity. A rule code is a
+  package-style prefix, a slash and a kebab-case name, such as
+  `my_app/no-echo`, and the `grice/` prefix is reserved for grice's own
+  diagnostics. Rules can't be run from the command line yet.
+- **Module facts.** The new `grice/facts` module holds what a rule hook
+  knows about the module it's looking at: its name, path, source, imports
+  and syntax tree, as the module is compiled for the project's target. A
+  definition whose `@target` attribute names the other target is left
+  out, and each list of definitions is in source order.
