@@ -340,6 +340,34 @@ fn nothing_to_lint() -> Diagnostic {
 // before they're followed, which is what lets a package whose modules import
 // each other on different targets load on either one.
 
+/// The module as it's compiled for `target`, with each list of definitions
+/// in source order. A definition of any kind is left out when a `@target`
+/// attribute names the other target. Imports are followed from this view,
+/// and rules see it.
+pub fn for_target(
+  module: glance.Module,
+  target: config.Target,
+) -> glance.Module {
+  glance.Module(
+    imports: on_target(module.imports, target),
+    custom_types: on_target(module.custom_types, target),
+    type_aliases: on_target(module.type_aliases, target),
+    constants: on_target(module.constants, target),
+    functions: on_target(module.functions, target),
+  )
+}
+
+// The definitions compiled for `target`, put back in source order: glance
+// builds every list in reverse.
+fn on_target(
+  definitions: List(glance.Definition(definition)),
+  target: config.Target,
+) -> List(glance.Definition(definition)) {
+  definitions
+  |> list.filter(fn(definition) { is_on_target(definition.attributes, target) })
+  |> list.reverse
+}
+
 // Load each queued module that isn't loaded yet, and queue the project
 // modules it imports.
 fn load_modules(
@@ -384,15 +412,8 @@ fn parse_module(
   let parsed = glance.module(source)
   let imports = case parsed {
     Ok(syntax) ->
-      syntax.imports
-      |> list.filter(is_on_target(_, target))
-      // glance doesn't keep the imports in source order, so they're sorted
-      // back into it.
-      |> list.map(fn(definition) { definition.definition })
-      |> list.sort(fn(left, right) {
-        int.compare(left.location.start, right.location.start)
-      })
-      |> list.map(fn(import_) { import_.module })
+      on_target(syntax.imports, target)
+      |> list.map(fn(definition) { definition.definition.module })
     // A module that doesn't parse has no imports to follow. Its error is
     // kept in `parsed`.
     Error(_) -> []
@@ -400,17 +421,17 @@ fn parse_module(
   Module(name:, path:, source: line_index.new(source), parsed:, imports:)
 }
 
-// An import is on the target unless a `@target` attribute names the other
-// one. The compiler also accepts the deprecated `erl` and `js`.
+// A definition is on the target unless a `@target` attribute names the
+// other one. The compiler also accepts the deprecated `erl` and `js`.
 fn is_on_target(
-  definition: glance.Definition(glance.Import),
+  attributes: List(glance.Attribute),
   target: config.Target,
 ) -> Bool {
   let other = case target {
     config.Erlang -> ["javascript", "js"]
     config.JavaScript -> ["erlang", "erl"]
   }
-  !list.any(definition.attributes, fn(attribute) {
+  !list.any(attributes, fn(attribute) {
     case attribute {
       glance.Attribute(name: "target", arguments: [glance.Variable(_, name)]) ->
         list.contains(other, name)
