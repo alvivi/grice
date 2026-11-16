@@ -19,8 +19,9 @@ that its diagnostics follow the Gleam compiler's layout.
 **Status:** early development. The diagnostic model (`grice/diagnostic`), the
 line index, the human renderer, project loading (configuration, discovery,
 the load set and dependency sources), the rule API (`grice/visit`,
-`grice/facts`, `grice/rule`) with its runner, and type facts from girard with
-the coverage notes have landed; there are no built-in rules and no CLI yet.
+`grice/facts`, `grice/rule`) with its runner, type facts from girard with
+the coverage notes, and ignores and suppression comments have landed; there
+are no built-in rules and no CLI yet.
 
 ## Build and Test
 
@@ -59,8 +60,8 @@ notice.
 | `src/grice/internal/loader.gleam` | **Exists:** discovery, the load set, reading, parsing and dependency sources |
 | `src/grice/internal/line_index.gleam` | **Exists:** byte offset to line and column, line ranges, span checks |
 | `src/grice/internal/typing.gleam` | **Exists:** girard integration: the order modules are typed in, the in-memory resolver and each module's type index |
-| `src/grice/internal/runner.gleam` | **Exists:** checking the rule set, planning which facts the rules need, running rules over the lint set, resolving reports, and the coverage record with its notes |
-| `src/grice/internal/suppress.gleam` | Suppression directives and unused-suppression reports |
+| `src/grice/internal/runner.gleam` | **Exists:** checking the rule set, planning which facts the rules need, running rules over the lint set, resolving reports, dropping what ignores and suppressions hide, and the coverage record with its notes |
+| `src/grice/internal/suppress.gleam` | **Exists:** applying ignores and suppression comments, and the unused- and invalid-suppression warnings |
 | `src/grice/internal/render/human.gleam` | **Exists:** human output in a layout modelled on the compiler's |
 | `src/grice/internal/render/json.gleam` | Versioned JSON output |
 | `src/grice/internal/parallel.gleam` | **Exists:** an order-keeping parallel map, as an Erlang FFI in `src/grice_ffi.erl` |

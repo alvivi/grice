@@ -104,6 +104,7 @@
 import glance
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/string
 import grice/diagnostic.{
   type Diagnostic, type Label, type Severity, Diagnostic, Label, Location, Span,
 }
@@ -116,6 +117,11 @@ import grice/visit.{type Visitor}
 // A built rule, module or project, with its code, title and severity. What
 // it runs is a closure over the facts, so a rule's context or summary type
 // doesn't appear in `Rule`, and one list can hold any rules.
+
+/// The prefix of grice's own diagnostic codes, which no rule may use and
+/// nothing can hide.
+@internal
+pub const reserved_prefix = "grice/"
 
 /// A rule, ready to be run. Build one with `build` or `final`.
 pub opaque type Rule {
@@ -168,6 +174,35 @@ pub fn is_typed(rule: Rule) -> Bool {
 @internal
 pub fn check(rule: Rule) -> Check {
   rule.check
+}
+
+/// Whether `code` follows the syntax of rule codes, which rules, ignores
+/// and suppressions all use: it matches
+/// `[a-z][a-z0-9_]*/[a-z][a-z0-9]*(-[a-z0-9]+)*`, so the name is words
+/// joined by single hyphens, none of them empty.
+@internal
+pub fn is_valid_code(code: String) -> Bool {
+  case string.split(code, "/") {
+    [prefix, name] ->
+      is_word(prefix, rest: lowercase <> digits <> "_")
+      && is_word(name, rest: lowercase <> digits <> "-")
+      && !list.contains(string.split(name, "-"), "")
+    _ -> False
+  }
+}
+
+const lowercase = "abcdefghijklmnopqrstuvwxyz"
+
+const digits = "0123456789"
+
+// A lowercase letter followed by characters of `allowed`.
+fn is_word(word: String, rest allowed: String) -> Bool {
+  case string.to_graphemes(word) {
+    [first, ..rest] ->
+      string.contains(lowercase, first)
+      && list.all(rest, string.contains(allowed, _))
+    [] -> False
+  }
 }
 
 // Schemas
