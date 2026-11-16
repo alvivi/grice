@@ -49,7 +49,7 @@ notice.
 |---|---|
 | `src/grice.gleam` | Entry points: `main()` for the built-in rule set, `run(rules)` for a client's own set, plus `load_project`, `lint` and the renderers |
 | `src/grice/rule.gleam` | **Exists:** module and project rule builders, reports and severities |
-| `src/grice/facts.gleam` | **Exists:** per-module facts: name, path, source, imports and the syntax tree as compiled for the target, and for typed rules the type queries and the `Unknown` type |
+| `src/grice/facts.gleam` | **Exists:** per-module facts: name, path, source, imports, comments and the syntax tree as compiled for the target, and for typed rules the type queries and the `Unknown` type |
 | `src/grice/types.gleam` | Type predicates over girard's `Type` |
 | `src/grice/visit.gleam` | **Exists:** the glance syntax tree walk, in source order, with a hook per kind of node |
 | `src/grice/diagnostic.gleam` | **Exists:** the diagnostic model (`Diagnostic`, `Severity`, `Location`, `Label`, `Span`, `Fix`, `Edit`). Planned: report, label and fix builders |

@@ -6,19 +6,25 @@
 //// there, whatever its kind, and neither is an import marked that way.
 ////
 //// The `kind` parameter says which facts a rule can ask for. Every rule
-//// gets `Syntax` facts: the module's name, path, source and syntax tree. A
-//// rule built with `rule.typed` gets `Typed` facts, which also answer what
-//// girard, the type inference grice uses, found: the type of an
-//// expression, what a name or field access resolved to, and the type of a
-//// top-level definition. A typed query never guesses: when girard has no
-//// answer, it says why with an `Unknown`.
+//// gets `Syntax` facts: the module's name, path, source, comments and
+//// syntax tree. A rule built with `rule.typed` gets `Typed` facts, which
+//// also answer what girard, the type inference grice uses, found: the type
+//// of an expression, what a name or field access resolved to, and the type
+//// of a top-level definition. A typed query never guesses: when girard has
+//// no answer, it says why with an `Unknown`.
 
 import girard
 import glance
+import gleam/bool
 import gleam/dict
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/pair
 import gleam/result
+import gleam/set
+import gleam/string
+import glexer
+import glexer/token.{type Token}
 import grice/internal/config.{type Target}
 import grice/internal/line_index.{type LineIndex}
 import grice/internal/loader
@@ -37,6 +43,7 @@ pub opaque type ModuleFacts(kind) {
     source: LineIndex,
     module: glance.Module,
     imports: List(String),
+    comments: List(Comment),
     // What girard found for the module: `None` when no rule asked for
     // types, or girard returned nothing for the module.
     types: Option(ModuleTypes),
@@ -77,7 +84,8 @@ pub fn imports(facts: ModuleFacts(kind)) -> List(String) {
 
 /// The facts of a loaded module, with what girard found for it when a rule
 /// asked for types, or an error when it doesn't parse, which the loader has
-/// already reported.
+/// already reported. Its comments are read here, so only modules that get
+/// facts are lexed for them.
 @internal
 pub fn new(
   module: loader.Module,
@@ -85,12 +93,14 @@ pub fn new(
   types: Option(ModuleTypes),
 ) -> Result(ModuleFacts(Syntax), Nil) {
   use syntax <- result.map(result.replace_error(module.parsed, Nil))
+  let view = loader.for_target(syntax, target)
   ModuleFacts(
     module_name: module.name,
     path: module.path,
     source: module.source,
-    module: loader.for_target(syntax, target),
+    module: view,
     imports: module.imports,
+    comments: read_comments(line_index.source(module.source), syntax, view),
     types:,
   )
 }
@@ -106,9 +116,104 @@ pub fn line_index(facts: ModuleFacts(kind)) -> LineIndex {
 /// rule the facts it was built for.
 @internal
 pub fn change_kind(facts: ModuleFacts(a)) -> ModuleFacts(b) {
-  let ModuleFacts(module_name:, path:, source:, module:, imports:, types:) =
-    facts
-  ModuleFacts(module_name:, path:, source:, module:, imports:, types:)
+  ModuleFacts(..facts, types: facts.types)
+}
+
+/// The name and span of each top-level function, constant, custom type and
+/// type alias of `module`: every definition but its imports.
+@internal
+pub fn definitions(module: glance.Module) -> List(#(String, glance.Span)) {
+  list.flatten([
+    list.map(module.functions, fn(function) {
+      #(function.definition.name, function.definition.location)
+    }),
+    list.map(module.constants, fn(constant) {
+      #(constant.definition.name, constant.definition.location)
+    }),
+    list.map(module.custom_types, fn(custom_type) {
+      #(custom_type.definition.name, custom_type.definition.location)
+    }),
+    list.map(module.type_aliases, fn(alias) {
+      #(alias.definition.name, alias.definition.location)
+    }),
+  ])
+}
+
+// Comments
+//
+// glance keeps no comments, so they're read with glexer, the lexer glance
+// itself uses, which knows that a `//` inside a string isn't one. A
+// comment inside a definition left out for the other target is left out
+// with it, as rules never see that code.
+
+/// A comment in the module's source.
+pub type Comment {
+  Comment(
+    kind: CommentKind,
+    /// The comment's bytes in the source: its `//`, `///` or `////`, and
+    /// the rest of its line, without the line ending.
+    span: glance.Span,
+    /// What follows the `//`, `///` or `////`, such as `" TODO"` for
+    /// `// TODO`.
+    text: String,
+  )
+}
+
+/// What a comment's first slashes make it.
+pub type CommentKind {
+  /// A regular comment, `//`.
+  Regular
+  /// A documentation comment for the definition below it, `///`.
+  Doc
+  /// A documentation comment for the module, `////`.
+  ModuleDoc
+}
+
+/// The module's comments as it's compiled for the project's target, in
+/// source order: a comment inside a definition whose `@target` attribute
+/// names the other target isn't there.
+pub fn comments(facts: ModuleFacts(kind)) -> List(Comment) {
+  facts.comments
+}
+
+// The comments of `source`, except those inside a definition of `module`
+// that `view`, its target view, leaves out.
+fn read_comments(
+  source: String,
+  module: glance.Module,
+  view: glance.Module,
+) -> List(Comment) {
+  let kept = set.from_list(definition_spans(view))
+  let dropped =
+    list.filter(definition_spans(module), fn(span) { !set.contains(kept, span) })
+  use #(token, glexer.Position(byte_offset: start)) <- list.filter_map(
+    glexer.new(source) |> glexer.discard_whitespace |> glexer.lex,
+  )
+  use #(kind, marker, text) <- result.try(comment_token(token))
+  use <- bool.guard(
+    when: list.any(dropped, fn(span) { span.start <= start && start < span.end }),
+    return: Error(Nil),
+  )
+  // glexer gives a byte offset and the text after the marker, without the
+  // `\r` of a CRLF line ending, so the end is counted in bytes.
+  let end = start + marker + string.byte_size(text)
+  Ok(Comment(kind:, span: glance.Span(start, end), text:))
+}
+
+// A comment token's kind, the byte size of its marker and its text.
+fn comment_token(token: Token) -> Result(#(CommentKind, Int, String), Nil) {
+  case token {
+    token.CommentNormal(text) -> Ok(#(Regular, 2, text))
+    token.CommentDoc(text) -> Ok(#(Doc, 3, text))
+    token.CommentModule(text) -> Ok(#(ModuleDoc, 4, text))
+    _ -> Error(Nil)
+  }
+}
+
+// The span of every top-level definition of a module, imports included.
+fn definition_spans(module: glance.Module) -> List(glance.Span) {
+  list.map(module.imports, fn(import_) { import_.definition.location })
+  |> list.append(list.map(definitions(module), pair.second))
 }
 
 // Types
