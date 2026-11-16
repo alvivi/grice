@@ -471,9 +471,9 @@ pub fn parse_error(module: Module) -> Result(Diagnostic, Nil) {
   }
 }
 
-// The label under the token glance stopped at, or an empty one at the end of
-// the source when the input ended too soon.
-fn error_label(source: LineIndex, error: glance.Error) -> Label {
+/// The label under the token glance stopped at in `source`, or an empty one
+/// at the end of the source when the input ended too soon.
+pub fn error_label(source: LineIndex, error: glance.Error) -> Label {
   case error {
     glance.UnexpectedEndOfInput -> {
       let end = string.byte_size(line_index.source(source))

@@ -72,7 +72,7 @@ pub fn every_module_starts_from_the_initial_context_test() {
   let project = support.project("", files, [])
   let assert Ok(first) = runner.run(project, rules)
   let assert Ok(second) = runner.run(project, rules)
-  assert labels(first) == ["1 functions", "2 functions"]
+  assert labels(first.diagnostics) == ["1 functions", "2 functions"]
   assert second == first
 }
 
@@ -282,7 +282,7 @@ pub fn rules_run_on_parsed_lint_set_modules_only_test() {
   ]
   let project = support.project(toml, files, [])
   assert dict.has_key(project.modules, "app/gen/a")
-  let assert Ok(diagnostics) =
+  let assert Ok(runner.Linted(diagnostics:, ..)) =
     runner.run(project, [
       fixture_rules.no_echo(),
       module_order(),
@@ -342,7 +342,10 @@ pub fn a_typed_project_rule_sees_types_in_per_module_test() {
       #(name, at_start(string.inspect(signature)))
     })
   assert labels(run_files([#("src/app.gleam", discards)], [signatures]))
-    == ["Ok(\"fn() -> Result(Int, Nil)\")"]
+    == [
+      "Ok(\"fn() -> Result(Int, Nil)\")",
+      "girard couldn't type this definition",
+    ]
 }
 
 // `typed_calls` reports on the call into the other module on each target.
@@ -498,15 +501,35 @@ pub fn queries_on_a_module_girard_returned_nothing_for_test() {
     #("src/other.gleam", "pub fn main() {\n  2\n}\n"),
   ]
   let project = support.project("", files, [])
-  let assert Ok(diagnostics) =
+  let assert Ok(linted) =
     runner.run_with(project, [every_query()], infer: fn(project) {
       typing.infer(project, typing.resolver(project)) |> dict.delete("app")
     })
-  assert describe(diagnostics)
+  // The module's rules still run.
+  let assert [note, ..reports] = linted.diagnostics
+  assert describe(reports)
     == [
       "fixture/every-query src/app.gleam: Error(NotInferred) Error(NotInferred) Error(NotInferred)",
       "fixture/every-query src/other.gleam: Ok(Named(\"gleam\", \"Int\", [])) Error(NotRecorded) Ok(Scheme([], Fn([], Named(\"gleam\", \"Int\", []))))",
     ]
+  assert note
+    == Diagnostic(
+      code: "grice/uninferred-module",
+      severity: diagnostic.Note,
+      title: "Can't infer the types of a module",
+      location: None,
+      message: [
+        "girard, the type inference grice uses, returned no types for the module `app`, at `src/app.gleam`. Rules still ran on it, but typed rules got no answers about it, so they may have missed problems there.",
+      ],
+      hint: Some(girard_hint),
+    )
+  assert linted.coverage
+    == runner.Coverage(
+      modules: 2,
+      parsed: 2,
+      types: runner.Requested(full: 1, partial: 0, none: 1),
+      gaps: [runner.UninferredModule("src/app.gleam")],
+    )
 }
 
 // `app` uses nothing from `gone`, and its last expression is a reference
@@ -514,17 +537,32 @@ pub fn queries_on_a_module_girard_returned_nothing_for_test() {
 pub fn no_query_answers_in_a_module_with_an_unavailable_import_test() {
   let source =
     "import gone\nimport dep/box\n\npub fn main() {\n  box.shout\n}\n"
-  let project =
-    support.project("", [#("src/app.gleam", source)], [#("dep/box", box)])
+  let files = [
+    #("src/app.gleam", source),
+    #("src/other.gleam", "pub fn main() {\n  2\n}\n"),
+  ]
+  let project = support.project("", files, [#("dep/box", box)])
   let assert Ok(app) =
     typing.infer(project, typing.resolver(project)) |> dict.get("app")
   assert dict.get(app.resolutions, support.glance_span(source, "box.shout"))
     == Ok(girard.ModuleFn("dep/box", "shout"))
-  let assert Ok(diagnostics) = runner.run(project, [every_query()])
-  assert describe(diagnostics)
+  let assert Ok(linted) = runner.run(project, [every_query()])
+  assert describe(linted.diagnostics)
     == [
       "fixture/every-query src/app.gleam: Error(Unavailable([\"gone\"])) Error(Unavailable([\"gone\"])) Error(Unavailable([\"gone\"]))",
+      "grice/unavailable-import src/app.gleam: girard couldn't use this",
+      "fixture/every-query src/other.gleam: Ok(Named(\"gleam\", \"Int\", [])) Error(NotRecorded) Ok(Scheme([], Fn([], Named(\"gleam\", \"Int\", []))))",
     ]
+  // It still counts as partial.
+  assert linted.coverage
+    == runner.Coverage(
+      modules: 2,
+      parsed: 2,
+      types: runner.Requested(full: 1, partial: 1, none: 0),
+      gaps: [
+        runner.UnavailableImport("src/app.gleam", "gone", runner.NoSuchModule),
+      ],
+    )
 }
 
 // `d` is unavailable, so girard reads `Result` as the prelude's: an answer
@@ -559,16 +597,6 @@ pub fn discarded_result_is_silent_where_a_prelude_name_is_shadowed_test() {
 }
 
 // Planning
-
-pub fn a_syntax_only_run_never_infers_test() {
-  let project = support.project("", [#("src/app.gleam", discards)], [])
-  let assert Ok(_) =
-    runner.run_with(
-      project,
-      [fixture_rules.no_echo(), fixture_rules.duplicate_public_function()],
-      infer: never_infer,
-    )
-}
 
 pub fn an_invalid_rule_set_never_infers_test() {
   let project = support.project("", [#("src/app.gleam", discards)], [])
@@ -637,16 +665,293 @@ pub fn typed_runs_dont_depend_on_the_working_directory_test() {
   let runs =
     list.map([directory, absolute], fn(root) {
       let assert Ok(project) = loader.load_project(root)
-      let assert Ok(diagnostics) = runner.run(project, [typed_calls()])
-      diagnostics
+      let assert Ok(linted) = runner.run(project, [typed_calls()])
+      linted
     })
   support.cleanup(directory)
   let assert [relative_run, absolute_run] = runs
-  assert describe(relative_run)
+  assert describe(relative_run.diagnostics)
     == [
       "fixture/typed-calls src/app.gleam: Ok(Named(\"shapes/square\", \"Square\", []))",
     ]
+  assert relative_run.coverage
+    == runner.Coverage(
+      modules: 1,
+      parsed: 1,
+      types: runner.Requested(full: 1, partial: 0, none: 0),
+      gaps: [],
+    )
   assert absolute_run == relative_run
+}
+
+// Coverage
+
+const girard_hint =
+  "If `gleam build` accepts this code, it's a gap in girard, the type inference grice uses, so please report it at https://github.com/alvivi/girard/issues."
+
+pub fn untyped_definition_notes_each_skipped_definition_of_the_lint_set_test() {
+  let toml = "[tools.grice]\nexclude = [\"src/gen.gleam\"]\n"
+  let skipped = "pub fn skipped() {\n  1 + \"one\"\n}"
+  let source =
+    "import gen\n\npub fn main() {\n  gen.typed()\n}\n\n" <> skipped <> "\n"
+  let files = [
+    #("src/app.gleam", source),
+    // An excluded module's gaps aren't reported.
+    #(
+      "src/gen.gleam",
+      "pub fn typed() {\n  1\n}\n\npub fn untyped() {\n  1 + \"one\"\n}\n",
+    ),
+  ]
+  let linted = run_typed(support.project(toml, files, []))
+  assert linted.diagnostics
+    == [
+      Diagnostic(
+        code: "grice/untyped-definition",
+        severity: diagnostic.Note,
+        title: "Can't infer the types of this definition",
+        location: Some(Location(
+          path: "src/app.gleam",
+          primary: Label(
+            span_of(source, skipped),
+            "girard couldn't type this definition",
+          ),
+          secondary: [],
+          fix: None,
+        )),
+        message: [
+          "girard couldn't type `skipped`: type mismatch: String vs Int. Typed rules get no answers about the code inside it, so they may miss problems there.",
+        ],
+        hint: Some(girard_hint),
+      ),
+    ]
+  assert linted.coverage
+    == runner.Coverage(
+      modules: 1,
+      parsed: 1,
+      types: runner.Requested(full: 0, partial: 1, none: 0),
+      gaps: [runner.UntypedDefinition("src/app.gleam", "skipped")],
+    )
+}
+
+// Each lint-set module reaches one module girard can't use: `direct` and
+// `indirect` an excluded module that doesn't parse, `importer` a lint-set
+// module that doesn't parse, `nameless` a name no module has, and
+// `dependent` a dependency module that doesn't parse, through another one.
+const unavailable_files = [
+  #("src/broken_linted.gleam", "pub fn ("),
+  #(
+    "src/dependent.gleam",
+    "import dep/outer\n\npub fn main() {\n  outer.value()\n}\n",
+  ),
+  #("src/direct.gleam", "import gen/broken\n"),
+  #("src/gen/broken.gleam", "pub fn fine() {\n  1\n}\npub fn ("),
+  #("src/gen/wrapper.gleam", "import gen/broken\n\npub fn value() {\n  2\n}\n"),
+  #("src/importer.gleam", "import broken_linted\n"),
+  #(
+    "src/indirect.gleam",
+    "import gen/wrapper\n\npub fn main() {\n  wrapper.value()\n}\n",
+  ),
+  #("src/nameless.gleam", "import nowhere\n"),
+]
+
+const unavailable_dependencies = [
+  #("dep/outer", "import dep/inner\n\npub fn value() {\n  3\n}\n"),
+  #("dep/inner", "pub const x = 1\npub fn ("),
+]
+
+pub fn unavailable_import_notes_each_module_girard_couldnt_use_test() {
+  let toml = "[tools.grice]\nexclude = [\"src/gen/\"]\n"
+  let project =
+    support.project(toml, unavailable_files, unavailable_dependencies)
+  let linted = run_typed(project)
+  assert describe(linted.diagnostics)
+    == [
+      "grice/unavailable-import", "grice/unavailable-import",
+      "grice/parse-error src/broken_linted.gleam: glance didn't expect this",
+      "grice/unavailable-import src/direct.gleam: girard couldn't use this",
+      "grice/unavailable-import src/importer.gleam: girard couldn't use this",
+      "grice/unavailable-import src/nameless.gleam: girard couldn't use this",
+    ]
+  assert linted.coverage.modules == 6
+  assert linted.coverage.parsed == 5
+  assert linted.coverage.types == runner.Requested(full: 0, partial: 5, none: 0)
+  assert linted.coverage.gaps
+    == [
+      runner.UnparsedModule("src/broken_linted.gleam"),
+      runner.UnavailableImport(
+        "src/dependent.gleam",
+        "dep/inner",
+        runner.DependencyUnparsable,
+      ),
+      runner.UnavailableImport(
+        "src/direct.gleam",
+        "gen/broken",
+        runner.ProjectModuleUnparsable,
+      ),
+      runner.UnavailableImport(
+        "src/importer.gleam",
+        "broken_linted",
+        runner.ProjectModuleUnparsable,
+      ),
+      runner.UnavailableImport(
+        "src/indirect.gleam",
+        "gen/broken",
+        runner.ProjectModuleUnparsable,
+      ),
+      runner.UnavailableImport(
+        "src/nameless.gleam",
+        "nowhere",
+        runner.NoSuchModule,
+      ),
+    ]
+  let assert [dependent, indirect, _, direct, importer, nameless] =
+    linted.diagnostics
+  assert dependent
+    == Diagnostic(
+      code: "grice/unavailable-import",
+      severity: diagnostic.Note,
+      title: "Can't use the types of an imported module",
+      location: None,
+      message: [
+        "The module `dependent`, at `src/dependent.gleam`, reaches the module `dep/inner` through the modules it imports, and girard, the type inference grice uses, couldn't use it. It's a dependency module, which glance can't parse: it stopped at line 2, column 1 of its source. Types that depend on it may be incomplete, so typed rules get no answers in this module.",
+      ],
+      hint: Some(
+        "If the package builds, glance doesn't support its syntax yet, so please report it to glance.",
+      ),
+    )
+  assert indirect.message
+    == [
+      "The module `indirect`, at `src/indirect.gleam`, reaches the module `gen/broken` through the modules it imports, and girard, the type inference grice uses, couldn't use it. It's the project module at `src/gen/broken.gleam`, which glance can't parse: it stopped at line 4, column 1. Types that depend on it may be incomplete, so typed rules get no answers in this module.",
+    ]
+  assert direct
+    == Diagnostic(
+      code: "grice/unavailable-import",
+      severity: diagnostic.Note,
+      title: "Can't use the types of an imported module",
+      location: Some(Location(
+        path: "src/direct.gleam",
+        primary: Label(Span(0, 17), "girard couldn't use this"),
+        secondary: [],
+        fix: None,
+      )),
+      message: [
+        "girard, the type inference grice uses, couldn't use the module `gen/broken`, which this module imports. It's the project module at `src/gen/broken.gleam`, which glance can't parse: it stopped at line 4, column 1. Types that depend on it may be incomplete, so typed rules get no answers in this module.",
+      ],
+      hint: Some(
+        "If `gleam build` accepts `src/gen/broken.gleam`, glance doesn't support its syntax yet, so please report it to glance.",
+      ),
+    )
+  assert importer.message
+    == [
+      "girard, the type inference grice uses, couldn't use the module `broken_linted`, which this module imports. It's the project module at `src/broken_linted.gleam`, which glance can't parse: it stopped at line 1, column 1. Types that depend on it may be incomplete, so typed rules get no answers in this module.",
+    ]
+  assert nameless.message
+    == [
+      "girard, the type inference grice uses, couldn't use the module `nowhere`, which this module imports. No module of the project or of its dependencies has that name. Types that depend on it may be incomplete, so typed rules get no answers in this module.",
+    ]
+  assert nameless.hint
+    == Some(
+      "Check the import. If the module belongs to a dependency, `gleam deps download` fetches its sources.",
+    )
+}
+
+// The compiler rejects an import cycle, but girard is still given both
+// modules, and the module it types first can't use the other, which
+// parses.
+pub fn unavailable_import_notes_a_project_module_girard_couldnt_use_test() {
+  let files = [
+    #("src/one.gleam", "import two\n"),
+    #("src/two.gleam", "import one\n"),
+  ]
+  let linted = run_typed(support.project("", files, []))
+  // `two` is typed first, without `one`, and `one` inherits the entry
+  // from `two`'s interface.
+  assert linted.coverage.gaps
+    == [
+      runner.UnavailableImport(
+        "src/one.gleam",
+        "one",
+        runner.ProjectModuleUnusable,
+      ),
+      runner.UnavailableImport(
+        "src/two.gleam",
+        "one",
+        runner.ProjectModuleUnusable,
+      ),
+    ]
+  let assert Ok(note) =
+    list.find(linted.diagnostics, fn(found) {
+      describe([found])
+      == ["grice/unavailable-import src/two.gleam: girard couldn't use this"]
+    })
+  assert note.message
+    == [
+      "girard, the type inference grice uses, couldn't use the module `one`, which this module imports. It's the project module at `src/one.gleam`, which parses, but girard couldn't use it. Types that depend on it may be incomplete, so typed rules get no answers in this module.",
+    ]
+  assert note.hint == Some(girard_hint)
+}
+
+pub fn missing_package_notes_each_package_when_types_are_requested_test() {
+  let project =
+    loader.Project(
+      ..support.project("", [#("src/app.gleam", "")], []),
+      missing_dependencies: [
+        loader.Package("hexdep", loader.Hex, "build/packages/hexdep"),
+        loader.Package("gitdep", loader.Git, "build/packages/gitdep"),
+        loader.Package("localdep", loader.Local, "../localdep"),
+      ],
+    )
+  let linted = run_typed(project)
+  let download = Some("Run `gleam deps download`.")
+  let assert [hex, ..] = linted.diagnostics
+  assert hex
+    == Diagnostic(
+      code: "grice/missing-package",
+      severity: diagnostic.Note,
+      title: "A dependency's sources are missing",
+      location: None,
+      message: [
+        "The package `hexdep` is in `manifest.toml`, but `build/packages/hexdep/src` isn't a directory, so girard, the type inference grice uses, can't read its modules. Types that come from them may be incomplete.",
+      ],
+      hint: download,
+    )
+  assert list.map(linted.diagnostics, fn(found) { found.hint })
+    == [
+      download,
+      download,
+      Some(
+        "Restore the directory, or fix the path dependency that points to it.",
+      ),
+    ]
+  assert linted.coverage.gaps
+    == [
+      runner.MissingPackage("hexdep"),
+      runner.MissingPackage("gitdep"),
+      runner.MissingPackage("localdep"),
+    ]
+  let assert Ok(syntax_only) = runner.run(project, [fixture_rules.no_echo()])
+  assert syntax_only.diagnostics == []
+  assert syntax_only.coverage.gaps == []
+}
+
+pub fn a_syntax_only_run_never_infers_and_reports_only_parse_errors_test() {
+  let files = [
+    #("src/broken.gleam", "pub fn ("),
+    // girard couldn't type `skipped`, but no rule asked for types.
+    #("src/fine.gleam", "pub fn skipped() {\n  1 + \"one\"\n}\n"),
+  ]
+  let assert Ok(linted) =
+    runner.run_with(
+      support.project("", files, []),
+      [fixture_rules.no_echo(), fixture_rules.duplicate_public_function()],
+      infer: never_infer,
+    )
+  assert describe(linted.diagnostics)
+    == ["grice/parse-error src/broken.gleam: glance didn't expect this"]
+  assert linted.coverage
+    == runner.Coverage(modules: 2, parsed: 1, types: runner.NotRequested, gaps: [
+      runner.UnparsedModule("src/broken.gleam"),
+    ])
 }
 
 // Parallel work
@@ -762,7 +1067,7 @@ pub fn diagnostics_come_out_sorted_test() {
 
 pub fn resolved_diagnostics_render_like_the_compiler_test() {
   let project = support.project("", [#("src/app.gleam", echoes)], [])
-  let assert Ok([diagnostic, _]) =
+  let assert Ok(runner.Linted(diagnostics: [diagnostic, _], ..)) =
     runner.run(project, [fixture_rules.no_echo()])
   let sources =
     project.modules
@@ -1209,10 +1514,18 @@ fn answers(
     })
   let project =
     support.project("", [#("src/app.gleam", source)], [#("dep/box", box)])
-  let assert Ok(diagnostics) = runner.run(project, [asking])
+  let assert Ok(runner.Linted(diagnostics:, ..)) = runner.run(project, [asking])
   let assert Ok(Diagnostic(message:, ..)) =
     list.find(diagnostics, fn(found) { found.code == "fixture/answers" })
   message
+}
+
+// The run of a typed rule that reports nothing on the modules it's used on
+// here.
+fn run_typed(project: Project) -> runner.Linted {
+  let assert Ok(linted) =
+    runner.run(project, [fixture_rules.discarded_result()])
+  linted
 }
 
 // An inference function that fails the test when it's called.
@@ -1295,14 +1608,12 @@ fn run_files_with(
   files: List(#(String, String)),
   rules: List(Rule),
 ) -> List(Diagnostic) {
-  let assert Ok(diagnostics) =
+  let assert Ok(runner.Linted(diagnostics:, ..)) =
     runner.run(support.project(toml, files, []), rules)
   diagnostics
 }
 
-fn check_rules(
-  rules: List(Rule),
-) -> Result(List(Diagnostic), List(Diagnostic)) {
+fn check_rules(rules: List(Rule)) -> Result(runner.Linted, List(Diagnostic)) {
   runner.run(support.project("", [#("src/app.gleam", "")], []), rules)
 }
 

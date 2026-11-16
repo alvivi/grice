@@ -10,12 +10,17 @@
 //// checked against the source of the module it's about before it becomes
 //// a diagnostic, so a rule with a bad span is reported on its own and
 //// every other finding still comes through.
+////
+//// A run also says how much of the lint set it covered, and every gap in
+//// that coverage is a diagnostic.
 
+import girard
+import glance
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/order.{type Order}
 import gleam/result
 import gleam/set.{type Set}
@@ -30,15 +35,24 @@ import grice/internal/parallel
 import grice/internal/typing.{type ModuleTypes}
 import grice/rule.{type Report, type Rule, ModuleCheck, ProjectCheck}
 
+/// What a run found, and how much of the lint set it covered.
+pub type Linted {
+  Linted(
+    /// Every diagnostic of the run, the project's parse errors and the
+    /// coverage notes included: first those with no location, in the order
+    /// they were made, then the rest by path, start, end and code.
+    diagnostics: List(Diagnostic),
+    coverage: Coverage,
+  )
+}
+
 /// Run `rules` over the project. `Error` holds every problem with the rule
 /// set and with the rule codes under `[tools.grice.ignore]`, and means no
-/// rule ran. `Ok` holds every diagnostic of the run, the project's parse
-/// errors included: first those with no location, in the order they were
-/// made, then the rest by path, start, end and code.
+/// rule ran.
 pub fn run(
   project: Project,
   rules: List(Rule),
-) -> Result(List(Diagnostic), List(Diagnostic)) {
+) -> Result(Linted, List(Diagnostic)) {
   run_with(project, rules, infer: fn(project) {
     typing.infer(project, typing.resolver(project))
   })
@@ -52,7 +66,7 @@ pub fn run_with(
   project: Project,
   rules: List(Rule),
   infer infer: fn(Project) -> Dict(String, ModuleTypes),
-) -> Result(List(Diagnostic), List(Diagnostic)) {
+) -> Result(Linted, List(Diagnostic)) {
   case list.append(check_rules(rules), check_ignores(project.config, rules)) {
     [] -> Ok(lint(project, rules, infer))
     problems -> Error(problems)
@@ -71,7 +85,7 @@ fn lint(
   project: Project,
   rules: List(Rule),
   infer: fn(Project) -> Dict(String, ModuleTypes),
-) -> List(Diagnostic) {
+) -> Linted {
   let types = case list.any(rules, rule.is_typed) {
     True -> Some(infer(project))
     False -> None
@@ -123,9 +137,20 @@ fn lint(
       Error(Nil) -> not_linted(lint_rule, name)
     }
   }
-  [project.diagnostics, from_module_rules, from_project_rules]
-  |> list.flatten
-  |> list.sort(compare)
+  let #(covered, type_gaps) = type_coverage(project, linted, types)
+  let #(type_gaps, notes) = list.unzip(type_gaps)
+  let diagnostics =
+    [project.diagnostics, notes, from_module_rules, from_project_rules]
+    |> list.flatten
+    |> list.sort(compare)
+  let coverage =
+    Coverage(
+      modules: list.length(project.lint_set),
+      parsed: list.length(linted),
+      types: covered,
+      gaps: list.append(unparsed_modules(project), type_gaps),
+    )
+  Linted(diagnostics:, coverage:)
 }
 
 fn compare(left: Diagnostic, right: Diagnostic) -> Order {
@@ -145,6 +170,325 @@ fn compare(left: Diagnostic, right: Diagnostic) -> Order {
       ))
       |> order.break_tie(string.compare(left.code, right.code))
   }
+}
+
+// Coverage
+//
+// What the run couldn't analyse. A lint-set module that doesn't parse is a
+// gap in every run, reported by the loader's `grice/parse-error`. Gaps in
+// the types are reported only when a rule asked for types, and only for
+// the lint set: an excluded module's own gaps reach the modules that
+// import it as a use girard couldn't type or a module it couldn't use.
+// Each is a note, since it's a limit of grice's analysis rather than a
+// problem in the code.
+
+/// How much of the lint set a run analysed.
+pub type Coverage {
+  Coverage(
+    /// The number of modules in the lint set.
+    modules: Int,
+    /// The number of lint-set modules that parse.
+    parsed: Int,
+    /// How much of the parsed lint-set modules girard typed.
+    types: TypeCoverage,
+    /// Everything the run couldn't analyse, each matching one diagnostic:
+    /// first the modules that don't parse, then the gaps of each module in
+    /// lint-set order, then the missing packages.
+    gaps: List(Gap),
+  )
+}
+
+/// How much of the parsed lint-set modules girard typed.
+pub type TypeCoverage {
+  /// No rule of the run is typed, so girard didn't run.
+  NotRequested
+  /// How many modules girard typed completely, how many it typed with
+  /// gaps, and how many it returned nothing for. Together they are the
+  /// parsed lint-set modules.
+  Requested(full: Int, partial: Int, none: Int)
+}
+
+/// Something the run couldn't analyse, and the diagnostic that reports it.
+pub type Gap {
+  /// A lint-set module that doesn't parse: a `grice/parse-error`.
+  UnparsedModule(path: String)
+  /// A definition girard couldn't type: a `grice/untyped-definition`.
+  UntypedDefinition(path: String, definition: String)
+  /// A lint-set module girard returned nothing for: a
+  /// `grice/uninferred-module`.
+  UninferredModule(path: String)
+  /// A module girard couldn't use, which the lint-set module at `path`
+  /// imports directly or reaches through other modules: a
+  /// `grice/unavailable-import`.
+  UnavailableImport(path: String, module: String, cause: Cause)
+  /// A manifest package whose sources are missing: a
+  /// `grice/missing-package`.
+  MissingPackage(package: String)
+}
+
+/// Why girard couldn't use a module.
+pub type Cause {
+  /// It's a project module glance can't parse.
+  ProjectModuleUnparsable
+  /// It's a project module that parses, which girard couldn't use.
+  ProjectModuleUnusable
+  /// It's a dependency module glance can't parse.
+  DependencyUnparsable
+  /// No project or dependency module has its name.
+  NoSuchModule
+}
+
+fn unparsed_modules(project: Project) -> List(Gap) {
+  use name <- list.filter_map(project.lint_set)
+  case dict.get(project.modules, name) {
+    Ok(loader.Module(path:, parsed: Error(_), ..)) -> Ok(UnparsedModule(path))
+    Ok(loader.Module(parsed: Ok(_), ..)) | Error(Nil) -> Error(Nil)
+  }
+}
+
+// How much of the lint set girard typed, and the gaps in its types, each
+// with its note: each module's in lint-set order, then each missing
+// package's.
+fn type_coverage(
+  project: Project,
+  linted: List(ModuleFacts(Syntax)),
+  types: Option(Dict(String, ModuleTypes)),
+) -> #(TypeCoverage, List(#(Gap, Diagnostic))) {
+  case types {
+    None -> #(NotRequested, [])
+    Some(types) -> {
+      let complete =
+        list.map(linted, fn(module_facts) {
+          dict.get(types, facts.module_name(module_facts))
+          |> result.map(fn(module_types) { module_types.complete })
+        })
+      let coverage =
+        Requested(
+          full: list.count(complete, fn(state) { state == Ok(True) }),
+          partial: list.count(complete, fn(state) { state == Ok(False) }),
+          none: list.count(complete, fn(state) { state == Error(Nil) }),
+        )
+      let gaps =
+        list.flat_map(linted, module_gaps(project, _, types))
+        |> list.append(list.map(project.missing_dependencies, missing_package))
+      #(coverage, gaps)
+    }
+  }
+}
+
+fn module_gaps(
+  project: Project,
+  module_facts: ModuleFacts(Syntax),
+  types: Dict(String, ModuleTypes),
+) -> List(#(Gap, Diagnostic)) {
+  case dict.get(types, facts.module_name(module_facts)) {
+    Error(Nil) -> [uninferred_module(module_facts)]
+    Ok(module_types) ->
+      list.append(
+        list.map(module_types.skipped, untyped_definition(module_facts, _)),
+        list.map(module_types.unavailable, unavailable_import(
+          project,
+          module_facts,
+          _,
+        )),
+      )
+  }
+}
+
+const girard_hint =
+  "If `gleam build` accepts this code, it's a gap in girard, the type inference grice uses, so please report it at https://github.com/alvivi/girard/issues."
+
+fn untyped_definition(
+  module_facts: ModuleFacts(Syntax),
+  skipped: typing.Skipped,
+) -> #(Gap, Diagnostic) {
+  let path = facts.path(module_facts)
+  note(
+    UntypedDefinition(path:, definition: skipped.name),
+    code: "grice/untyped-definition",
+    title: "Can't infer the types of this definition",
+    at: Some(#(path, skipped.span, "girard couldn't type this definition")),
+    message: "girard couldn't type `"
+      <> skipped.name
+      <> "`: "
+      <> girard.describe_error(skipped.error)
+      <> ". Typed rules get no answers about the code inside it, so they may miss problems there.",
+    hint: girard_hint,
+  )
+}
+
+fn uninferred_module(module_facts: ModuleFacts(Syntax)) -> #(Gap, Diagnostic) {
+  let path = facts.path(module_facts)
+  note(
+    UninferredModule(path),
+    code: "grice/uninferred-module",
+    title: "Can't infer the types of a module",
+    at: None,
+    message: "girard, the type inference grice uses, returned no types for the module `"
+      <> facts.module_name(module_facts)
+      <> "`, at `"
+      <> path
+      <> "`. Rules still ran on it, but typed rules got no answers about it, so they may have missed problems there.",
+    hint: girard_hint,
+  )
+}
+
+// The label sits on the import of the module girard couldn't use when
+// there is one. A module reached through other modules has nothing to
+// point at, since grice doesn't keep the imports of dependency modules.
+fn unavailable_import(
+  project: Project,
+  module_facts: ModuleFacts(Syntax),
+  unavailable: girard.UnavailableModule,
+) -> #(Gap, Diagnostic) {
+  let path = facts.path(module_facts)
+  let module = unavailable.module
+  let #(cause, why, hint) = find_cause(project, unavailable)
+  let #(at, subject) = case
+    list.find(facts.module(module_facts).imports, fn(definition) {
+      definition.definition.module == module
+    })
+  {
+    Ok(definition) -> #(
+      Some(#(path, definition.definition.location, "girard couldn't use this")),
+      "girard, the type inference grice uses, couldn't use the module `"
+        <> module
+        <> "`, which this module imports.",
+    )
+    Error(Nil) -> #(
+      None,
+      "The module `"
+        <> facts.module_name(module_facts)
+        <> "`, at `"
+        <> path
+        <> "`, reaches the module `"
+        <> module
+        <> "` through the modules it imports, and girard, the type inference grice uses, couldn't use it.",
+    )
+  }
+  note(
+    UnavailableImport(path:, module:, cause:),
+    code: "grice/unavailable-import",
+    title: "Can't use the types of an imported module",
+    at:,
+    message: subject
+      <> " "
+      <> why
+      <> " Types that depend on it may be incomplete, so typed rules get no answers in this module.",
+    hint:,
+  )
+}
+
+// Why girard couldn't use a module, with a sentence that says so and a
+// hint. The resolver never answers for a project module and answers for
+// every dependency module, so a module whose source girard couldn't parse
+// is a dependency's, and the project says why girard found no other.
+fn find_cause(
+  project: Project,
+  unavailable: girard.UnavailableModule,
+) -> #(Cause, String, String) {
+  case unavailable.reason, dict.get(project.modules, unavailable.module) {
+    girard.Unparsable(error), _ -> {
+      // The resolver gave girard this source, so it's there.
+      let source =
+        dict.get(project.dependencies, unavailable.module)
+        |> result.unwrap("")
+      #(
+        DependencyUnparsable,
+        "It's a dependency module, which glance can't parse: it stopped at "
+          <> stop(line_index.new(source), error)
+          <> " of its source.",
+        "If the package builds, glance doesn't support its syntax yet, so please report it to glance.",
+      )
+    }
+    girard.NotFound, Ok(loader.Module(path:, source:, parsed: Error(error), ..))
+    -> #(
+      ProjectModuleUnparsable,
+      "It's the project module at `"
+        <> path
+        <> "`, which glance can't parse: it stopped at "
+        <> stop(source, error)
+        <> ".",
+      "If `gleam build` accepts `"
+        <> path
+        <> "`, glance doesn't support its syntax yet, so please report it to glance.",
+    )
+    girard.NotFound, Ok(loader.Module(path:, parsed: Ok(_), ..)) -> #(
+      ProjectModuleUnusable,
+      "It's the project module at `"
+        <> path
+        <> "`, which parses, but girard couldn't use it.",
+      girard_hint,
+    )
+    girard.NotFound, Error(Nil) -> #(
+      NoSuchModule,
+      "No module of the project or of its dependencies has that name.",
+      "Check the import. If the module belongs to a dependency, `gleam deps download` fetches its sources.",
+    )
+  }
+}
+
+// Where glance stopped parsing a source, as `line L, column C`: where the
+// loader's parse error points.
+fn stop(source: LineIndex, error: glance.Error) -> String {
+  let line_index.Position(line:, column:) =
+    line_index.position(source, loader.error_label(source, error).span.start)
+  "line " <> int.to_string(line) <> ", column " <> int.to_string(column)
+}
+
+fn missing_package(package: loader.Package) -> #(Gap, Diagnostic) {
+  note(
+    MissingPackage(package.name),
+    code: "grice/missing-package",
+    title: "A dependency's sources are missing",
+    at: None,
+    message: "The package `"
+      <> package.name
+      <> "` is in `manifest.toml`, but `"
+      <> package.directory
+      <> "/src` isn't a directory, so girard, the type inference grice uses, can't read its modules. Types that come from them may be incomplete.",
+    hint: case package.source {
+      loader.Hex | loader.Git -> "Run `gleam deps download`."
+      loader.Local ->
+        "Restore the directory, or fix the path dependency that points to it."
+    },
+  )
+}
+
+// The note that reports `gap`, at a span of the module at a path with a
+// label, or with no location.
+fn note(
+  gap: Gap,
+  code code: String,
+  title title: String,
+  at at: Option(#(String, glance.Span, String)),
+  message message: String,
+  hint hint: String,
+) -> #(Gap, Diagnostic) {
+  let location =
+    option.map(at, fn(at) {
+      let #(path, span, label) = at
+      diagnostic.Location(
+        path:,
+        primary: diagnostic.Label(
+          span: diagnostic.Span(start: span.start, end: span.end),
+          message: label,
+        ),
+        secondary: [],
+        fix: None,
+      )
+    })
+  #(
+    gap,
+    Diagnostic(
+      code:,
+      severity: diagnostic.Note,
+      title:,
+      location:,
+      message: [message],
+      hint: Some(hint),
+    ),
+  )
 }
 
 // Resolving reports

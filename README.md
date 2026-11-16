@@ -9,7 +9,8 @@ A type-aware linter for Gleam, with clear, compiler-style diagnostics.
 > renderer that prints diagnostics in the compiler's style, the loader that
 > reads a project's configuration, modules and dependencies, and the API for
 > writing rules, with a runner that runs them over a loaded project. Rules
-> can't be run from the command line yet.
+> can ask girard for types, and the runner reports what those types don't
+> cover. Rules can't be run from the command line yet.
 
 ## Why?
 
