@@ -54,8 +54,8 @@ notice.
 | `src/grice/visit.gleam` | **Exists:** the glance syntax tree walk, in source order, with a hook per kind of node |
 | `src/grice/diagnostic.gleam` | **Exists:** the diagnostic model (`Diagnostic`, `Severity`, `Location`, `Label`, `Span`, `Fix`, `Edit`). Planned: report, label and fix builders |
 | `src/grice/testing.gleam` | Testing kit for rule authors |
-| `src/grice/internal/glob.gleam` | **Exists:** the glob syntax of `include`, `exclude` and `ignore`, and path matching |
-| `src/grice/internal/config.gleam` | **Exists:** `[tools.grice]` and `target` parsing and validation |
+| `src/grice/internal/glob.gleam` | **Exists:** the glob syntax of `include`, `exclude` and the `paths` of ignores, and path matching; the name patterns of their `definitions` |
+| `src/grice/internal/config.gleam` | **Exists:** `[tools.grice]` and `target` parsing and validation, with the `[[tools.grice.ignore]]` entries and the `suppression_comments` switch |
 | `src/grice/internal/loader.gleam` | **Exists:** discovery, the load set, reading, parsing and dependency sources |
 | `src/grice/internal/line_index.gleam` | **Exists:** byte offset to line and column, line ranges, span checks |
 | `src/grice/internal/typing.gleam` | **Exists:** girard integration: the order modules are typed in, the in-memory resolver and each module's type index |

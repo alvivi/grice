@@ -1,5 +1,5 @@
 //// Tests for globs: a table of patterns against paths, then each malformed
-//// form and the reason it's rejected for.
+//// form and the reason it's rejected for. Then the same for name patterns.
 
 import gleam/list
 import gleam/string
@@ -95,5 +95,53 @@ pub fn parse_rejects_malformed_patterns_test() {
     #("src\\app", Unsupported("\\")),
   ]
   assert list.map(table, fn(row) { glob.parse(row.0) })
+    == list.map(table, fn(row) { Error(row.1) })
+}
+
+// Name patterns
+
+pub fn matches_name_table_test() {
+  let table = [
+    // A pattern matches the whole name.
+    #("main", "main", True),
+    #("main", "main_test", False),
+    #("main", "domain", False),
+    // `*` matches any run of characters, none included.
+    #("render_*", "render_page", True),
+    #("render_*", "render_", True),
+    #("render_*", "page_render_x", False),
+    #("*_test", "main_test", True),
+    #("*", "Anything_1", True),
+    // `**` means the same as `*`.
+    #("**", "anything", True),
+    #("a**b", "axyzb", True),
+    #("a**b", "ab", True),
+    // `?` matches exactly one character.
+    #("?", "a", True),
+    #("?", "ab", False),
+    #("Wib?le", "Wibble", True),
+    #("Wib?le", "Wible", False),
+  ]
+  let mismatches =
+    list.filter(table, fn(row) {
+      let #(pattern, name, expected) = row
+      let assert Ok(parsed) = glob.parse_name(pattern)
+      glob.matches_name(parsed, name) != expected
+    })
+  assert mismatches == []
+}
+
+pub fn parse_name_rejects_malformed_patterns_test() {
+  let table = [
+    #("", Empty),
+    #("render_[ab]", Unsupported("[")),
+    #("{a,b}", Unsupported("{")),
+    #("app/render", Unsupported("/")),
+    #("render-x", Unsupported("-")),
+    #("render x", Unsupported(" ")),
+    #("a.b", Unsupported(".")),
+    #("café", Unsupported("é")),
+  ]
+  assert list.map(table, fn(row) { glob.parse_name(row.0) })
     == list.map(table, fn(row) { Error(row.1) })
 }

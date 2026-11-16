@@ -1,5 +1,6 @@
-//// Globs over project paths, for the `include`, `exclude` and `ignore` keys
-//// of `[tools.grice]`.
+//// Globs over project paths, for the `include` and `exclude` keys of
+//// `[tools.grice]` and the `paths` of its ignores, and name patterns over
+//// definition names, for the `definitions` of its ignores.
 ////
 //// A pattern is relative to the project root and uses `/` separators. `*`
 //// matches any run of characters within one path segment, `?` matches one
@@ -9,6 +10,10 @@
 //// A pattern matches a path or any of the directories above it, so
 //// `src/gen`, `src/gen/` and `src/gen/**` all select everything under
 //// `src/gen`.
+////
+//// A name pattern matches a whole name. It holds letters, digits and `_`,
+//// with `*` for any run of characters (`**` means the same) and `?` for one
+//// character.
 ////
 //// Syntax from richer glob dialects is rejected, not read literally, so a
 //// pattern copied from elsewhere fails loudly instead of quietly matching
@@ -20,6 +25,10 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 
+// Paths
+//
+// Globs over root-relative paths, matched segment by segment.
+
 /// A parsed pattern. Build one with `parse`.
 pub opaque type Glob {
   // `segments` are the pattern's `/`-separated segments, as `parse` checked
@@ -28,7 +37,7 @@ pub opaque type Glob {
   Glob(pattern: String, segments: List(String))
 }
 
-/// Why a pattern isn't a valid glob.
+/// Why a pattern isn't a valid glob or name pattern.
 pub type GlobError {
   /// The pattern is empty.
   Empty
@@ -41,7 +50,8 @@ pub type GlobError {
   /// `**` shares a segment with other characters, as in `a**` or `**.gleam`.
   MixedDoubleStar
   /// The pattern holds a character from a richer glob syntax: `[`, `]`, `{`,
-  /// `}` or `\`.
+  /// `}` or `\`. In a name pattern, any character other than a letter, a
+  /// digit, `_`, `*` or `?`.
   Unsupported(character: String)
 }
 
@@ -94,6 +104,48 @@ fn check_segment(segment: String) -> Result(Nil, GlobError) {
     _ -> Ok(Nil)
   }
 }
+
+// Names
+//
+// Name patterns over the names of top-level definitions. A name has no
+// segments, so a pattern is matched as one segment of a path is.
+
+/// A parsed name pattern. Build one with `parse_name`.
+pub opaque type Name {
+  Name(pattern: String)
+}
+
+/// Parse a name pattern: an empty pattern is `Empty`, and the first
+/// character that isn't a letter, a digit, `_`, `*` or `?` is
+/// `Unsupported`.
+pub fn parse_name(pattern: String) -> Result(Name, GlobError) {
+  use <- bool.guard(when: pattern == "", return: Error(Empty))
+  let unsupported =
+    list.find(string.to_graphemes(pattern), fn(character) {
+      !string.contains(name_characters, character)
+    })
+  case unsupported {
+    Ok(character) -> Error(Unsupported(character:))
+    Error(Nil) -> Ok(Name(pattern:))
+  }
+}
+
+/// Whether the name pattern matches the whole of `name`.
+pub fn matches_name(pattern: Name, name: String) -> Bool {
+  segment_matches(pattern.pattern, name)
+}
+
+/// The name pattern as it was written.
+pub fn name_to_string(pattern: Name) -> String {
+  pattern.pattern
+}
+
+const name_characters =
+  "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_*?"
+
+// Matching
+//
+// The wildcard match that paths, their segments and names share.
 
 // The classic wildcard match: `pattern` matches `items` one for one through
 // `matches`, except that `star` matches any run of items. Only the most

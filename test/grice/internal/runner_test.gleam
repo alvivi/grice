@@ -1323,7 +1323,7 @@ pub fn rule_set_problems_are_reported_together_and_nothing_runs_test() {
 
 pub fn an_ignored_code_must_name_a_rule_of_the_run_test() {
   let toml =
-    "[tools.grice.ignore]\n\"test/**\" = [\"fixture/no-echo\", \"fixture/no-ecko\"]\n"
+    "[[tools.grice.ignore]]\npaths = [\"test/**\"]\nrules = [\"fixture/no-echo\", \"fixture/no-ecko\"]\nreason = \"r\"\n"
   let assert Error([diagnostic]) =
     runner.run(support.project(toml, [#("src/app.gleam", "")], []), [
       fixture_rules.no_echo(),
@@ -1331,13 +1331,14 @@ pub fn an_ignored_code_must_name_a_rule_of_the_run_test() {
   assert diagnostic
     == config.diagnostic(
       title: "Unknown rule in `gleam.toml`",
-      message: "`tools.grice.ignore.\"test/**\"` in `gleam.toml` names the rule `fixture/no-ecko`, but no rule of this run has that code. An ignore that names no rule silences nothing, so it's most likely a typo or a rule that was removed.",
+      message: "`rules` in entry 1 of `tools.grice.ignore` in `gleam.toml` names the rule `fixture/no-ecko`, but no rule of this run has that code. An ignore that names no rule silences nothing, so it's most likely a typo or a rule that was removed.",
       hint: Some("Fix the code, or remove it from the list."),
     )
 }
 
 pub fn grice_codes_cant_be_ignored_test() {
-  let toml = "[tools.grice.ignore]\n\"src/**\" = [\"grice/parse-error\"]\n"
+  let toml =
+    "[[tools.grice.ignore]]\npaths = [\"src/**\"]\nrules = [\"grice/parse-error\"]\nreason = \"r\"\n"
   let assert Error([diagnostic]) =
     runner.run(support.project(toml, [#("src/app.gleam", "")], []), [
       fixture_rules.no_echo(),
@@ -1345,7 +1346,7 @@ pub fn grice_codes_cant_be_ignored_test() {
   assert diagnostic
     == config.diagnostic(
       title: "grice's own diagnostics can't be ignored",
-      message: "`tools.grice.ignore.\"src/**\"` in `gleam.toml` names `grice/parse-error`, one of grice's own diagnostics rather than a rule. Those report on the run itself, such as code grice couldn't read or configuration it couldn't use, so they can't be ignored.",
+      message: "`rules` in entry 1 of `tools.grice.ignore` in `gleam.toml` names `grice/parse-error`, one of grice's own diagnostics rather than a rule. Those report on the run itself, such as code grice couldn't read or configuration it couldn't use, so they can't be ignored.",
       hint: Some(
         "Remove the code from the list, and fix what it reports instead.",
       ),
@@ -1354,7 +1355,16 @@ pub fn grice_codes_cant_be_ignored_test() {
 
 pub fn rule_set_and_ignore_problems_are_reported_together_test() {
   let toml =
-    "[tools.grice.ignore]\n\"src/**\" = [\"grice/invalid-rule\", \"fixture/missing\"]\n\"dev/**\" = [\"fixture/no-echo\"]\n"
+    "[[tools.grice.ignore]]
+paths = [\"src/**\"]
+rules = [\"grice/invalid-rule\", \"fixture/missing\"]
+reason = \"r\"
+
+[[tools.grice.ignore]]
+paths = [\"dev/**\"]
+rules = [\"fixture/no-echo\"]
+reason = \"r\"
+"
   let assert Error(problems) =
     runner.run(support.project(toml, [#("src/app.gleam", "")], []), [
       fixture_rules.no_echo(),
