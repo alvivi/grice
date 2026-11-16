@@ -1,10 +1,62 @@
-//// Fixture trees for the tests that read from disk. Each test writes the
-//// project it needs under `build/fixtures/<test>/`, which git ignores and
-//// the compiler doesn't read, and deletes it afterwards.
+//// Fixture projects for the tests. Most are built in memory with
+//// `project`. The tests that read from disk write the tree they need under
+//// `build/fixtures/<test>/`, which git ignores and the compiler doesn't
+//// read, and delete it afterwards.
 
+import glance
+import gleam/dict
 import gleam/list
+import gleam/result
 import gleam/string
+import grice/internal/config
+import grice/internal/loader.{type Project}
 import simplifile
+
+/// The project with the `gleam.toml` text `toml`, the files of `files`,
+/// `#(path, source)` with root-relative paths, and the dependency modules
+/// of `dependencies`, `#(module name, source)`, loaded with `loader.load`.
+pub fn project(
+  toml: String,
+  files: List(#(String, String)),
+  dependencies: List(#(String, String)),
+) -> Project {
+  let assert Ok(parsed) = config.parse(toml)
+  let sources = dict.from_list(files)
+  let assert Ok(project) =
+    loader.load(
+      root: "app",
+      config: parsed,
+      paths: list.map(files, fn(file) { file.0 }),
+      read: fn(path) {
+        dict.get(sources, path) |> result.replace_error("No such file")
+      },
+      dependencies: dict.from_list(dependencies),
+      missing_dependencies: [],
+    )
+  project
+}
+
+/// A package where `a` imports `b` on Erlang and `b` imports `a` on
+/// JavaScript, which the compiler accepts on both targets. On each target,
+/// `from_other` calls into the other module, and is left out of the
+/// module the other target compiles it for.
+pub const crossed = [
+  #(
+    "src/a.gleam",
+    "@target(erlang)\nimport b\npub type A {\n  A\n}\n@target(erlang)\npub fn from_other() { b.make() }\npub fn make() { A }\n",
+  ),
+  #(
+    "src/b.gleam",
+    "@target(javascript)\nimport a\npub type B {\n  B\n}\n@target(javascript)\npub fn from_other() { a.make() }\npub fn make() { B }\n",
+  ),
+]
+
+/// The span of the first `needle` in `source`.
+pub fn glance_span(source: String, needle: String) -> glance.Span {
+  let assert Ok(#(before, _)) = string.split_once(source, needle)
+  let start = string.byte_size(before)
+  glance.Span(start, start + string.byte_size(needle))
+}
 
 /// The directory a test named `name` writes its fixture in.
 pub fn fixture_directory(name: String) -> String {

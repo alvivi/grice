@@ -4,7 +4,7 @@ description = "A type-aware linter for Gleam, with clear, compiler-style diagnos
 licences = ["Apache-2.0"]
 repository = { type = "github", user = "alvivi", repo = "grice" }
 # The oldest compiler grice is checked on: CI's floor job builds and tests with
-# it. grice will depend on girard, so this can't drop below girard's floor.
+# it. grice depends on girard, so this can't drop below girard's floor.
 gleam = ">= 1.15.4"
 
 [documentation]
@@ -17,6 +17,9 @@ gleam_stdlib = ">= 0.44.0 and < 2.0.0"
 # The Gleam parser. Each loaded module is parsed once, and its syntax tree
 # is what rules see.
 glance = ">= 7.0.0 and < 8.0.0"
+# Type inference for typed rules. It types the load set once per run, over
+# the same glance syntax trees the rules see, so their spans agree.
+girard = ">= 4.0.1 and < 5.0.0"
 # glance's lexer, used directly for the text of the token a parse error
 # points at. It must be a direct dependency to be imported.
 glexer = ">= 2.5.0 and < 3.0.0"
