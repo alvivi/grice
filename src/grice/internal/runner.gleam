@@ -28,7 +28,6 @@ import gleam/string
 import grice/diagnostic.{type Diagnostic, type Label, Diagnostic}
 import grice/facts.{type ModuleFacts, type Syntax}
 import grice/internal/config.{type Config}
-import grice/internal/glob
 import grice/internal/line_index.{type LineIndex, type SpanProblem}
 import grice/internal/loader.{type Project}
 import grice/internal/parallel
@@ -47,8 +46,8 @@ pub type Linted {
 }
 
 /// Run `rules` over the project. `Error` holds every problem with the rule
-/// set and with the rule codes under `[tools.grice.ignore]`, and means no
-/// rule ran.
+/// set and with the rule codes the ignores in `gleam.toml` name, and means
+/// no rule ran.
 pub fn run(
   project: Project,
   rules: List(Rule),
@@ -731,48 +730,50 @@ fn invalid_rule(
 
 // Ignored codes
 //
-// Each rule code under `[tools.grice.ignore]` must name a rule of the run.
-// A `grice/` code names one of grice's own diagnostics, which report on
-// the run itself and can't be ignored, so it gets a message of its own.
+// Each rule code under the `rules` of a `[[tools.grice.ignore]]` entry
+// must name a rule of the run. A `grice/` code names one of grice's own
+// diagnostics, which report on the run itself and can't be ignored, so it
+// gets a message of its own.
 
 fn check_ignores(config: Config, rules: List(Rule)) -> List(Diagnostic) {
   let codes = set.from_list(list.map(rules, rule.code))
-  use #(pattern, ignored) <- list.flat_map(config.ignore)
-  let key = config.ignore_key(glob.to_string(pattern))
-  list.filter_map(ignored, check_ignore(key, _, codes))
+  config.ignore
+  |> list.index_map(fn(ignore, index) {
+    let subject = config.ignore_key(index, "rules")
+    list.filter_map(ignore.rules, check_ignore(subject, _, codes))
+  })
+  |> list.flatten
 }
 
 fn check_ignore(
-  key: String,
+  subject: String,
   code: String,
   codes: Set(String),
 ) -> Result(Diagnostic, Nil) {
   use <- bool.lazy_guard(
     when: string.starts_with(code, reserved_prefix),
-    return: fn() { Ok(ignored_grice_code(key, code)) },
+    return: fn() { Ok(ignored_grice_code(subject, code)) },
   )
   use <- bool.guard(when: set.contains(codes, code), return: Error(Nil))
-  Ok(unknown_ignored_code(key, code))
+  Ok(unknown_ignored_code(subject, code))
 }
 
-fn unknown_ignored_code(key: String, code: String) -> Diagnostic {
+fn unknown_ignored_code(subject: String, code: String) -> Diagnostic {
   config.diagnostic(
     title: "Unknown rule in `gleam.toml`",
-    message: "`"
-      <> key
-      <> "` in `gleam.toml` names the rule `"
+    message: subject
+      <> " in `gleam.toml` names the rule `"
       <> code
       <> "`, but no rule of this run has that code. An ignore that names no rule silences nothing, so it's most likely a typo or a rule that was removed.",
     hint: Some("Fix the code, or remove it from the list."),
   )
 }
 
-fn ignored_grice_code(key: String, code: String) -> Diagnostic {
+fn ignored_grice_code(subject: String, code: String) -> Diagnostic {
   config.diagnostic(
     title: "grice's own diagnostics can't be ignored",
-    message: "`"
-      <> key
-      <> "` in `gleam.toml` names `"
+    message: subject
+      <> " in `gleam.toml` names `"
       <> code
       <> "`, one of grice's own diagnostics rather than a rule. Those report on the run itself, such as code grice couldn't read or configuration it couldn't use, so they can't be ignored.",
     hint: Some(
