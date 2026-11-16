@@ -10,7 +10,9 @@ A type-aware linter for Gleam, with clear, compiler-style diagnostics.
 > reads a project's configuration, modules and dependencies, and the API for
 > writing rules, with a runner that runs them over a loaded project. Rules
 > can ask girard for types, and the runner reports what those types don't
-> cover. Rules can't be run from the command line yet.
+> cover. Diagnostics can be hidden by ignores in `gleam.toml` and by
+> `grice-ignore` comments, and a suppression that hides nothing is reported.
+> Rules can't be run from the command line yet.
 
 ## Why?
 

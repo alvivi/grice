@@ -4,8 +4,9 @@
 //// rules run on. Then typed rules: the types they see, why a query has no
 //// answer, when girard runs, and a typed run from a project on disk. Then
 //// how reports become diagnostics: resolution, severity and invalid
-//// reports. Last, the checks of the rule set and of the codes `gleam.toml`
-//// ignores. Edge cases use small rules built in the test.
+//// reports. Then the checks of the rule set and of the codes `gleam.toml`
+//// ignores, and last what ignores and suppressions hide. Edge cases use
+//// small rules built in the test.
 
 import girard
 import glance
@@ -21,6 +22,7 @@ import grice/diagnostic.{type Diagnostic, Diagnostic, Label, Location, Span}
 import grice/facts.{type ModuleFacts, type Syntax, type Typed}
 import grice/fixture_rules
 import grice/internal/config
+import grice/internal/line_index
 import grice/internal/loader.{type Project}
 import grice/internal/render/human
 import grice/internal/runner
@@ -1506,6 +1508,173 @@ reason = \"r\"
       "Invalid rule code",
       "grice's own diagnostics can't be ignored",
       "Unknown rule in `gleam.toml`",
+    ]
+}
+
+// Ignores and suppressions
+
+pub fn suppressions_hide_module_and_project_rule_diagnostics_test() {
+  let files = [
+    #(
+      "src/one.gleam",
+      "pub fn main() {
+  // grice-ignore fixture/no-echo: Printing is the point.
+  echo 1
+  echo 2
+}
+
+// grice-ignore fixture/duplicate-public-function: Both are entry points.
+pub fn shared() { 1 }
+",
+    ),
+    #("src/two.gleam", "pub fn shared() { 2 }\n"),
+  ]
+  let rules = [
+    fixture_rules.no_echo(),
+    fixture_rules.duplicate_public_function(),
+  ]
+  assert describe(run_files(files, rules))
+    == [
+      "fixture/no-echo src/one.gleam: This prints when it runs",
+      "fixture/duplicate-public-function src/two.gleam: `one` also defines `shared`",
+    ]
+}
+
+// A rule's severity doesn't change what can hide its diagnostics: a
+// suppression in `src/app.gleam` and an ignore of `src/ignored.gleam`
+// leave nothing, not even an unused suppression, at every severity.
+pub fn suppressions_and_ignores_hide_rules_of_every_severity_test() {
+  let toml =
+    "[[tools.grice.ignore]]
+paths = [\"src/ignored.gleam\"]
+rules = [\"fixture/no-echo\"]
+reason = \"why\"
+"
+  let files = [
+    #(
+      "src/app.gleam",
+      "pub fn main() {\n  // grice-ignore fixture/no-echo: why\n  echo 1\n}\n",
+    ),
+    #("src/ignored.gleam", "pub fn main() { echo 2 }\n"),
+  ]
+  let left =
+    list.filter(
+      [diagnostic.Error, diagnostic.Warning, diagnostic.Note],
+      fn(severity) {
+        let rules = [fixture_rules.no_echo() |> rule.with_severity(severity)]
+        run_files_with(toml, files, rules) != []
+      },
+    )
+  assert left == []
+}
+
+// The comment after `echo 2` follows code on its line, and the last one
+// has no code after it but the closing brace, where nothing is reported.
+pub fn suppression_warnings_render_in_a_crlf_file_with_non_ascii_text_test() {
+  let source =
+    "pub fn main() {\r\n  // grice-ignore fixture/no-echo: café 🙂\r\n  // naïve, ünïcödé\r\n  echo 1\r\n  echo 2 // grice-ignore fixture/no-echo: après\r\n  // grice-ignore fixture/no-echo: fin ✓\r\n}\r\n"
+  let project = support.project("", [#("src/app.gleam", source)], [])
+  let assert Ok(runner.Linted(diagnostics: [kept, misplaced, unused], ..)) =
+    runner.run(project, [fixture_rules.no_echo()])
+  assert kept == echo_diagnostic(span_of(source, "echo 2"))
+  let sources = dict.from_list([#("src/app.gleam", line_index.new(source))])
+  let assert Ok(text) =
+    human.render([misplaced, unused], sources, human.Options(colour: False))
+  assert text == "warning[grice/invalid-suppression]: Invalid suppression
+  ┌─ src/app.gleam:5:10
+  │
+5 │   echo 2 // grice-ignore fixture/no-echo: après
+  │          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This comes after code
+
+A `grice-ignore` comment must be alone on its line, and a
+`grice-ignore-file` comment must come before the module's first line of
+code, but this one comes after code. It hides nothing.
+
+Hint: Write `// grice-ignore <rule code>: <reason>` on its own line, above
+the code it covers, or `// grice-ignore-file <rule code>: <reason>` before
+the module's first line of code to cover the whole module.
+
+warning[grice/unused-suppression]: Unused suppression
+  ┌─ src/app.gleam:6:3
+  │
+6 │   // grice-ignore fixture/no-echo: fin ✓
+  │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This hides nothing
+
+This suppression hides nothing: no diagnostic of the rule `fixture/no-echo`
+is left to hide on line 7, the next line of code.
+
+Hint: Fix the suppression, or remove it. Write `// grice-ignore <rule
+code>: <reason>` on its own line, above the code it covers, or `//
+grice-ignore-file <rule code>: <reason>` before the module's first line of
+code to cover the whole module.
+
+"
+}
+
+// The suppression inside the JavaScript function has no reason. The one
+// above its attribute is read on both targets, and the file suppression
+// comes after that function, which is code on both targets too.
+const target_suppressions =
+  "// grice-ignore fixture/no-echo: Above the attribute.
+@target(javascript)
+pub fn javascript() {
+  // grice-ignore-file fixture/no-echo
+  1
+}
+// grice-ignore-file fixture/no-echo: After a definition.
+pub fn main() { 1 }
+"
+
+pub fn suppressions_follow_the_target_view_test() {
+  let suppressions = fn(toml) {
+    run_files_with(toml, [#("src/app.gleam", target_suppressions)], [
+      fixture_rules.no_echo(),
+    ])
+    |> describe
+  }
+  let unused = "grice/unused-suppression src/app.gleam: This hides nothing"
+  let after_code =
+    "grice/invalid-suppression src/app.gleam: This comes after code"
+  assert suppressions("target = \"erlang\"\n") == [unused, after_code]
+  assert suppressions("target = \"javascript\"\n")
+    == [
+      unused,
+      "grice/invalid-suppression src/app.gleam: This gives no reason",
+      after_code,
+    ]
+  let turned_off =
+    "grice/invalid-suppression src/app.gleam: grice doesn't read this"
+  assert suppressions(
+      "target = \"erlang\"\n[tools.grice]\nsuppression_comments = false\n",
+    )
+    == [turned_off, turned_off]
+}
+
+pub fn ignores_and_suppressions_never_hide_grices_own_diagnostics_test() {
+  let toml =
+    "[[tools.grice.ignore]]
+paths = [\"**\"]
+rules = [\"fixture/no-echo\", \"fixture/spans\"]
+reason = \"why\"
+"
+  let files = [
+    #(
+      "src/app.gleam",
+      "// grice-ignore-file fixture/no-echo: why\npub fn main() { echo 1 }\n",
+    ),
+    #("src/broken.gleam", "// grice-ignore-file fixture/no-echo: why\npub fn ("),
+  ]
+  let bad_span =
+    on_module_end("fixture/spans", fn(_facts) {
+      [rule.report(at: glance.Span(0, 999), label: "out of bounds")]
+    })
+  assert describe(
+      run_files_with(toml, files, [fixture_rules.no_echo(), bad_span]),
+    )
+    == [
+      "grice/invalid-report",
+      "grice/unused-suppression src/app.gleam: This hides nothing",
+      "grice/parse-error src/broken.gleam: glance didn't expect this",
     ]
 }
 

@@ -9,7 +9,9 @@
 //// module in parallel and evaluating the summaries once. Each report is
 //// checked against the source of the module it's about before it becomes
 //// a diagnostic, so a rule with a bad span is reported on its own and
-//// every other finding still comes through.
+//// every other finding still comes through. What the ignores in
+//// `gleam.toml` and the suppression comments in the source hide is then
+//// dropped, and each suppression that hid nothing is reported.
 ////
 //// A run also says how much of the lint set it covered, and every gap in
 //// that coverage is a diagnostic.
@@ -31,15 +33,17 @@ import grice/internal/config.{type Config}
 import grice/internal/line_index.{type LineIndex, type SpanProblem}
 import grice/internal/loader.{type Project}
 import grice/internal/parallel
+import grice/internal/suppress
 import grice/internal/typing.{type ModuleTypes}
 import grice/rule.{type Report, type Rule, ModuleCheck, ProjectCheck}
 
 /// What a run found, and how much of the lint set it covered.
 pub type Linted {
   Linted(
-    /// Every diagnostic of the run, the project's parse errors and the
-    /// coverage notes included: first those with no location, in the order
-    /// they were made, then the rest by path, start, end and code.
+    /// Every diagnostic of the run that isn't hidden, the project's parse
+    /// errors, the coverage notes and the warnings about suppressions
+    /// included: first those with no location, in the order they were
+    /// made, then the rest by path, start, end and code.
     diagnostics: List(Diagnostic),
     coverage: Coverage,
   )
@@ -66,8 +70,9 @@ pub fn run_with(
   rules: List(Rule),
   infer infer: fn(Project) -> Dict(String, ModuleTypes),
 ) -> Result(Linted, List(Diagnostic)) {
-  case list.append(check_rules(rules), check_ignores(project.config, rules)) {
-    [] -> Ok(lint(project, rules, infer))
+  let codes = set.from_list(list.map(rules, rule.code))
+  case list.append(check_rules(rules), check_ignores(project.config, codes)) {
+    [] -> Ok(lint(project, rules, codes, infer))
     problems -> Error(problems)
   }
 }
@@ -78,11 +83,13 @@ pub fn run_with(
 // Facts are built once per module, with the module's types when they were
 // inferred, and shared by every rule, typed or not. A module task gets only
 // the module's facts, which hold everything its reports are resolved
-// against.
+// against. Ignores and suppressions apply once every rule has reported,
+// before the diagnostics are sorted.
 
 fn lint(
   project: Project,
   rules: List(Rule),
+  codes: Set(String),
   infer: fn(Project) -> Dict(String, ModuleTypes),
 ) -> Linted {
   let types = case list.any(rules, rule.is_typed) {
@@ -141,6 +148,7 @@ fn lint(
   let diagnostics =
     [project.diagnostics, notes, from_module_rules, from_project_rules]
     |> list.flatten
+    |> suppress.apply(linted, project.config, codes)
     |> list.sort(compare)
   let coverage =
     Coverage(
@@ -611,16 +619,10 @@ fn error(
 
 // The rule set
 //
-// Codes name rules in ignores, and later in suppressions, so each must
-// follow one syntax, belong to one rule, and stay clear of the `grice/`
-// prefix of grice's own diagnostics. Every problem is reported, in the
-// order of the rules, then each repeated code once.
-
-const lowercase = "abcdefghijklmnopqrstuvwxyz"
-
-const digits = "0123456789"
-
-const reserved_prefix = "grice/"
+// Codes name rules in ignores and suppressions, so each must follow one
+// syntax, belong to one rule, and stay clear of the `grice/` prefix of
+// grice's own diagnostics. Every problem is reported, in the order of the
+// rules, then each repeated code once.
 
 fn check_rules(rules: List(Rule)) -> List(Diagnostic) {
   let codes = list.map(rules, rule.code)
@@ -638,8 +640,8 @@ fn check_rules(rules: List(Rule)) -> List(Diagnostic) {
 fn check_rule(lint_rule: Rule) -> List(Diagnostic) {
   let code = rule.code(lint_rule)
   let code_problem = case
-    is_valid_code(code),
-    string.starts_with(code, reserved_prefix)
+    rule.is_valid_code(code),
+    string.starts_with(code, rule.reserved_prefix)
   {
     False, _ -> [invalid_code(code)]
     True, True -> [reserved_code(code)]
@@ -650,28 +652,6 @@ fn check_rule(lint_rule: Rule) -> List(Diagnostic) {
     _ -> []
   }
   list.append(code_problem, title_problem)
-}
-
-// A code matches `[a-z][a-z0-9_]*/[a-z][a-z0-9]*(-[a-z0-9]+)*`: the name
-// is words joined by single hyphens, so none of them is empty.
-fn is_valid_code(code: String) -> Bool {
-  case string.split(code, "/") {
-    [prefix, name] ->
-      is_word(prefix, rest: lowercase <> digits <> "_")
-      && is_word(name, rest: lowercase <> digits <> "-")
-      && !list.contains(string.split(name, "-"), "")
-    _ -> False
-  }
-}
-
-// A lowercase letter followed by characters of `allowed`.
-fn is_word(word: String, rest allowed: String) -> Bool {
-  case string.to_graphemes(word) {
-    [first, ..rest] ->
-      string.contains(lowercase, first)
-      && list.all(rest, string.contains(allowed, _))
-    [] -> False
-  }
 }
 
 const code_hint =
@@ -694,7 +674,7 @@ fn reserved_code(code: String) -> Diagnostic {
       <> code
       <> "`, but the `grice/` prefix is reserved for grice's own diagnostics.",
     hint: "Use your package's name as the prefix, such as `my_app/"
-      <> string.drop_start(code, string.length(reserved_prefix))
+      <> string.drop_start(code, string.length(rule.reserved_prefix))
       <> "`.",
   )
 }
@@ -735,8 +715,7 @@ fn invalid_rule(
 // diagnostics, which report on the run itself and can't be ignored, so it
 // gets a message of its own.
 
-fn check_ignores(config: Config, rules: List(Rule)) -> List(Diagnostic) {
-  let codes = set.from_list(list.map(rules, rule.code))
+fn check_ignores(config: Config, codes: Set(String)) -> List(Diagnostic) {
   config.ignore
   |> list.index_map(fn(ignore, index) {
     let subject = config.ignore_key(index, "rules")
@@ -751,7 +730,7 @@ fn check_ignore(
   codes: Set(String),
 ) -> Result(Diagnostic, Nil) {
   use <- bool.lazy_guard(
-    when: string.starts_with(code, reserved_prefix),
+    when: string.starts_with(code, rule.reserved_prefix),
     return: fn() { Ok(ignored_grice_code(subject, code)) },
   )
   use <- bool.guard(when: set.contains(codes, code), return: Error(Nil))
