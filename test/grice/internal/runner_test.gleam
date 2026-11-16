@@ -1,26 +1,33 @@
 //// Tests for running rules. Projects are built in memory with
 //// `loader.load`. The fixture rules come first: module rules, then the
 //// facts and target view they see, then project rules and which modules
-//// rules run on. Then how reports become diagnostics: resolution, severity
-//// and invalid reports. Last, the checks of the rule set and of the codes
-//// `gleam.toml` ignores. Edge cases use small rules built in the test.
+//// rules run on. Then typed rules: the types they see, why a query has no
+//// answer, when girard runs, and a typed run from a project on disk. Then
+//// how reports become diagnostics: resolution, severity and invalid
+//// reports. Last, the checks of the rule set and of the codes `gleam.toml`
+//// ignores. Edge cases use small rules built in the test.
 
+import girard
 import glance
 import gleam/bool
-import gleam/dict
+import gleam/dict.{type Dict}
+import gleam/dynamic.{type Dynamic}
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
 import grice/diagnostic.{type Diagnostic, Diagnostic, Label, Location, Span}
-import grice/facts.{type ModuleFacts, type Syntax}
+import grice/facts.{type ModuleFacts, type Syntax, type Typed}
 import grice/fixture_rules
 import grice/internal/config
 import grice/internal/loader.{type Project}
 import grice/internal/render/human
 import grice/internal/runner
+import grice/internal/typing.{type ModuleTypes}
 import grice/rule.{type Report, type Rule}
+import grice/support
+import simplifile
 
 // Module rules
 
@@ -62,7 +69,7 @@ pub fn every_module_starts_from_the_initial_context_test() {
     #("src/two.gleam", "pub fn a() { 1 }\npub fn b() { 2 }\n"),
   ]
   let rules = [count_functions()]
-  let project = project("", files)
+  let project = support.project("", files, [])
   let assert Ok(first) = runner.run(project, rules)
   let assert Ok(second) = runner.run(project, rules)
   assert labels(first) == ["1 functions", "2 functions"]
@@ -273,7 +280,7 @@ pub fn rules_run_on_parsed_lint_set_modules_only_test() {
     #("src/app/gen/a.gleam", "pub fn g() { echo 2 }\n"),
     #("src/broken.gleam", "pub fn ("),
   ]
-  let project = project(toml, files)
+  let project = support.project(toml, files, [])
   assert dict.has_key(project.modules, "app/gen/a")
   let assert Ok(diagnostics) =
     runner.run(project, [
@@ -288,6 +295,358 @@ pub fn rules_run_on_parsed_lint_set_modules_only_test() {
       "fixture/no-echo src/app.gleam: This prints when it runs",
       "grice/parse-error src/broken.gleam: glance didn't expect this",
     ]
+}
+
+// Typed rules
+
+const discards =
+  "fn parse() -> Result(Int, Nil) {
+  Ok(1)
+}
+
+pub fn main() {
+  let _ = parse()
+  let _ = 1
+  let _ = Ok(\"two\")
+  Nil
+}
+
+// girard can't type this function, and neither could the compiler.
+pub fn skipped() {
+  let _ = parse()
+  1 + \"one\"
+}
+"
+
+pub fn discarded_result_reports_a_discarded_prelude_result_test() {
+  let diagnostics =
+    run_files([#("src/app.gleam", discards)], [fixture_rules.discarded_result()])
+    |> list.filter(fn(found) { found.code == "fixture/discarded-result" })
+  assert diagnostics
+    == [
+      discarded_diagnostic(span_of(discards, "let _ = parse()")),
+      discarded_diagnostic(span_of(discards, "let _ = Ok(\"two\")")),
+    ]
+}
+
+pub fn a_typed_project_rule_sees_types_in_per_module_test() {
+  let signatures =
+    rule.project("fixture/signatures", title: "Made in a test")
+    |> rule.typed
+    |> rule.per_module(fn(module_facts) {
+      facts.signature(module_facts, "parse")
+      |> result.map(fn(scheme) { girard.type_to_string(scheme.type_) })
+    })
+    |> rule.final(fn(summaries) {
+      use #(name, signature) <- list.map(summaries)
+      #(name, at_start(string.inspect(signature)))
+    })
+  assert labels(run_files([#("src/app.gleam", discards)], [signatures]))
+    == ["Ok(\"fn() -> Result(Int, Nil)\")"]
+}
+
+// `typed_calls` reports on the call into the other module on each target.
+pub fn typed_rules_see_types_across_target_specific_imports_test() {
+  let files = support.crossed
+  assert describe(run_files(files, [typed_calls()]))
+    == ["fixture/typed-calls src/a.gleam: Ok(Named(\"b\", \"B\", []))"]
+  assert describe(
+      run_files_with("target = \"javascript\"\n", files, [typed_calls()]),
+    )
+    == ["fixture/typed-calls src/b.gleam: Ok(Named(\"a\", \"A\", []))"]
+}
+
+// Queries
+
+const box =
+  "pub type Box {\n  Box(content: String)\n}\n\npub fn shout(text: String) -> String {\n  text\n}\n"
+
+const queried =
+  "import dep/box
+
+pub type Point {
+  Point(x: Int, y: Int)
+}
+
+pub const origin = Point(0, 0)
+
+pub fn identity(value) {
+  value
+}
+
+pub fn main() {
+  let n = 42
+  let loud = box.shout(\"hi\")
+  let same = identity(n)
+  let piped = \"hey\" |> box.shout
+  let point = Point(1, 2)
+  let x = point.x
+  let f = fn(v) { v }
+  f(same)
+}
+"
+
+pub fn type_of_answers_for_expressions_test() {
+  assert answers(queried, fn(module_facts) {
+      list.map(
+        ["42", "box.shout(\"hi\")", "identity(n)", "\"hey\" |> box.shout"],
+        fn(needle) {
+          facts.type_of(module_facts, support.glance_span(queried, needle))
+          |> string.inspect
+        },
+      )
+    })
+    == [
+      "Ok(Named(\"gleam\", \"Int\", []))",
+      "Ok(Named(\"gleam\", \"String\", []))",
+      "Ok(Named(\"gleam\", \"Int\", []))",
+      "Ok(Named(\"gleam\", \"String\", []))",
+    ]
+}
+
+pub fn resolution_of_answers_for_references_test() {
+  let references = [
+    #("box.shout(\"hi\")", "box.shout"),
+    #("Point(1, 2)", "Point"),
+    #("point.x", "point.x"),
+    #("f(same)", "f"),
+  ]
+  assert answers(queried, fn(module_facts) {
+      use #(around, reference) <- list.map(references)
+      facts.resolution_of(
+        module_facts,
+        glance_span_in(queried, around, reference),
+      )
+      |> string.inspect
+    })
+    == [
+      "Ok(ModuleFn(\"dep/box\", \"shout\"))",
+      "Ok(Constructor(\"app\", \"Point\"))",
+      "Ok(RecordField(Named(\"app\", \"Point\", []), \"x\"))",
+      "Ok(LocalVariable(\"f\"))",
+    ]
+}
+
+pub fn signature_answers_for_functions_and_constants_test() {
+  assert answers(queried, fn(module_facts) {
+      let assert Ok(girard.Scheme(vars:, type_:)) =
+        facts.signature(module_facts, "identity")
+      [
+        girard.type_to_string(type_),
+        string.inspect(list.length(vars)),
+        string.inspect(facts.signature(module_facts, "origin")),
+      ]
+    })
+    == [
+      "fn(a) -> a",
+      "1",
+      "Ok(Scheme([], Named(\"app\", \"Point\", [])))",
+    ]
+}
+
+// Unknown
+
+const unknowns =
+  "@target(javascript)
+pub fn elsewhere() {
+  \"js\"
+}
+
+pub fn main() {
+  let pattern = 1
+  pattern
+}
+
+// girard can't type this function, and neither could the compiler.
+pub fn skipped() {
+  let inside = 2
+  inside + \"two\"
+}
+"
+
+pub fn queries_say_why_girard_has_no_answer_test() {
+  assert answers(unknowns, fn(module_facts) {
+      [
+        facts.type_of(module_facts, support.glance_span(unknowns, "pattern")),
+        facts.type_of(module_facts, support.glance_span(unknowns, "2")),
+        facts.type_of(module_facts, support.glance_span(unknowns, "\"js\"")),
+      ]
+      |> list.map(string.inspect)
+      |> list.append(
+        list.map(["pattern", "skipped", "elsewhere", "Point"], fn(name) {
+          string.inspect(facts.signature(module_facts, name))
+        }),
+      )
+      |> list.append([
+        string.inspect(facts.resolution_of(
+          module_facts,
+          support.glance_span(unknowns, "inside + \"two\""),
+        )),
+      ])
+    })
+    == [
+      "Error(NotRecorded)", "Error(Skipped(\"skipped\"))",
+      "Error(Dropped(\"elsewhere\"))", "Error(NotRecorded)",
+      "Error(Skipped(\"skipped\"))", "Error(Dropped(\"elsewhere\"))",
+      "Error(NotRecorded)", "Error(Skipped(\"skipped\"))",
+    ]
+}
+
+pub fn queries_on_a_module_girard_returned_nothing_for_test() {
+  let files = [
+    #("src/app.gleam", "pub fn main() {\n  1\n}\n"),
+    #("src/other.gleam", "pub fn main() {\n  2\n}\n"),
+  ]
+  let project = support.project("", files, [])
+  let assert Ok(diagnostics) =
+    runner.run_with(project, [every_query()], infer: fn(project) {
+      typing.infer(project, typing.resolver(project)) |> dict.delete("app")
+    })
+  assert describe(diagnostics)
+    == [
+      "fixture/every-query src/app.gleam: Error(NotInferred) Error(NotInferred) Error(NotInferred)",
+      "fixture/every-query src/other.gleam: Ok(Named(\"gleam\", \"Int\", [])) Error(NotRecorded) Ok(Scheme([], Fn([], Named(\"gleam\", \"Int\", []))))",
+    ]
+}
+
+// `app` uses nothing from `gone`, and its last expression is a reference
+// girard did resolve, yet no query on it answers.
+pub fn no_query_answers_in_a_module_with_an_unavailable_import_test() {
+  let source =
+    "import gone\nimport dep/box\n\npub fn main() {\n  box.shout\n}\n"
+  let project =
+    support.project("", [#("src/app.gleam", source)], [#("dep/box", box)])
+  let assert Ok(app) =
+    typing.infer(project, typing.resolver(project)) |> dict.get("app")
+  assert dict.get(app.resolutions, support.glance_span(source, "box.shout"))
+    == Ok(girard.ModuleFn("dep/box", "shout"))
+  let assert Ok(diagnostics) = runner.run(project, [every_query()])
+  assert describe(diagnostics)
+    == [
+      "fixture/every-query src/app.gleam: Error(Unavailable([\"gone\"])) Error(Unavailable([\"gone\"])) Error(Unavailable([\"gone\"]))",
+    ]
+}
+
+// `d` is unavailable, so girard reads `Result` as the prelude's: an answer
+// no rule can tell from a real one.
+const shadowed =
+  "import d.{type Result}
+
+fn parse() -> Result(Int, String) {
+  Ok(1)
+}
+
+pub fn main() {
+  let _ = parse()
+  Nil
+}
+"
+
+pub fn discarded_result_is_silent_where_a_prelude_name_is_shadowed_test() {
+  let project = support.project("", [#("src/app.gleam", shadowed)], [])
+  let assert Ok(types) =
+    typing.infer(project, typing.resolver(project)) |> dict.get("app")
+  let assert Ok(girard.Named(module: "gleam", name: "Result", ..)) =
+    dict.get(
+      types.expressions,
+      glance_span_in(shadowed, "let _ = parse()", "parse()"),
+    )
+  assert run_files([#("src/app.gleam", shadowed)], [
+      fixture_rules.discarded_result(),
+    ])
+    |> list.filter(fn(found) { found.code == "fixture/discarded-result" })
+    == []
+}
+
+// Planning
+
+pub fn a_syntax_only_run_never_infers_test() {
+  let project = support.project("", [#("src/app.gleam", discards)], [])
+  let assert Ok(_) =
+    runner.run_with(
+      project,
+      [fixture_rules.no_echo(), fixture_rules.duplicate_public_function()],
+      infer: never_infer,
+    )
+}
+
+pub fn an_invalid_rule_set_never_infers_test() {
+  let project = support.project("", [#("src/app.gleam", discards)], [])
+  let assert Error(_) =
+    runner.run_with(
+      project,
+      [fixture_rules.discarded_result(), named("Bad")],
+      infer: never_infer,
+    )
+}
+
+pub fn a_run_infers_once_for_every_typed_rule_test() {
+  let project =
+    support.project(
+      "",
+      [#("src/app.gleam", discards), #("src/other.gleam", queried)],
+      [#("dep/box", box)],
+    )
+  take_mailbox()
+  let assert Ok(_) =
+    runner.run_with(
+      project,
+      [
+        fixture_rules.discarded_result(),
+        fixture_rules.no_echo(),
+        typed_calls(),
+        every_query(),
+        rule.project("fixture/typed-project", title: "Made in a test")
+          |> rule.typed
+          |> rule.per_module(fn(module_facts) {
+            facts.signature(module_facts, "main")
+          })
+          |> rule.final(fn(_summaries) { [] }),
+      ],
+      infer: fn(project) {
+        send_self(dynamic.string("inferred"))
+        typing.infer(project, typing.resolver(project))
+      },
+    )
+  assert take_mailbox() == [dynamic.string("inferred")]
+}
+
+// Root
+//
+// A project on disk whose dependency's modules grice's own build doesn't
+// have, so girard can only find them through the project's resolver.
+
+pub fn typed_runs_dont_depend_on_the_working_directory_test() {
+  let directory = support.fixture_directory("typed_root")
+  support.write_fixture(directory, [
+    #("gleam.toml", "name = \"app\"\n"),
+    #(
+      "manifest.toml",
+      "packages = [\n  { name = \"shapes\", version = \"1.0.0\", build_tools = [\"gleam\"], requirements = [], source = \"hex\" },\n]\n",
+    ),
+    #(
+      "build/packages/shapes/src/shapes/square.gleam",
+      "pub type Square {\n  Square(Int)\n}\n\npub fn new(size: Int) -> Square {\n  Square(size)\n}\n",
+    ),
+    #(
+      "src/app.gleam",
+      "import shapes/square\n\npub fn main() {\n  square.new(2)\n}\n",
+    ),
+  ])
+  let assert Ok(absolute) = simplifile.resolve(directory)
+  let runs =
+    list.map([directory, absolute], fn(root) {
+      let assert Ok(project) = loader.load_project(root)
+      let assert Ok(diagnostics) = runner.run(project, [typed_calls()])
+      diagnostics
+    })
+  support.cleanup(directory)
+  let assert [relative_run, absolute_run] = runs
+  assert describe(relative_run)
+    == [
+      "fixture/typed-calls src/app.gleam: Ok(Named(\"shapes/square\", \"Square\", []))",
+    ]
+  assert absolute_run == relative_run
 }
 
 // Parallel work
@@ -324,12 +683,12 @@ pub fn reports_become_diagnostics_with_the_rule_and_the_module_test() {
   let explained =
     on_module_end("fixture/explained", fn(_facts) {
       [
-        rule.report(at: glance_span(source, "x\n}"), label: "used here")
+        rule.report(at: support.glance_span(source, "x\n}"), label: "used here")
         |> rule.with_label(
-          at: glance_span(source, "x = 1"),
+          at: support.glance_span(source, "x = 1"),
           label: "bound here",
         )
-        |> rule.with_label(at: glance_span(source, "main"), label: "")
+        |> rule.with_label(at: support.glance_span(source, "main"), label: "")
         |> rule.with_message(["First paragraph.", "Second paragraph."])
         |> rule.with_hint("A hint."),
       ]
@@ -402,7 +761,7 @@ pub fn diagnostics_come_out_sorted_test() {
 }
 
 pub fn resolved_diagnostics_render_like_the_compiler_test() {
-  let project = project("", [#("src/app.gleam", echoes)])
+  let project = support.project("", [#("src/app.gleam", echoes)], [])
   let assert Ok([diagnostic, _]) =
     runner.run(project, [fixture_rules.no_echo()])
   let sources =
@@ -661,7 +1020,7 @@ pub fn an_ignored_code_must_name_a_rule_of_the_run_test() {
   let toml =
     "[tools.grice.ignore]\n\"test/**\" = [\"fixture/no-echo\", \"fixture/no-ecko\"]\n"
   let assert Error([diagnostic]) =
-    runner.run(project(toml, [#("src/app.gleam", "")]), [
+    runner.run(support.project(toml, [#("src/app.gleam", "")], []), [
       fixture_rules.no_echo(),
     ])
   assert diagnostic
@@ -675,7 +1034,7 @@ pub fn an_ignored_code_must_name_a_rule_of_the_run_test() {
 pub fn grice_codes_cant_be_ignored_test() {
   let toml = "[tools.grice.ignore]\n\"src/**\" = [\"grice/parse-error\"]\n"
   let assert Error([diagnostic]) =
-    runner.run(project(toml, [#("src/app.gleam", "")]), [
+    runner.run(support.project(toml, [#("src/app.gleam", "")], []), [
       fixture_rules.no_echo(),
     ])
   assert diagnostic
@@ -692,7 +1051,7 @@ pub fn rule_set_and_ignore_problems_are_reported_together_test() {
   let toml =
     "[tools.grice.ignore]\n\"src/**\" = [\"grice/invalid-rule\", \"fixture/missing\"]\n\"dev/**\" = [\"fixture/no-echo\"]\n"
   let assert Error(problems) =
-    runner.run(project(toml, [#("src/app.gleam", "")]), [
+    runner.run(support.project(toml, [#("src/app.gleam", "")], []), [
       fixture_rules.no_echo(),
       named("fixture/broken_name"),
       panics_if_run(),
@@ -785,6 +1144,82 @@ fn on_module_end(
   |> rule.build
 }
 
+// A typed module rule that reports what `reports` gives once each module
+// has been walked.
+fn typed_on_module_end(
+  code: String,
+  reports: fn(ModuleFacts(Typed)) -> List(Report),
+) -> Rule {
+  rule.module(code, title: "Made in a test")
+  |> rule.typed
+  |> rule.with_context(initial: Nil)
+  |> rule.on_module_end(fn(_context, module_facts) { reports(module_facts) })
+  |> rule.build
+}
+
+// Reports each call with what `type_of` answers for it.
+fn typed_calls() -> Rule {
+  rule.module("fixture/typed-calls", title: "Made in a test")
+  |> rule.typed
+  |> rule.with_context(initial: Nil)
+  |> rule.on_expression(fn(context, expression, module_facts) {
+    case expression {
+      glance.Call(location:, ..) -> #(context, [
+        rule.report(
+          at: location,
+          label: string.inspect(facts.type_of(module_facts, location)),
+        ),
+      ])
+      _ -> #(context, [])
+    }
+  })
+  |> rule.build
+}
+
+// Reports, on each module, what `type_of` and `resolution_of` answer for
+// the last expression of `main`, and what `signature` answers for `main`.
+fn every_query() -> Rule {
+  use module_facts <- typed_on_module_end("fixture/every-query")
+  let assert Ok(main) =
+    list.find(facts.module(module_facts).functions, fn(function) {
+      function.definition.name == "main"
+    })
+  let assert Ok(glance.Expression(last)) = list.last(main.definition.body)
+  [
+    at_start(
+      [
+        string.inspect(facts.type_of(module_facts, last.location)),
+        string.inspect(facts.resolution_of(module_facts, last.location)),
+        string.inspect(facts.signature(module_facts, "main")),
+      ]
+      |> string.join(" "),
+    ),
+  ]
+}
+
+// What `ask` answers on the module `app`, whose source is `source`, with
+// the dependency module `dep/box`.
+fn answers(
+  source: String,
+  ask: fn(ModuleFacts(Typed)) -> List(String),
+) -> List(String) {
+  let asking =
+    typed_on_module_end("fixture/answers", fn(module_facts) {
+      [at_start("answers") |> rule.with_message(ask(module_facts))]
+    })
+  let project =
+    support.project("", [#("src/app.gleam", source)], [#("dep/box", box)])
+  let assert Ok(diagnostics) = runner.run(project, [asking])
+  let assert Ok(Diagnostic(message:, ..)) =
+    list.find(diagnostics, fn(found) { found.code == "fixture/answers" })
+  message
+}
+
+// An inference function that fails the test when it's called.
+fn never_infer(_project: Project) -> Dict(String, ModuleTypes) {
+  panic as "girard ran although no rule needs types"
+}
+
 // A rule with the code `code` that reports nothing.
 fn named(code: String) -> Rule {
   rule.module(code, title: "Made in a test")
@@ -824,27 +1259,28 @@ fn echo_diagnostic(span: diagnostic.Span) -> Diagnostic {
   )
 }
 
+fn discarded_diagnostic(span: diagnostic.Span) -> Diagnostic {
+  Diagnostic(
+    code: "fixture/discarded-result",
+    severity: diagnostic.Warning,
+    title: "Result discarded",
+    location: Some(Location(
+      path: "src/app.gleam",
+      primary: Label(span, "This discards a `Result`"),
+      secondary: [],
+      fix: None,
+    )),
+    message: [
+      "A `Result` says whether something failed, and discarding it hides the failure.",
+    ],
+    hint: Some("Handle the error, or assert that there is none."),
+  )
+}
+
 fn first_paragraph(code: String) -> String {
   "The rule `"
   <> code
   <> "` reported a problem in the module `app`, at `src/app.gleam`, with a span that isn't valid for the module's source. grice can't show where it points, so the report is dropped."
-}
-
-fn project(toml: String, files: List(#(String, String))) -> Project {
-  let assert Ok(parsed) = config.parse(toml)
-  let sources = dict.from_list(files)
-  let assert Ok(project) =
-    loader.load(
-      root: "app",
-      config: parsed,
-      paths: list.map(files, fn(file) { file.0 }),
-      read: fn(path) {
-        dict.get(sources, path) |> result.replace_error("No such file")
-      },
-      dependencies: dict.new(),
-      missing_dependencies: [],
-    )
-  project
 }
 
 fn run_files(
@@ -859,14 +1295,15 @@ fn run_files_with(
   files: List(#(String, String)),
   rules: List(Rule),
 ) -> List(Diagnostic) {
-  let assert Ok(diagnostics) = runner.run(project(toml, files), rules)
+  let assert Ok(diagnostics) =
+    runner.run(support.project(toml, files, []), rules)
   diagnostics
 }
 
 fn check_rules(
   rules: List(Rule),
 ) -> Result(List(Diagnostic), List(Diagnostic)) {
-  runner.run(project("", [#("src/app.gleam", "")]), rules)
+  runner.run(support.project("", [#("src/app.gleam", "")], []), rules)
 }
 
 fn is_rejected(code: String) -> Bool {
@@ -902,17 +1339,29 @@ fn describe(diagnostics: List(Diagnostic)) -> List(String) {
 
 // The span of the first `needle` in `source`.
 fn span_of(source: String, needle: String) -> diagnostic.Span {
-  let assert Ok(#(before, _)) = string.split_once(source, needle)
-  let start = string.byte_size(before)
-  Span(start, start + string.byte_size(needle))
+  let glance.Span(start:, end:) = support.glance_span(source, needle)
+  Span(start:, end:)
 }
 
-fn glance_span(source: String, needle: String) -> glance.Span {
-  let Span(start:, end:) = span_of(source, needle)
-  glance.Span(start:, end:)
+// The span of the first `needle` inside the first `around` in `source`.
+fn glance_span_in(
+  source: String,
+  around: String,
+  needle: String,
+) -> glance.Span {
+  let outer = support.glance_span(source, around)
+  let inner = support.glance_span(around, needle)
+  glance.Span(outer.start + inner.start, outer.start + inner.end)
 }
 
 type Pid
 
 @external(erlang, "grice_test_ffi", "self_pid")
 fn self_pid() -> Pid
+
+@external(erlang, "grice_test_ffi", "send_self")
+fn send_self(message: Dynamic) -> Nil
+
+// Every message in the mailbox, oldest first, removed from it.
+@external(erlang, "grice_test_ffi", "take_mailbox")
+fn take_mailbox() -> List(Dynamic)

@@ -63,6 +63,41 @@
 //// }
 //// ```
 ////
+//// A rule of either kind that needs types says so with `typed`, right
+//// after `module` or `project`. Its hooks, or its `per_module` function,
+//// then get `Typed` facts, which also answer what girard found: the type
+//// of an expression, what a name resolved to and the type of a definition
+//// (see `grice/facts`). girard runs once per run, and only when a rule in
+//// the set is typed. This rule finds calls to `io.println` however it was
+//// imported:
+////
+//// ```gleam
+//// import girard
+//// import glance
+//// import grice/facts
+//// import grice/rule
+////
+//// pub fn no_println() -> rule.Rule {
+////   rule.module("my_app/no-println", title: "Printing to stdout")
+////   |> rule.typed
+////   |> rule.with_context(initial: Nil)
+////   |> rule.on_expression(fn(context, expression, module_facts) {
+////     let callee = case expression {
+////       glance.Call(function:, ..) ->
+////         facts.resolution_of(module_facts, function.location)
+////       _ -> Error(facts.NotRecorded)
+////     }
+////     case callee {
+////       Ok(girard.ModuleFn(module: "gleam/io", name: "println")) -> #(context, [
+////         rule.report(at: expression.location, label: "This prints"),
+////       ])
+////       _ -> #(context, [])
+////     }
+////   })
+////   |> rule.build
+//// }
+//// ```
+////
 //// Every rule reports with the severity `Warning` unless `with_severity`
 //// says otherwise.
 
@@ -72,7 +107,7 @@ import gleam/option.{type Option, None, Some}
 import grice/diagnostic.{
   type Diagnostic, type Label, type Severity, Diagnostic, Label, Location, Span,
 }
-import grice/facts.{type ModuleFacts, type Syntax}
+import grice/facts.{type ModuleFacts, type Syntax, type Typed}
 import grice/internal/parallel
 import grice/visit.{type Visitor}
 
@@ -84,7 +119,13 @@ import grice/visit.{type Visitor}
 
 /// A rule, ready to be run. Build one with `build` or `final`.
 pub opaque type Rule {
-  Rule(code: String, title: String, severity: Severity, check: Check)
+  Rule(
+    code: String,
+    title: String,
+    severity: Severity,
+    typed: Bool,
+    check: Check,
+  )
 }
 
 /// What running a rule does: a module rule's reports on one module, or a
@@ -116,10 +157,54 @@ pub fn title(rule: Rule) -> String {
   rule.title
 }
 
+/// Whether the rule was built with `typed`, so its facts need girard's
+/// types.
+@internal
+pub fn is_typed(rule: Rule) -> Bool {
+  rule.typed
+}
+
 /// What running the rule does.
 @internal
 pub fn check(rule: Rule) -> Check {
   rule.check
+}
+
+// Schemas
+//
+// A rule of either kind starts as a schema: its code and title, and
+// whether it needs types. The phantom `form` keeps module and project
+// schemas apart, and the phantom `kind` is the kind of facts the rule will
+// get. `typed` takes a `Syntax` schema, so it can't be applied twice, and
+// the context or summary comes after it.
+
+/// A rule that has a code and a title, but nothing to run yet. `form` is
+/// `ModuleForm` for a module rule, which takes its context with
+/// `with_context`, and `ProjectForm` for a project rule, which takes its
+/// summary with `per_module`. `kind` is the kind of facts the rule gets:
+/// `Syntax`, or `Typed` once `typed` has been applied.
+pub opaque type Schema(form, kind) {
+  Schema(code: String, title: String, typed: Bool)
+}
+
+/// The form of a module rule's schema, made by `module`.
+pub type ModuleForm
+
+/// The form of a project rule's schema, made by `project`.
+pub type ProjectForm
+
+/// Give the rule `Typed` facts, which answer what girard found about each
+/// module, as well as everything `Syntax` facts hold. Apply it right after
+/// `module` or `project`.
+pub fn typed(schema: Schema(form, Syntax)) -> Schema(form, Typed) {
+  Schema(code: schema.code, title: schema.title, typed: True)
+}
+
+// The rule a schema becomes once it has something to run, reporting
+// warnings until `with_severity` says otherwise.
+fn from_schema(schema: Schema(form, kind), check: Check) -> Rule {
+  let Schema(code:, title:, typed:) = schema
+  Rule(code:, title:, severity: diagnostic.Warning, typed:, check:)
 }
 
 // Module rules
@@ -128,18 +213,11 @@ pub fn check(rule: Rule) -> Check {
 // hooks, so every hook has the context's type. Each hook adds itself to the
 // rule's `grice/visit` visitor, which is built once and walks every module.
 
-/// A module rule that has a code and a title but no context yet. Give it
-/// one with `with_context`.
-pub opaque type ModuleSchema(kind) {
-  ModuleSchema(code: String, title: String)
-}
-
 /// A module rule with its context, ready to take hooks. Make it a `Rule`
 /// with `build`.
 pub opaque type ModuleRule(context, kind) {
   ModuleRule(
-    code: String,
-    title: String,
+    schema: Schema(ModuleForm, kind),
     initial: context,
     visitor: Visitor(Walk(context, kind)),
     end: fn(context, ModuleFacts(kind)) -> List(Report),
@@ -157,20 +235,19 @@ type Walk(context, kind) {
 }
 
 /// Start a module rule with its code and title.
-pub fn module(code: String, title title: String) -> ModuleSchema(Syntax) {
-  ModuleSchema(code:, title:)
+pub fn module(code: String, title title: String) -> Schema(ModuleForm, Syntax) {
+  Schema(code:, title:, typed: False)
 }
 
 /// Give a module rule the context its hooks thread through a module, and
 /// the value each module starts from. A rule that needs none passes
 /// `initial: Nil`.
 pub fn with_context(
-  schema: ModuleSchema(kind),
+  schema: Schema(ModuleForm, kind),
   initial initial: context,
 ) -> ModuleRule(context, kind) {
   ModuleRule(
-    code: schema.code,
-    title: schema.title,
+    schema:,
     initial:,
     visitor: visit.new(),
     end: fn(_context, _module_facts) { [] },
@@ -290,7 +367,7 @@ pub fn on_module_end(
 
 /// Make the module rule a `Rule`.
 pub fn build(rule: ModuleRule(context, kind)) -> Rule {
-  let ModuleRule(code:, title:, initial:, visitor:, end:) = rule
+  let ModuleRule(schema:, initial:, visitor:, end:) = rule
   let run = fn(module_facts: ModuleFacts(Syntax)) {
     let module_facts = facts.change_kind(module_facts)
     let Walk(context:, reports:, ..) =
@@ -304,7 +381,7 @@ pub fn build(rule: ModuleRule(context, kind)) -> Rule {
     |> list.flatten
     |> list.append(end(context, module_facts))
   }
-  Rule(code:, title:, severity: diagnostic.Warning, check: ModuleCheck(run))
+  from_schema(schema, ModuleCheck(run))
 }
 
 // Add `hook` to the rule's visitor with `on`, the `grice/visit` function for
@@ -335,34 +412,30 @@ fn add_hook(
 // one module, and `final` makes the `Rule`. The summary type only lives
 // inside the closure `final` builds.
 
-/// A project rule that has a code and a title but no summary yet. Give it
-/// one with `per_module`.
-pub opaque type ProjectSchema(kind) {
-  ProjectSchema(code: String, title: String)
-}
-
 /// A project rule that summarises each module. Make it a `Rule` with
 /// `final`.
 pub opaque type ProjectRule(summary, kind) {
   ProjectRule(
-    code: String,
-    title: String,
+    schema: Schema(ProjectForm, kind),
     summarise: fn(ModuleFacts(kind)) -> summary,
   )
 }
 
 /// Start a project rule with its code and title.
-pub fn project(code: String, title title: String) -> ProjectSchema(Syntax) {
-  ProjectSchema(code:, title:)
+pub fn project(
+  code: String,
+  title title: String,
+) -> Schema(ProjectForm, Syntax) {
+  Schema(code:, title:, typed: False)
 }
 
 /// Summarise each linted module. The modules are summarised in parallel, so
 /// `summarise` sees one module and nothing else.
 pub fn per_module(
-  schema: ProjectSchema(kind),
+  schema: Schema(ProjectForm, kind),
   summarise: fn(ModuleFacts(kind)) -> summary,
 ) -> ProjectRule(summary, kind) {
-  ProjectRule(code: schema.code, title: schema.title, summarise:)
+  ProjectRule(schema:, summarise:)
 }
 
 /// Make the project rule a `Rule` that reports with `evaluate`. It gets
@@ -373,7 +446,7 @@ pub fn final(
   rule: ProjectRule(summary, kind),
   evaluate: fn(List(#(String, summary))) -> List(#(String, Report)),
 ) -> Rule {
-  let ProjectRule(code:, title:, summarise:) = rule
+  let ProjectRule(schema:, summarise:) = rule
   let run = fn(modules: List(ModuleFacts(Syntax))) {
     modules
     |> parallel.map(fn(module_facts) {
@@ -384,7 +457,7 @@ pub fn final(
     })
     |> evaluate
   }
-  Rule(code:, title:, severity: diagnostic.Warning, check: ProjectCheck(run))
+  from_schema(schema, ProjectCheck(run))
 }
 
 // Reports

@@ -39,3 +39,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and syntax tree, as the module is compiled for the project's target. A
   definition whose `@target` attribute names the other target is left
   out, and each list of definitions is in source order.
+- **Typed rules.** `rule.typed`, applied right after `rule.module` or
+  `rule.project`, gives a rule `Typed` facts. Module and project rules now
+  start from one `rule.Schema` type, which replaces `ModuleSchema` and
+  `ProjectSchema`: its `ModuleForm` or `ProjectForm` says which kind of
+  rule it builds, so `rule.with_context` takes only a module rule's schema
+  and `rule.per_module` only a project rule's. The types are inferred once
+  per run, and only when a rule of the set is typed. Rules can't be run
+  from the command line yet.
+- **Type facts.** `Typed` facts answer what girard, the type inference
+  grice uses, found in the module: `facts.type_of` gives the type of an
+  expression, `facts.resolution_of` what a field access or a name in call
+  position resolved to, and `facts.signature` the type of a top-level
+  function or constant. Spans match exactly, as glance gives them. A
+  query with no answer returns an `Unknown` that says why: girard keeps
+  nothing there, the definition it's in couldn't be typed or isn't
+  compiled for the target, girard returned nothing for the module, or the
+  module reaches modules girard couldn't use, which leaves every query on
+  it without an answer.
+- **girard.** grice depends on girard 4. Typed queries return its `Type`,
+  `Resolution` and `Scheme`, so a rule that inspects them depends on
+  girard too.
