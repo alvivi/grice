@@ -2,16 +2,17 @@
 //// diagnostics.
 ////
 //// The rule set is checked before anything runs, together with the rule
-//// codes `gleam.toml` ignores. Rules then run on the lint set's modules
-//// that parse, and only on those: module rules as one task per module, in
-//// parallel, and each project rule by summarising every module in parallel
-//// and evaluating the summaries once. Each report is checked against the
-//// source of the module it's about before it becomes a diagnostic, so a
-//// rule with a bad span is reported on its own and every other finding
-//// still comes through.
+//// codes `gleam.toml` ignores. When a rule of the set is typed, girard then
+//// infers the project's types, once for every rule. Rules run on the lint
+//// set's modules that parse, and only on those: module rules as one task
+//// per module, in parallel, and each project rule by summarising every
+//// module in parallel and evaluating the summaries once. Each report is
+//// checked against the source of the module it's about before it becomes
+//// a diagnostic, so a rule with a bad span is reported on its own and
+//// every other finding still comes through.
 
 import gleam/bool
-import gleam/dict
+import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -26,6 +27,7 @@ import grice/internal/glob
 import grice/internal/line_index.{type LineIndex, type SpanProblem}
 import grice/internal/loader.{type Project}
 import grice/internal/parallel
+import grice/internal/typing.{type ModuleTypes}
 import grice/rule.{type Report, type Rule, ModuleCheck, ProjectCheck}
 
 /// Run `rules` over the project. `Error` holds every problem with the rule
@@ -37,23 +39,51 @@ pub fn run(
   project: Project,
   rules: List(Rule),
 ) -> Result(List(Diagnostic), List(Diagnostic)) {
+  run_with(project, rules, infer: fn(project) {
+    typing.infer(project, typing.resolver(project))
+  })
+}
+
+/// Run `rules` as `run` does, with `infer` standing in for girard: it's
+/// called once when a rule of the set is typed, and never otherwise, and
+/// gives the types of the lint-set modules it inferred.
+@internal
+pub fn run_with(
+  project: Project,
+  rules: List(Rule),
+  infer infer: fn(Project) -> Dict(String, ModuleTypes),
+) -> Result(List(Diagnostic), List(Diagnostic)) {
   case list.append(check_rules(rules), check_ignores(project.config, rules)) {
-    [] -> Ok(lint(project, rules))
+    [] -> Ok(lint(project, rules, infer))
     problems -> Error(problems)
   }
 }
 
 // Running
 //
-// Facts are built once per module and shared by every rule. A module task
-// gets only the module's facts, which hold everything its reports are
-// resolved against.
+// girard runs only when a rule needs types, and then once for all of them.
+// Facts are built once per module, with the module's types when they were
+// inferred, and shared by every rule, typed or not. A module task gets only
+// the module's facts, which hold everything its reports are resolved
+// against.
 
-fn lint(project: Project, rules: List(Rule)) -> List(Diagnostic) {
+fn lint(
+  project: Project,
+  rules: List(Rule),
+  infer: fn(Project) -> Dict(String, ModuleTypes),
+) -> List(Diagnostic) {
+  let types = case list.any(rules, rule.is_typed) {
+    True -> Some(infer(project))
+    False -> None
+  }
   let linted =
     list.filter_map(project.lint_set, fn(name) {
       use module <- result.try(dict.get(project.modules, name))
-      facts.new(module, project.config.target)
+      let module_types =
+        option.then(types, fn(types) {
+          option.from_result(dict.get(types, name))
+        })
+      facts.new(module, project.config.target, module_types)
     })
   let module_rules =
     list.filter_map(rules, fn(lint_rule) {

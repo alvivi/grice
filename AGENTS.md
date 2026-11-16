@@ -49,7 +49,7 @@ notice.
 |---|---|
 | `src/grice.gleam` | Entry points: `main()` for the built-in rule set, `run(rules)` for a client's own set, plus `load_project`, `lint` and the renderers |
 | `src/grice/rule.gleam` | **Exists:** module and project rule builders, reports and severities |
-| `src/grice/facts.gleam` | **Exists:** per-module facts: name, path, source, imports and the syntax tree as compiled for the target. Planned: type queries and the `Unknown` type |
+| `src/grice/facts.gleam` | **Exists:** per-module facts: name, path, source, imports and the syntax tree as compiled for the target, and for typed rules the type queries and the `Unknown` type |
 | `src/grice/types.gleam` | Type predicates over girard's `Type` |
 | `src/grice/visit.gleam` | **Exists:** the glance syntax tree walk, in source order, with a hook per kind of node |
 | `src/grice/diagnostic.gleam` | **Exists:** the diagnostic model (`Diagnostic`, `Severity`, `Location`, `Label`, `Span`, `Fix`, `Edit`). Planned: report, label and fix builders |
@@ -59,7 +59,7 @@ notice.
 | `src/grice/internal/loader.gleam` | **Exists:** discovery, the load set, reading, parsing and dependency sources |
 | `src/grice/internal/line_index.gleam` | **Exists:** byte offset to line and column, line ranges, span checks |
 | `src/grice/internal/typing.gleam` | **Exists:** girard integration: the order modules are typed in, the in-memory resolver and each module's type index |
-| `src/grice/internal/runner.gleam` | **Exists:** checking the rule set, running rules over the lint set and resolving reports. Planned: planning which facts the rules need |
+| `src/grice/internal/runner.gleam` | **Exists:** checking the rule set, planning which facts the rules need, running rules over the lint set and resolving reports. Planned: coverage notes |
 | `src/grice/internal/suppress.gleam` | Suppression directives and unused-suppression reports |
 | `src/grice/internal/render/human.gleam` | **Exists:** human output in a layout modelled on the compiler's |
 | `src/grice/internal/render/json.gleam` | Versioned JSON output |

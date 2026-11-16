@@ -1,8 +1,9 @@
 //// Rules for the runner tests, never shipped. Their `fixture/` codes keep
 //// them apart from real rules. Each shows one way to build a rule: a module
-//// rule with no context, one that threads a context through its hooks, and
-//// a project rule.
+//// rule with no context, one that threads a context through its hooks, a
+//// project rule, and a module rule that needs types.
 
+import girard
 import glance
 import gleam/dict
 import gleam/int
@@ -10,7 +11,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
 import grice/facts
-import grice/rule.{type Rule}
+import grice/rule.{type Report, type Rule}
 
 /// Reports each `echo`. It keeps no context.
 pub fn no_echo() -> Rule {
@@ -99,4 +100,46 @@ pub fn duplicate_public_function() -> Rule {
     let label = "`" <> other <> "` also defines `" <> name <> "`"
     #(module_name, rule.report(at: location, label:))
   })
+}
+
+/// Reports each `let _ = value` whose value is a `Result` from the prelude.
+/// The compiler warns about an unused `Result` but not about one discarded
+/// this way. The rule needs types, and stays silent when girard has no
+/// answer.
+pub fn discarded_result() -> Rule {
+  rule.module("fixture/discarded-result", title: "Result discarded")
+  |> rule.typed
+  |> rule.with_context(initial: Nil)
+  |> rule.on_statement(fn(context, statement, module_facts) {
+    case statement {
+      glance.Assignment(
+        location:,
+        kind: glance.Let,
+        pattern: glance.PatternDiscard(..),
+        value:,
+        ..,
+      ) -> #(
+        context,
+        report_result(location, facts.type_of(module_facts, value.location)),
+      )
+      _ -> #(context, [])
+    }
+  })
+  |> rule.build
+}
+
+fn report_result(
+  location: glance.Span,
+  value: Result(girard.Type, facts.Unknown),
+) -> List(Report) {
+  case value {
+    Ok(girard.Named(module: "gleam", name: "Result", ..)) -> [
+      rule.report(at: location, label: "This discards a `Result`")
+      |> rule.with_message([
+        "A `Result` says whether something failed, and discarding it hides the failure.",
+      ])
+      |> rule.with_hint("Handle the error, or assert that there is none."),
+    ]
+    Ok(_) | Error(_) -> []
+  }
 }
