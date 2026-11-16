@@ -57,6 +57,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   compiled for the target, girard returned nothing for the module, or the
   module reaches modules girard couldn't use, which leaves every query on
   it without an answer.
+- **Comments.** `facts.comments` gives a rule the module's comments, which
+  glance's syntax tree leaves out, in source order. Each `Comment` has its
+  `CommentKind` (`Regular`, `Doc` or `ModuleDoc`, for `//`, `///` and
+  `////`), its span in bytes, slashes included, and its text after the
+  slashes. A comment inside a definition left out for the other target
+  isn't there, as the definition isn't.
 - **girard.** grice depends on girard 4. Typed queries return its `Type`,
   `Resolution` and `Scheme`, so a rule that inspects them depends on
   girard too.

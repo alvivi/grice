@@ -1,6 +1,6 @@
 //// Tests for running rules. Projects are built in memory with
 //// `loader.load`. The fixture rules come first: module rules, then the
-//// facts and target view they see, then project rules and which modules
+//// facts, target view and comments they see, then project rules and which modules
 //// rules run on. Then typed rules: the types they see, why a query has no
 //// answer, when girard runs, and a typed run from a project on disk. Then
 //// how reports become diagnostics: resolution, severity and invalid
@@ -234,6 +234,136 @@ fn findings_on_target(target: String) -> List(String) {
     [fixture_rules.no_echo(), fixture_rules.duplicate_public_function()],
   )
   |> describe
+}
+
+// Comments
+
+pub fn comments_come_in_source_order_with_kind_span_and_text_test() {
+  let source =
+    "//// The module.
+/// The function.
+pub fn main() {
+  // In the body.
+  let text = \"// not a comment\" // After code.
+  text
+}
+// At the end, with no newline."
+  assert comments_of("", source)
+    == [
+      expected_comment(source, "////", " The module."),
+      expected_comment(source, "///", " The function."),
+      expected_comment(source, "//", " In the body."),
+      expected_comment(source, "//", " After code."),
+      expected_comment(source, "//", " At the end, with no newline."),
+    ]
+}
+
+// Spans are bytes: `é` is two and `🙂` four, so the first comment spans
+// 13, and the `\r` of each line ending is in neither the text nor the span.
+pub fn comment_spans_count_bytes_and_skip_carriage_returns_test() {
+  let source = "// café 🙂\r\npub fn main() {\r\n  1 // one\r\n}\r\n"
+  assert comments_of("", source)
+    == ["// 0-13 \" café 🙂\"", expected_comment(source, "//", " one")]
+}
+
+const target_comments =
+  "// Above the attribute.
+@target(javascript)
+// Between the attribute and the function.
+pub fn javascript() {
+  // In JavaScript.
+  1
+}
+@target(erlang)
+pub fn erlang() {
+  // In Erlang.
+  2
+}
+@target(erlang)
+const erlang_constant = #(
+  // In an Erlang constant.
+  1,
+)
+@target(javascript)
+import gleam/list.{
+  // In a JavaScript import.
+  map,
+}
+@target(js)
+type JavaScriptType {
+  // In a JavaScript custom type.
+  JavaScriptType
+}
+@target(erl)
+type ErlangAlias =
+  #(
+    // In an Erlang alias.
+    Int,
+  )
+// After them all.
+"
+
+pub fn comments_inside_definitions_for_the_other_target_are_left_out_test() {
+  let comment = expected_comment(target_comments, "//", _)
+  let around = [
+    comment(" Above the attribute."),
+    comment(" Between the attribute and the function."),
+  ]
+  assert comments_of("target = \"erlang\"\n", target_comments)
+    == list.flatten([
+      around,
+      [
+        comment(" In Erlang."),
+        comment(" In an Erlang constant."),
+        comment(" In an Erlang alias."),
+      ],
+      [comment(" After them all.")],
+    ])
+  assert comments_of("target = \"javascript\"\n", target_comments)
+    == list.flatten([
+      around,
+      [
+        comment(" In JavaScript."),
+        comment(" In a JavaScript import."),
+        comment(" In a JavaScript custom type."),
+      ],
+      [comment(" After them all.")],
+    ])
+}
+
+pub fn syntax_and_typed_rules_see_the_same_comments_test() {
+  let source = "/// Docs.\npub fn main() {\n  // Body.\n  1\n}\n"
+  let rules = [
+    on_module_end("fixture/syntax-comments", report_comments),
+    typed_on_module_end("fixture/typed-comments", report_comments),
+  ]
+  let assert [syntax, typed] = run_files([#("src/app.gleam", source)], rules)
+  assert syntax.message == typed.message
+  assert syntax.message == comments_of("", source)
+}
+
+// What `facts.comments` gives for `source`, as `src/app.gleam` with the
+// `gleam.toml` text `toml`, each as `report_comments` describes it.
+fn comments_of(toml: String, source: String) -> List(String) {
+  let rule = on_module_end("fixture/comments", report_comments)
+  let assert [Diagnostic(message:, ..)] =
+    run_files_with(toml, [#("src/app.gleam", source)], [rule])
+  message
+}
+
+// How `report_comments` describes the comment `marker <> text`, found in
+// `source`.
+fn expected_comment(source: String, marker: String, text: String) -> String {
+  let span = support.glance_span(source, marker <> text)
+  describe_comment(facts.Comment(
+    kind: case marker {
+      "////" -> facts.ModuleDoc
+      "///" -> facts.Doc
+      _ -> facts.Regular
+    },
+    span:,
+    text:,
+  ))
 }
 
 // Project rules
@@ -1428,6 +1558,34 @@ fn describe_facts(name: String) -> Rule {
       names(module.functions, fn(function: glance.Function) { function.name }),
     ]),
   ]
+}
+
+// Reports the module's comments, one paragraph each.
+fn report_comments(module_facts: ModuleFacts(kind)) -> List(Report) {
+  [
+    at_start("comments")
+    |> rule.with_message(list.map(
+      facts.comments(module_facts),
+      describe_comment,
+    )),
+  ]
+}
+
+// A comment as its marker, its span and its text, such as
+// `// 0-6 " TODO"`.
+fn describe_comment(comment: facts.Comment) -> String {
+  let marker = case comment.kind {
+    facts.Regular -> "//"
+    facts.Doc -> "///"
+    facts.ModuleDoc -> "////"
+  }
+  marker
+  <> " "
+  <> int.to_string(comment.span.start)
+  <> "-"
+  <> int.to_string(comment.span.end)
+  <> " "
+  <> string.inspect(comment.text)
 }
 
 // The name of each definition, joined with commas.
