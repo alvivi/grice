@@ -1,0 +1,16 @@
+---
+version: 2.0.2
+title: catalogue: grice/invalid-rule
+---
+error[grice/invalid-rule]: Invalid rule code
+
+A rule has the code "No-Echo", which isn't a valid rule code. Codes name
+rules in `gleam.toml`, so they follow a fixed syntax.
+
+Hint: A rule code is a package-style prefix, a slash and a kebab-case name,
+such as `my_app/no-io-in-view`. The prefix is a lowercase letter followed
+by lowercase letters, digits and underscores, and the name is words of
+lowercase letters and digits joined by single hyphens, starting with a
+letter.
+
+

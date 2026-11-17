@@ -66,3 +66,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **girard.** grice depends on girard 4. Typed queries return its `Type`,
   `Resolution` and `Scheme`, so a rule that inspects them depends on
   girard too.
+- **The library API.** The new `grice` module lints a project from code,
+  for tools such as an editor integration. `grice.load_project` reads a
+  project from disk, or returns a `LoadError` that says what it couldn't
+  read; a relative root is made absolute against the working directory,
+  keeping any `..` so a path through a symbolic link names what the file
+  system names. `grice.lint` runs a rule set over it, or returns every
+  problem with the rule set and with the rule codes `gleam.toml` ignores,
+  and runs nothing. `grice.diagnostics` and `grice.coverage` give what the
+  run found, and `grice.render` writes it as text, with or without colour
+  and with paths relative to a directory, followed by a summary of the
+  counts, the diagnostics ignores and suppressions hid, and the gaps in
+  coverage, or as a JSON document. grice can't be run from the command line
+  yet.
+- **Coverage.** The new `grice/coverage` module holds a run's `Coverage`:
+  how many lint-set modules there are, how many parse and how many girard
+  typed, and each `Gap`: a module that doesn't parse, a definition girard
+  couldn't type, a module it returned nothing for, a module it couldn't
+  use, with the `Cause`, and a dependency whose sources are missing. Each
+  gap matches one diagnostic, so a tool can pattern-match on the gaps
+  instead of reading text.

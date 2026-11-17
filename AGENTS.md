@@ -48,7 +48,8 @@ notice.
 
 | File | Responsibility |
 |---|---|
-| `src/grice.gleam` | Entry points: `main()` for the built-in rule set, `run(rules)` for a client's own set, plus `load_project`, `lint` and the renderers |
+| `src/grice.gleam` | **Exists:** the library API: `load_project`, `lint`, `diagnostics`, `coverage` and `render`. Planned: `main()` for the built-in rule set and `run(rules)` for a client's own set |
+| `src/grice/coverage.gleam` | **Exists:** the coverage of a run and its gaps, public so tools can pattern-match on them |
 | `src/grice/rule.gleam` | **Exists:** module and project rule builders, reports and severities |
 | `src/grice/facts.gleam` | **Exists:** per-module facts: name, path, source, imports, comments and the syntax tree as compiled for the target, and for typed rules the type queries and the `Unknown` type |
 | `src/grice/types.gleam` | Type predicates over girard's `Type` |
@@ -62,8 +63,10 @@ notice.
 | `src/grice/internal/typing.gleam` | **Exists:** girard integration: the order modules are typed in, the in-memory resolver and each module's type index |
 | `src/grice/internal/runner.gleam` | **Exists:** checking the rule set, planning which facts the rules need, running rules over the lint set, resolving reports, dropping what ignores and suppressions hide, and the coverage record with its notes |
 | `src/grice/internal/suppress.gleam` | **Exists:** applying ignores and suppression comments, and the unused- and invalid-suppression warnings |
-| `src/grice/internal/render/human.gleam` | **Exists:** human output in a layout modelled on the compiler's |
-| `src/grice/internal/render/json.gleam` | Versioned JSON output |
+| `src/grice/internal/render/human.gleam` | **Exists:** human output in a layout modelled on the compiler's, and a run's summary |
+| `src/grice/internal/render/json.gleam` | **Exists:** the JSON document, schema version 1, pretty-printed |
+| `src/grice/internal/stats.gleam` | **Exists:** what `--stats` measures: samples, phases and counts |
+| `src/grice/internal/path.gleam` | **Exists:** paths as text: segments, relative and absolute paths |
 | `src/grice/internal/parallel.gleam` | **Exists:** an order-keeping parallel map, as an Erlang FFI in `src/grice_ffi.erl` |
 | `src/grice/internal/platform.gleam` | Terminal access, arguments and exit (Erlang FFI) |
 

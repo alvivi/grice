@@ -1,8 +1,8 @@
 //// Tests for hiding diagnostics, over facts built in memory and
 //// diagnostics made by hand. First the grammar of a suppression, then
 //// where it may stand and what it reaches, the file form, unused and
-//// turned-off suppressions, and last the ignores of `gleam.toml` and what
-//// can never be hidden.
+//// turned-off suppressions, the ignores of `gleam.toml` and what can never
+//// be hidden, and last how many diagnostics were hidden.
 
 import glance
 import gleam/dict
@@ -388,6 +388,47 @@ reason = \"why\"
   assert location.primary.message == "This names one of grice's own diagnostics"
 }
 
+// Hidden count
+
+pub fn a_diagnostic_two_suppressions_cover_counts_once_test() {
+  let source =
+    "// grice-ignore-file fixture/no-echo: why\npub fn main() {\n  // grice-ignore fixture/no-echo: why\n  echo 1\n}\n"
+  let found =
+    found("fixture/no-echo", support.glance_span(source, "echo 1"), [])
+  assert hidden_count("", source, [found]) == #([], 1)
+}
+
+// `apply` can't tell two identical diagnostics apart, and hides both.
+pub fn identical_diagnostics_count_once_each_test() {
+  let source =
+    "pub fn main() {\n  // grice-ignore fixture/no-echo: why\n  echo 1\n}\n"
+  let found =
+    found("fixture/no-echo", support.glance_span(source, "echo 1"), [])
+  assert hidden_count("", source, [found, found]) == #([], 2)
+}
+
+pub fn an_unused_suppression_adds_its_warning_and_hides_nothing_test() {
+  let source =
+    "pub fn main() {\n  // grice-ignore fixture/no-echo: why\n  echo 1\n}\n"
+  let other = found("fixture/other", support.glance_span(source, "echo 1"), [])
+  let assert #([kept, unused], 0) = hidden_count("", source, [other])
+  assert kept == other
+  assert unused.code == "grice/unused-suppression"
+}
+
+pub fn ignores_and_suppressions_count_alike_test() {
+  let toml =
+    "[[tools.grice.ignore]]\npaths = [\"src/app.gleam\"]\nrules = [\"fixture/other\"]\nreason = \"why\"\n"
+  let source =
+    "pub fn main() {\n  // grice-ignore fixture/no-echo: why\n  echo 1\n}\n"
+  let span = support.glance_span(source, "echo 1")
+  let reported = [
+    found("fixture/no-echo", span, []),
+    found("fixture/other", span, []),
+  ]
+  assert hidden_count(toml, source, reported) == #([], 2)
+}
+
 // Helpers
 
 const codes = ["fixture/no-echo", "fixture/other", "fixture/third"]
@@ -434,6 +475,25 @@ fn apply_files(
   diagnostics: List(Diagnostic),
   codes: List(String),
 ) -> List(Diagnostic) {
+  apply_counting(toml, files, diagnostics, codes).0
+}
+
+// What's left of `diagnostics` on `src/app.gleam`, holding `source`, and
+// how many were hidden.
+fn hidden_count(
+  toml: String,
+  source: String,
+  diagnostics: List(Diagnostic),
+) -> #(List(Diagnostic), Int) {
+  apply_counting(toml, [#("src/app.gleam", source)], diagnostics, codes)
+}
+
+fn apply_counting(
+  toml: String,
+  files: List(#(String, String)),
+  diagnostics: List(Diagnostic),
+  codes: List(String),
+) -> #(List(Diagnostic), Int) {
   let project = support.project(toml, files, [])
   let modules =
     list.filter_map(project.lint_set, fn(name) {

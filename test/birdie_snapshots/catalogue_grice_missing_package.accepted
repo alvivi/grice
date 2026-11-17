@@ -1,0 +1,13 @@
+---
+version: 2.0.2
+title: catalogue: grice/missing-package
+---
+note[grice/missing-package]: A dependency's sources are missing
+
+The package `hexdep` is in `manifest.toml`, but `build/packages/hexdep/src`
+isn't a directory, so girard, the type inference grice uses, can't read its
+modules. Types that come from them may be incomplete.
+
+Hint: Run `gleam deps download`.
+
+

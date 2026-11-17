@@ -1,0 +1,13 @@
+---
+version: 2.0.2
+title: catalogue: grice/invalid-config
+---
+error[grice/invalid-config]: Unknown key in `gleam.toml`
+
+`gleam.toml` sets `tools.grice.includes`, which grice doesn't read. The
+keys of `[tools.grice]` are `include`, `exclude`, `ignore` and
+`suppression_comments`.
+
+Hint: Remove the key, or fix its spelling.
+
+

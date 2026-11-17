@@ -18,6 +18,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
+import grice/coverage
 import grice/diagnostic.{type Diagnostic, Diagnostic, Label, Location, Span}
 import grice/facts.{type ModuleFacts, type Syntax, type Typed}
 import grice/fixture_rules
@@ -656,11 +657,11 @@ pub fn queries_on_a_module_girard_returned_nothing_for_test() {
       hint: Some(girard_hint),
     )
   assert linted.coverage
-    == runner.Coverage(
+    == coverage.Coverage(
       modules: 2,
       parsed: 2,
-      types: runner.Requested(full: 1, partial: 0, none: 1),
-      gaps: [runner.UninferredModule("src/app.gleam")],
+      types: coverage.Requested(full: 1, partial: 0, none: 1),
+      gaps: [coverage.UninferredModule("src/app.gleam")],
     )
 }
 
@@ -687,12 +688,16 @@ pub fn no_query_answers_in_a_module_with_an_unavailable_import_test() {
     ]
   // It still counts as partial.
   assert linted.coverage
-    == runner.Coverage(
+    == coverage.Coverage(
       modules: 2,
       parsed: 2,
-      types: runner.Requested(full: 1, partial: 1, none: 0),
+      types: coverage.Requested(full: 1, partial: 1, none: 0),
       gaps: [
-        runner.UnavailableImport("src/app.gleam", "gone", runner.NoSuchModule),
+        coverage.UnavailableImport(
+          "src/app.gleam",
+          "gone",
+          coverage.NoSuchModule,
+        ),
       ],
     )
 }
@@ -807,10 +812,10 @@ pub fn typed_runs_dont_depend_on_the_working_directory_test() {
       "fixture/typed-calls src/app.gleam: Ok(Named(\"shapes/square\", \"Square\", []))",
     ]
   assert relative_run.coverage
-    == runner.Coverage(
+    == coverage.Coverage(
       modules: 1,
       parsed: 1,
-      types: runner.Requested(full: 1, partial: 0, none: 0),
+      types: coverage.Requested(full: 1, partial: 0, none: 0),
       gaps: [],
     )
   assert absolute_run == relative_run
@@ -857,11 +862,11 @@ pub fn untyped_definition_notes_each_skipped_definition_of_the_lint_set_test() {
       ),
     ]
   assert linted.coverage
-    == runner.Coverage(
+    == coverage.Coverage(
       modules: 1,
       parsed: 1,
-      types: runner.Requested(full: 0, partial: 1, none: 0),
-      gaps: [runner.UntypedDefinition("src/app.gleam", "skipped")],
+      types: coverage.Requested(full: 0, partial: 1, none: 0),
+      gaps: [coverage.UntypedDefinition("src/app.gleam", "skipped")],
     )
 }
 
@@ -906,34 +911,35 @@ pub fn unavailable_import_notes_each_module_girard_couldnt_use_test() {
     ]
   assert linted.coverage.modules == 6
   assert linted.coverage.parsed == 5
-  assert linted.coverage.types == runner.Requested(full: 0, partial: 5, none: 0)
+  assert linted.coverage.types
+    == coverage.Requested(full: 0, partial: 5, none: 0)
   assert linted.coverage.gaps
     == [
-      runner.UnparsedModule("src/broken_linted.gleam"),
-      runner.UnavailableImport(
+      coverage.UnparsedModule("src/broken_linted.gleam"),
+      coverage.UnavailableImport(
         "src/dependent.gleam",
         "dep/inner",
-        runner.DependencyUnparsable,
+        coverage.DependencyUnparsable,
       ),
-      runner.UnavailableImport(
+      coverage.UnavailableImport(
         "src/direct.gleam",
         "gen/broken",
-        runner.ProjectModuleUnparsable,
+        coverage.ProjectModuleUnparsable,
       ),
-      runner.UnavailableImport(
+      coverage.UnavailableImport(
         "src/importer.gleam",
         "broken_linted",
-        runner.ProjectModuleUnparsable,
+        coverage.ProjectModuleUnparsable,
       ),
-      runner.UnavailableImport(
+      coverage.UnavailableImport(
         "src/indirect.gleam",
         "gen/broken",
-        runner.ProjectModuleUnparsable,
+        coverage.ProjectModuleUnparsable,
       ),
-      runner.UnavailableImport(
+      coverage.UnavailableImport(
         "src/nameless.gleam",
         "nowhere",
-        runner.NoSuchModule,
+        coverage.NoSuchModule,
       ),
     ]
   let assert [dependent, indirect, _, direct, importer, nameless] =
@@ -1000,15 +1006,15 @@ pub fn unavailable_import_notes_a_project_module_girard_couldnt_use_test() {
   // from `two`'s interface.
   assert linted.coverage.gaps
     == [
-      runner.UnavailableImport(
+      coverage.UnavailableImport(
         "src/one.gleam",
         "one",
-        runner.ProjectModuleUnusable,
+        coverage.ProjectModuleUnusable,
       ),
-      runner.UnavailableImport(
+      coverage.UnavailableImport(
         "src/two.gleam",
         "one",
-        runner.ProjectModuleUnusable,
+        coverage.ProjectModuleUnusable,
       ),
     ]
   let assert Ok(note) =
@@ -1057,9 +1063,9 @@ pub fn missing_package_notes_each_package_when_types_are_requested_test() {
     ]
   assert linted.coverage.gaps
     == [
-      runner.MissingPackage("hexdep"),
-      runner.MissingPackage("gitdep"),
-      runner.MissingPackage("localdep"),
+      coverage.MissingPackage("hexdep"),
+      coverage.MissingPackage("gitdep"),
+      coverage.MissingPackage("localdep"),
     ]
   let assert Ok(syntax_only) = runner.run(project, [fixture_rules.no_echo()])
   assert syntax_only.diagnostics == []
@@ -1081,9 +1087,14 @@ pub fn a_syntax_only_run_never_infers_and_reports_only_parse_errors_test() {
   assert describe(linted.diagnostics)
     == ["grice/parse-error src/broken.gleam: glance didn't expect this"]
   assert linted.coverage
-    == runner.Coverage(modules: 2, parsed: 1, types: runner.NotRequested, gaps: [
-      runner.UnparsedModule("src/broken.gleam"),
-    ])
+    == coverage.Coverage(
+      modules: 2,
+      parsed: 1,
+      types: coverage.NotRequested,
+      gaps: [
+        coverage.UnparsedModule("src/broken.gleam"),
+      ],
+    )
 }
 
 // Parallel work
@@ -1201,13 +1212,12 @@ pub fn resolved_diagnostics_render_like_the_compiler_test() {
   let project = support.project("", [#("src/app.gleam", echoes)], [])
   let assert Ok(runner.Linted(diagnostics: [diagnostic, _], ..)) =
     runner.run(project, [fixture_rules.no_echo()])
-  let sources =
-    project.modules
-    |> dict.values
-    |> list.map(fn(module) { #(module.path, module.source) })
-    |> dict.from_list
   let assert Ok(text) =
-    human.render([diagnostic], sources, human.Options(colour: False))
+    human.render(
+      [diagnostic],
+      loader.sources(project),
+      human.Options(colour: False, directory: ""),
+    )
   assert text == "warning[fixture/no-echo]: Echo left in the code
   ┌─ src/app.gleam:2:3
   │
@@ -1568,6 +1578,29 @@ reason = \"why\"
   assert left == []
 }
 
+// The ignore of `src/ignored.gleam` hides two diagnostics and the
+// suppression one; the warning about the unused suppression isn't counted.
+pub fn a_run_counts_what_ignores_and_suppressions_hid_test() {
+  let toml =
+    "[[tools.grice.ignore]]
+paths = [\"src/ignored.gleam\"]
+rules = [\"fixture/no-echo\"]
+reason = \"why\"
+"
+  let files = [
+    #(
+      "src/app.gleam",
+      "pub fn main() {\n  // grice-ignore fixture/no-echo: why\n  echo 1\n  // grice-ignore fixture/no-echo: why\n}\n",
+    ),
+    #("src/ignored.gleam", "pub fn main() {\n  echo 2\n  echo 3\n}\n"),
+  ]
+  let project = support.project(toml, files, [])
+  let assert Ok(runner.Linted(diagnostics: [unused], hidden:, ..)) =
+    runner.run(project, [fixture_rules.no_echo()])
+  assert unused.code == "grice/unused-suppression"
+  assert hidden == 3
+}
+
 // The comment after `echo 2` follows code on its line, and the last one
 // has no code after it but the closing brace, where nothing is reported.
 pub fn suppression_warnings_render_in_a_crlf_file_with_non_ascii_text_test() {
@@ -1579,7 +1612,11 @@ pub fn suppression_warnings_render_in_a_crlf_file_with_non_ascii_text_test() {
   assert kept == echo_diagnostic(span_of(source, "echo 2"))
   let sources = dict.from_list([#("src/app.gleam", line_index.new(source))])
   let assert Ok(text) =
-    human.render([misplaced, unused], sources, human.Options(colour: False))
+    human.render(
+      [misplaced, unused],
+      sources,
+      human.Options(colour: False, directory: ""),
+    )
   assert text == "warning[grice/invalid-suppression]: Invalid suppression
   ┌─ src/app.gleam:5:10
   │

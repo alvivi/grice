@@ -1,0 +1,19 @@
+---
+version: 2.0.2
+title: catalogue: grice/unused-suppression
+---
+warning[grice/unused-suppression]: Unused suppression
+  ┌─ src/app.gleam:7:1
+  │
+7 │ // grice-ignore fixture/no-echo: Nothing here prints.
+  │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This hides nothing
+
+This suppression hides nothing: no diagnostic of the rule `fixture/no-echo`
+is left to hide on line 8, the next line of code.
+
+Hint: Fix the suppression, or remove it. Write `// grice-ignore <rule
+code>: <reason>` on its own line, above the code it covers, or `//
+grice-ignore-file <rule code>: <reason>` before the module's first line of
+code to cover the whole module.
+
+

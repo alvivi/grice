@@ -264,13 +264,12 @@ fn primary_span(module: loader.Module) -> diagnostic.Span {
 
 // Every diagnostic of the project, rendered without colour.
 fn render(project: Project) -> String {
-  let sources =
-    project.modules
-    |> dict.values
-    |> list.map(fn(module) { #(module.path, module.source) })
-    |> dict.from_list
   let assert Ok(text) =
-    human.render(project.diagnostics, sources, human.Options(colour: False))
+    human.render(
+      project.diagnostics,
+      loader.sources(project),
+      human.Options(colour: False, directory: ""),
+    )
   text
 }
 

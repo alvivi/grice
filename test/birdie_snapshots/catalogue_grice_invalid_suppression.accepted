@@ -1,0 +1,18 @@
+---
+version: 2.0.2
+title: catalogue: grice/invalid-suppression
+---
+warning[grice/invalid-suppression]: Invalid suppression
+   ┌─ src/app.gleam:12:1
+   │
+12 │ // grice-ignore fixture/no-echo
+   │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This gives no reason
+
+A suppression says why the rule doesn't apply, after a colon that follows
+the rule code, but this one gives no reason. It hides nothing.
+
+Hint: Write `// grice-ignore <rule code>: <reason>` on its own line, above
+the code it covers, or `// grice-ignore-file <rule code>: <reason>` before
+the module's first line of code to cover the whole module.
+
+

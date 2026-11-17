@@ -19,6 +19,14 @@
 //// first line, underlined to the end of it. Tabs expand to stops of 4
 //// columns, and display widths come from string_width.
 ////
+//// Location paths are shown relative to the working directory, so they
+//// work as `file:line:column` where the output is read.
+////
+//// A whole run is its diagnostics and then a summary: the counts by
+//// severity, how many diagnostics the ignores and suppressions hid, and,
+//// when the run didn't cover all of the code, each kind of gap it left, so
+//// a clean result never hides code grice didn't analyse.
+////
 //// Rendering never guesses. Every source and span is checked first, and
 //// any problem is an error with no partial output.
 
@@ -29,18 +37,30 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/result
+import gleam/set
 import gleam/string
+import grice/coverage.{type Gap}
 import grice/diagnostic.{
   type Diagnostic, type Edit, type Fix, type Label, type Location, type Severity,
   type Span,
 }
 import grice/internal/line_index.{type LineIndex, type SpanProblem}
+import grice/internal/loader.{type Project}
+import grice/internal/path
+import grice/internal/runner.{type Linted}
 import string_width
 
 /// How to render. Whether to colour is decided by the caller, which knows
 /// whether it writes to a terminal.
 pub type Options {
-  Options(colour: Bool)
+  Options(
+    colour: Bool,
+    /// The directory, relative to the project root, that location paths are
+    /// shown relative to: the working directory, so a path works as
+    /// `file:line:column` where the output is read. `""` and `.` are the
+    /// root itself. It can't hold a `..`, which isn't resolved.
+    directory: String,
+  )
 }
 
 /// Why diagnostics couldn't be rendered. Each one is a bug in whatever
@@ -59,18 +79,57 @@ pub type RenderError {
 /// maps each location's path to the index of its source.
 ///
 /// Every diagnostic is checked before anything is rendered, and the first
-/// problem found is returned: diagnostics in order, and within one the
-/// source lookup, the primary label, the secondary labels in order, the fix's
-/// edits in order, and then whether any edits overlap.
+/// problem found is returned, as `check` returns it.
 pub fn render(
   diagnostics: List(Diagnostic),
   sources: Dict(String, LineIndex),
   options: Options,
 ) -> Result(String, RenderError) {
-  use checked <- result.map(list.try_map(diagnostics, check(_, sources)))
-  checked
-  |> list.map(render_diagnostic(_, options.colour))
-  |> string.concat
+  use checked <- result.map(check(diagnostics, sources))
+  write(checked, options)
+}
+
+/// Render a completed run of `project`: its diagnostics, then the summary.
+pub fn run(
+  project: Project,
+  linted: Linted,
+  options: Options,
+) -> Result(String, RenderError) {
+  use text <- result.map(render(
+    linted.diagnostics,
+    loader.sources(project),
+    options,
+  ))
+  text <> summary(linted)
+}
+
+/// What a render error says is wrong, as a clause for a sentence that
+/// reports it, such as "the span from byte 4 to byte 2 in `src/app.gleam`
+/// starts after it ends".
+pub fn describe_error(error: RenderError) -> String {
+  case error {
+    MissingSource(path:) ->
+      "a diagnostic points into `" <> path <> "`, which has no source"
+    InvalidSpan(path:, span:, problem:) ->
+      "the span from byte "
+      <> int.to_string(span.start)
+      <> " to byte "
+      <> int.to_string(span.end)
+      <> " in `"
+      <> path
+      <> "` "
+      <> line_index.describe_problem(problem)
+    OverlappingEdits(path:, first:, second:) ->
+      "two edits of a fix in `"
+      <> path
+      <> "` overlap: one from byte "
+      <> int.to_string(second.start)
+      <> " starts before the one from byte "
+      <> int.to_string(first.start)
+      <> " to byte "
+      <> int.to_string(first.end)
+      <> " ends"
+  }
 }
 
 // Validation
@@ -78,14 +137,25 @@ pub fn render(
 // Every source and span is checked before anything is written, so a render
 // either succeeds whole or returns the first problem.
 
-// A diagnostic whose location, if it has one, has been checked against its
-// source.
-type Checked {
+/// A diagnostic whose location, if it has one, has been checked against its
+/// source, ready to write.
+pub type Checked {
   Located(diagnostic: Diagnostic, location: Location, source: LineIndex)
   Unlocated(diagnostic: Diagnostic)
 }
 
-fn check(
+/// Check each diagnostic against the source its location points into, and
+/// return the first problem: diagnostics in order, and within one the
+/// source lookup, the primary label, the secondary labels in order, the
+/// fix's edits in order, and then whether any edits overlap.
+pub fn check(
+  diagnostics: List(Diagnostic),
+  sources: Dict(String, LineIndex),
+) -> Result(List(Checked), RenderError) {
+  list.try_map(diagnostics, check_one(_, sources))
+}
+
+fn check_one(
   diagnostic: Diagnostic,
   sources: Dict(String, LineIndex),
 ) -> Result(Checked, RenderError) {
@@ -172,13 +242,30 @@ fn check_overlaps(path: String, edits: List(Edit)) -> Result(Nil, RenderError) {
 // snippet when there is a location, then each message paragraph, then the
 // hint.
 
-fn render_diagnostic(checked: Checked, colour: Bool) -> String {
+/// The word for a severity, as diagnostics start with it: "error",
+/// "warning" or "note".
+pub fn severity_name(severity: Severity) -> String {
+  case severity {
+    diagnostic.Error -> "error"
+    diagnostic.Warning -> "warning"
+    diagnostic.Note -> "note"
+  }
+}
+
+fn write(checked: List(Checked), options: Options) -> String {
+  checked
+  |> list.map(write_diagnostic(_, options))
+  |> string.concat
+}
+
+fn write_diagnostic(checked: Checked, options: Options) -> String {
   let diagnostic = checked.diagnostic
+  let colour = options.colour
   let head = case checked {
     Located(diagnostic:, location:, source:) ->
       header(diagnostic, colour)
       <> "\n"
-      <> snippet(diagnostic.severity, location, source, colour)
+      <> snippet(diagnostic.severity, location, source, options)
     Unlocated(diagnostic:) -> header(diagnostic, colour)
   }
   let hint = case diagnostic.hint {
@@ -197,14 +284,6 @@ fn header(diagnostic: Diagnostic, colour: Bool) -> String {
   }
   paint(name, "1;" <> severity_colour(diagnostic.severity), colour)
   <> paint(": " <> diagnostic.title, "1", colour)
-}
-
-fn severity_name(severity: Severity) -> String {
-  case severity {
-    diagnostic.Error -> "error"
-    diagnostic.Warning -> "warning"
-    diagnostic.Note -> "note"
-  }
 }
 
 // ANSI colour codes: red, yellow and green.
@@ -241,8 +320,9 @@ fn snippet(
   severity: Severity,
   location: Location,
   source: LineIndex,
-  colour: Bool,
+  options: Options,
 ) -> String {
+  let colour = options.colour
   // By line, then column, then list order, which puts the primary first.
   let marks =
     [
@@ -266,7 +346,7 @@ fn snippet(
     pad
     <> gutter("┌─")
     <> " "
-    <> location.path
+    <> path.relative(location.path, from: options.directory)
     <> ":"
     <> int.to_string(start.line)
     <> ":"
@@ -359,6 +439,144 @@ fn width_options() -> string_width.Options {
 
 fn measure(text: String) -> Int {
   string_width.line_with(text, width_options())
+}
+
+// The summary
+//
+// Plain sentences, one per line, wrapped as message paragraphs are: the
+// counts, then the coverage when it's incomplete.
+
+fn summary(linted: Linted) -> String {
+  let hidden = case linted.hidden {
+    0 -> ""
+    hidden ->
+      ", " <> int.to_string(hidden) <> " hidden by ignores and suppressions"
+  }
+  let counts =
+    counts(linted.diagnostics)
+    <> " in "
+    <> plural(linted.coverage.modules, "module", "modules")
+    <> hidden
+    <> "."
+  [counts, ..coverage_sentence(linted.coverage.gaps)]
+  |> list.map(fn(sentence) { wrap(sentence) <> "\n" })
+  |> string.concat
+}
+
+// "1 error, 2 warnings and 1 note", leaving out the severities with none, or
+// "No diagnostics".
+fn counts(diagnostics: List(Diagnostic)) -> String {
+  let count = fn(severity) {
+    list.count(diagnostics, fn(found) { found.severity == severity })
+  }
+  result.values([
+    clause(count(diagnostic.Error), "error", "errors"),
+    clause(count(diagnostic.Warning), "warning", "warnings"),
+    clause(count(diagnostic.Note), "note", "notes"),
+  ])
+  |> enumerate
+  |> string.to_option
+  |> option.unwrap("No diagnostics")
+}
+
+// One sentence naming each kind of gap present, in the order of `Gap`'s
+// variants, or nothing when coverage is complete. A module that doesn't
+// parse is one no rule saw; every other gap only limits typed rules.
+fn coverage_sentence(gaps: List(Gap)) -> List(String) {
+  let tally = list.fold(gaps, Tally(0, [], 0, [], 0), count_gap)
+  let in_modules = fn(definitions) {
+    definitions
+    <> " in "
+    <> plural(distinct(tally.untyped), "module", "modules")
+    <> " couldn't be typed"
+  }
+  let clauses =
+    result.values([
+      clause(tally.unparsed, "module doesn't parse", "modules don't parse"),
+      clause(list.length(tally.untyped), "definition", "definitions")
+        |> result.map(in_modules),
+      clause(tally.uninferred, "module got no types", "modules got no types"),
+      clause(
+        distinct(tally.unavailable),
+        "module can't use the types of a module it imports",
+        "modules can't use the types of modules they import",
+      ),
+      clause(
+        tally.missing,
+        "package is missing its sources",
+        "packages are missing their sources",
+      ),
+    ])
+  let reach = case tally.unparsed {
+    0 -> "typed rules"
+    _ -> "rules"
+  }
+  case clauses {
+    [] -> []
+    [_, ..] -> [
+      "Coverage is incomplete: "
+      <> enumerate(clauses)
+      <> ", so "
+      <> reach
+      <> " didn't see all of the code.",
+    ]
+  }
+}
+
+// The gaps of a run by kind: how many of each, with the paths of the
+// modules where a module can hold several.
+type Tally {
+  Tally(
+    unparsed: Int,
+    untyped: List(String),
+    uninferred: Int,
+    unavailable: List(String),
+    missing: Int,
+  )
+}
+
+fn count_gap(tally: Tally, gap: Gap) -> Tally {
+  case gap {
+    coverage.UnparsedModule(..) -> Tally(..tally, unparsed: tally.unparsed + 1)
+    coverage.UntypedDefinition(path:, ..) ->
+      Tally(..tally, untyped: [path, ..tally.untyped])
+    coverage.UninferredModule(..) ->
+      Tally(..tally, uninferred: tally.uninferred + 1)
+    coverage.UnavailableImport(path:, ..) ->
+      Tally(..tally, unavailable: [path, ..tally.unavailable])
+    coverage.MissingPackage(..) -> Tally(..tally, missing: tally.missing + 1)
+  }
+}
+
+fn distinct(paths: List(String)) -> Int {
+  set.size(set.from_list(paths))
+}
+
+// `count` with the singular or plural form, or nothing when it's 0.
+fn clause(count: Int, one: String, many: String) -> Result(String, Nil) {
+  case count {
+    0 -> Error(Nil)
+    _ -> Ok(plural(count, one, many))
+  }
+}
+
+// `count` followed by the singular or plural form: "1 module", "2 modules".
+fn plural(count: Int, one: String, many: String) -> String {
+  int.to_string(count)
+  <> " "
+  <> case count {
+    1 -> one
+    _ -> many
+  }
+}
+
+// "a", "a and b", "a, b and c".
+fn enumerate(items: List(String)) -> String {
+  case list.reverse(items) {
+    [] -> ""
+    [only] -> only
+    [last, ..rest] -> string.join(list.reverse(rest), ", ") <> " and " <> last
+  }
 }
 
 // Wrapping

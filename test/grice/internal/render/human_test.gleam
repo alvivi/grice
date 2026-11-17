@@ -1,12 +1,16 @@
 //// Tests for the human renderer: the layout of a few typical diagnostics,
 //// then the errors, which are tested directly: missing sources, invalid
-//// spans and their precedence, and the rules for a fix's edits.
+//// spans and their precedence, and the rules for a fix's edits. Last, a
+//// whole run with its summary, as snapshots.
 
+import birdie
 import gleam/dict.{type Dict}
+import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
+import grice/coverage.{type Gap}
 import grice/diagnostic.{
   type Diagnostic, Diagnostic, Edit, Fix, Label, Location, Span,
 }
@@ -16,6 +20,8 @@ import grice/internal/line_index.{
 import grice/internal/render/human.{
   InvalidSpan, MissingSource, Options, OverlappingEdits,
 }
+import grice/internal/runner
+import grice/support
 
 // Layout
 
@@ -247,7 +253,11 @@ pub fn render_in_colour_test() {
       severity: diagnostic.Error,
     )
   let sources = dict.from_list([#(path, line_index.new(app))])
-  assert human.render([diagnostic], sources, Options(colour: True))
+  assert human.render(
+      [diagnostic],
+      sources,
+      Options(colour: True, directory: ""),
+    )
     == Ok(
       output([
         style("1;31", "error[test/example]")
@@ -453,7 +463,100 @@ pub fn render_fix_is_not_printed_test() {
     == render_one(Label(Span(0, 3), ""), [], None)
 }
 
+// Runs
+//
+// A completed run: its diagnostics, then the summary.
+
+pub fn findings_hidden_diagnostics_and_gaps_test() {
+  let #(project, linted) = support.showcase()
+  let assert Ok(text) = human.run(project, linted, plain())
+  birdie.snap(text, title: "human: findings with hidden diagnostics and gaps")
+}
+
+// Hand-made runs with no located diagnostics, so each summary shows one
+// combination of counts, hidden diagnostics and gaps.
+pub fn summary_sentences_test() {
+  let gone = coverage.NoSuchModule
+  let summaries =
+    [
+      #(1, [], 0, []),
+      #(3, [diagnostic.Error, diagnostic.Warning, diagnostic.Note], 1, []),
+      #(19, [diagnostic.Warning, diagnostic.Warning], 4, [
+        coverage.UnparsedModule("src/a.gleam"),
+      ]),
+      #(19, list.repeat(diagnostic.Note, 4), 0, [
+        coverage.UntypedDefinition("src/a.gleam", "one"),
+        coverage.UntypedDefinition("src/a.gleam", "two"),
+        coverage.UntypedDefinition("src/b.gleam", "three"),
+        coverage.MissingPackage("hexdep"),
+      ]),
+      #(2, [diagnostic.Error, ..list.repeat(diagnostic.Note, 3)], 0, [
+        coverage.UnparsedModule("src/a.gleam"),
+        coverage.UntypedDefinition("src/b.gleam", "one"),
+        coverage.UninferredModule("src/c.gleam"),
+        coverage.UnavailableImport("src/d.gleam", "gone", gone),
+        coverage.MissingPackage("hexdep"),
+      ]),
+      #(9, [], 0, [
+        coverage.UnparsedModule("src/a.gleam"),
+        coverage.UnparsedModule("src/b.gleam"),
+        coverage.UntypedDefinition("src/c.gleam", "one"),
+        coverage.UntypedDefinition("src/d.gleam", "two"),
+        coverage.UninferredModule("src/e.gleam"),
+        coverage.UninferredModule("src/f.gleam"),
+        coverage.UnavailableImport("src/g.gleam", "gone", gone),
+        coverage.UnavailableImport("src/g.gleam", "lost", gone),
+        coverage.UnavailableImport("src/h.gleam", "gone", gone),
+        coverage.MissingPackage("hexdep"),
+        coverage.MissingPackage("gitdep"),
+      ]),
+    ]
+    |> list.map(fn(entry) {
+      let #(modules, severities, hidden, gaps) = entry
+      summary(modules, severities, hidden, gaps)
+    })
+  birdie.snap(string.join(summaries, "\n"), title: "human: summary sentences")
+}
+
 // Helpers
+
+// The summary of a run with `modules` modules, a location-less diagnostic
+// of each of `severities`, `hidden` hidden diagnostics and `gaps`.
+fn summary(
+  modules: Int,
+  severities: List(diagnostic.Severity),
+  hidden: Int,
+  gaps: List(Gap),
+) -> String {
+  let diagnostics =
+    list.index_map(severities, fn(severity, index) {
+      Diagnostic(
+        code: "fixture/made-" <> int.to_string(index),
+        severity:,
+        title: "Made in a test",
+        location: None,
+        message: [],
+        hint: None,
+      )
+    })
+  let coverage =
+    coverage.Coverage(
+      modules:,
+      parsed: modules,
+      types: coverage.NotRequested,
+      gaps:,
+    )
+  let assert Ok(text) =
+    human.run(
+      support.project("", [#("src/app.gleam", "")], []),
+      runner.Linted(diagnostics:, coverage:, hidden:),
+      plain(),
+    )
+  // Only the summary, after the last diagnostic's empty line.
+  let assert Ok(last) = list.last(string.split(text, "\n\n"))
+  last
+}
+
 //
 // One diagnostic in one source, with a CRLF line and a two-byte `é`, and
 // what the layout tests need.
@@ -493,7 +596,7 @@ fn sources() -> Dict(String, line_index.LineIndex) {
 }
 
 fn plain() -> human.Options {
-  Options(colour: False)
+  Options(colour: False, directory: "")
 }
 
 // The text of one or more diagnostics rendered in a source at `path`.

@@ -53,6 +53,18 @@ pub type SpanProblem {
   SplitsLineEnding
 }
 
+/// What a span problem says about the span, for a sentence about it, such
+/// as "starts after it ends".
+pub fn describe_problem(problem: SpanProblem) -> String {
+  case problem {
+    OutOfBounds -> "isn't inside the source"
+    Reversed -> "starts after it ends"
+    SplitsCodepoint -> "has an end inside a multi-byte character"
+    SplitsLineEnding ->
+      "has an end between a carriage return and the line feed after it"
+  }
+}
+
 /// Index a source. This scans it once for line breaks.
 pub fn new(source: String) -> LineIndex {
   let bytes = bit_array.from_string(source)

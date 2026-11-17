@@ -1,0 +1,115 @@
+---
+version: 2.0.2
+title: json: a fix
+file: ./test/grice/internal/render/json_test.gleam
+test_name: a_fix_test
+---
+{
+  "version": 1,
+  "root": "app",
+  "summary": {
+    "errors": 0,
+    "warnings": 1,
+    "notes": 0,
+    "hidden": 0
+  },
+  "coverage": {
+    "complete": true,
+    "modules": 1,
+    "parsed": 1,
+    "types": {
+      "requested": false
+    },
+    "gaps": []
+  },
+  "diagnostics": [
+    {
+      "code": "fixture/concatenation",
+      "severity": "warning",
+      "title": "Concatenation of a literal",
+      "location": {
+        "path": "src/app.gleam",
+        "primary": {
+          "span": {
+            "start": 18,
+            "end": 30
+          },
+          "range": {
+            "start": {
+              "line": 2,
+              "column": 3
+            },
+            "end": {
+              "line": 2,
+              "column": 14
+            }
+          },
+          "message": "This could be one string"
+        },
+        "secondary": [
+          {
+            "span": {
+              "start": 29,
+              "end": 30
+            },
+            "range": {
+              "start": {
+                "line": 2,
+                "column": 13
+              },
+              "end": {
+                "line": 2,
+                "column": 14
+              }
+            },
+            "message": ""
+          }
+        ],
+        "fix": {
+          "title": "Swap the operands",
+          "edits": [
+            {
+              "span": {
+                "start": 18,
+                "end": 25
+              },
+              "range": {
+                "start": {
+                  "line": 2,
+                  "column": 3
+                },
+                "end": {
+                  "line": 2,
+                  "column": 9
+                }
+              },
+              "replacement": "x"
+            },
+            {
+              "span": {
+                "start": 29,
+                "end": 31
+              },
+              "range": {
+                "start": {
+                  "line": 2,
+                  "column": 13
+                },
+                "end": {
+                  "line": 3,
+                  "column": 1
+                }
+              },
+              "replacement": "\"café\"\n"
+            }
+          ]
+        }
+      },
+      "message": [
+        "A made-up rule with a fix."
+      ],
+      "hint": null
+    }
+  ]
+}
+

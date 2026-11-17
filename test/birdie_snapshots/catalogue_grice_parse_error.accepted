@@ -1,0 +1,17 @@
+---
+version: 2.0.2
+title: catalogue: grice/parse-error
+---
+error[grice/parse-error]: Can't parse this module
+  ┌─ src/broken.gleam:1:1
+  │
+1 │ pub fn (
+  │ ^^^ glance didn't expect this
+
+grice reads Gleam code with glance, and glance couldn't parse this file. No
+rule ran on it, and the modules that import it may lose type information.
+
+Hint: If `gleam build` accepts this file, glance doesn't support its syntax
+yet, so please report it to glance.
+
+

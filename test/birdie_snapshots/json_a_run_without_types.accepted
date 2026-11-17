@@ -1,0 +1,59 @@
+---
+version: 2.0.2
+title: json: a run without types
+file: ./test/grice/internal/render/json_test.gleam
+test_name: a_run_without_types_test
+---
+{
+  "version": 1,
+  "root": "app",
+  "summary": {
+    "errors": 0,
+    "warnings": 1,
+    "notes": 0,
+    "hidden": 0
+  },
+  "coverage": {
+    "complete": true,
+    "modules": 1,
+    "parsed": 1,
+    "types": {
+      "requested": false
+    },
+    "gaps": []
+  },
+  "diagnostics": [
+    {
+      "code": "fixture/no-echo",
+      "severity": "warning",
+      "title": "Echo left in the code",
+      "location": {
+        "path": "src/app.gleam",
+        "primary": {
+          "span": {
+            "start": 18,
+            "end": 24
+          },
+          "range": {
+            "start": {
+              "line": 2,
+              "column": 3
+            },
+            "end": {
+              "line": 2,
+              "column": 9
+            }
+          },
+          "message": "This prints when it runs"
+        },
+        "secondary": [],
+        "fix": null
+      },
+      "message": [
+        "`echo` prints its value each time it runs."
+      ],
+      "hint": "Remove it once you're done debugging."
+    }
+  ]
+}
+
