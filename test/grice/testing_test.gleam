@@ -6,7 +6,6 @@
 
 import birdie
 import girard
-import glance
 import gleam/bool
 import gleam/dict
 import gleam/dynamic.{type Dynamic}
@@ -129,9 +128,8 @@ pub fn without_gleam_toml_the_defaults_apply_test() {
     ])
     |> testing.run([fixture_rules.no_echo()])
     |> testing.diagnostics
-  let glance.Span(start:, end:) = support.glance_span(source, "echo 2")
   assert location.path == "src/app.gleam"
-  assert location.primary.span == diagnostic.Span(start:, end:)
+  assert location.primary.span == support.span_of(source, "echo 2")
 }
 
 pub fn a_javascript_target_is_the_view_rules_see_test() {
@@ -149,7 +147,7 @@ pub fn a_javascript_target_is_the_view_rules_see_test() {
 
 // `gen/answer` echoes, but isn't linted, and its types still reach `app`.
 pub fn an_excluded_module_is_loaded_but_not_linted_test() {
-  let assert [Diagnostic(location: Some(location), ..)] =
+  let diagnostics =
     testing.project([
       #("gleam.toml", "[tools.grice]\nexclude = [\"src/gen/\"]\n"),
       #(
@@ -160,8 +158,8 @@ pub fn an_excluded_module_is_loaded_but_not_linted_test() {
     ])
     |> testing.run([fixture_rules.no_echo(), main_signature()])
     |> testing.diagnostics
-  assert location.path == "src/app.gleam"
-  assert location.primary.message == "fn() -> Int"
+  assert support.describe(diagnostics)
+    == ["fixture/main-signature src/app.gleam: fn() -> Int"]
 }
 
 // It's how a test gives girard an import it can't use.
@@ -181,13 +179,14 @@ pub fn an_excluded_module_that_doesnt_parse_is_no_failure_test() {
 // working directory, grice's own here, and only a typed run does.
 
 pub fn a_typed_run_answers_from_the_installed_standard_library_test() {
-  let assert [Diagnostic(location: Some(location), ..)] =
+  let labels =
     testing.module(
       "import gleam/int\n\npub fn main() {\n  int.to_string(42)\n}\n",
     )
     |> testing.run([main_signature()])
     |> testing.diagnostics
-  assert location.primary.message == "fn() -> String"
+    |> support.labels
+  assert labels == ["fn() -> String"]
 }
 
 pub fn a_dependency_takes_the_place_of_an_installed_module_test() {
@@ -310,7 +309,7 @@ pub fn an_invalid_rule_set_fails_the_run_test() {
       ),
       #("src/app.gleam", echo_in_main),
     ])
-    |> testing.run([fixture_rules.no_echo(), named("fixture/No-echo")])
+    |> testing.run([fixture_rules.no_echo(), support.named("fixture/No-echo")])
   })
   |> birdie.snap(title: "testing: an invalid rule set fails the run")
 }
@@ -465,13 +464,6 @@ fn main_signature() -> Rule {
     }
     #(context, [rule.report(at: function.definition.location, label:)])
   })
-  |> rule.build
-}
-
-// A rule with the code `code` that reports nothing.
-fn named(code: String) -> Rule {
-  rule.module(code, title: "Made in a test")
-  |> rule.with_context(initial: Nil)
   |> rule.build
 }
 
