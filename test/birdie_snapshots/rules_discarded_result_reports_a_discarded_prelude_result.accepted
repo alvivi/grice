@@ -1,0 +1,63 @@
+---
+version: 2.0.2
+title: rules: discarded_result reports a discarded prelude result
+file: ./test/grice/rules_test.gleam
+test_name: discarded_result_reports_a_discarded_prelude_result_test
+---
+-- src/app.gleam
+fn parse() -> Result(Int, Nil) {
+  Ok(1)
+}
+
+pub fn main() {
+  let _ = parse()
+  let _ = 1
+  let _ = Ok("two")
+  Nil
+}
+
+// girard can't type this function, and neither could the compiler.
+pub fn skipped() {
+  let _ = parse()
+  1 + "one"
+}
+-- output
+warning[fixture/discarded-result]: Result discarded
+  ┌─ src/app.gleam:6:3
+  │
+6 │   let _ = parse()
+  │   ^^^^^^^^^^^^^^^ This discards a `Result`
+
+A `Result` says whether something failed, and discarding it hides the
+failure.
+
+Hint: Handle the error, or assert that there is none.
+
+warning[fixture/discarded-result]: Result discarded
+  ┌─ src/app.gleam:8:3
+  │
+8 │   let _ = Ok("two")
+  │   ^^^^^^^^^^^^^^^^^ This discards a `Result`
+
+A `Result` says whether something failed, and discarding it hides the
+failure.
+
+Hint: Handle the error, or assert that there is none.
+
+note[grice/untyped-definition]: Can't infer the types of this definition
+   ┌─ src/app.gleam:13:1
+   │
+13 │ pub fn skipped() {
+   │ ^^^^^^^^^^^^^^^^^^ girard couldn't type this definition
+
+girard couldn't type `skipped`: type mismatch: String vs Int. Typed rules
+get no answers about the code inside it, so they may miss problems there.
+
+Hint: If `gleam build` accepts this code, it's a gap in girard, the type
+inference grice uses, so please report it at
+https://github.com/alvivi/girard/issues.
+
+2 warnings and 1 note in 1 module.
+Coverage is incomplete: 1 definition in 1 module couldn't be typed, so
+typed rules didn't see all of the code.
+

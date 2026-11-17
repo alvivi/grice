@@ -1,16 +1,17 @@
-//// Tests for running rules. Projects are built in memory with
-//// `loader.load`. The fixture rules come first: module rules, then the
-//// facts, target view and comments they see, then project rules and which modules
-//// rules run on. Then typed rules: the types they see, why a query has no
-//// answer, when girard runs, and a typed run from a project on disk. Then
-//// how reports become diagnostics: resolution, severity and invalid
-//// reports. Then the checks of the rule set and of the codes `gleam.toml`
-//// ignores, and last what ignores and suppressions hide. Edge cases use
-//// small rules built in the test.
+//// Tests for the runner, over projects built in memory with
+//// `loader.load`, where a test needs what the testing kit doesn't offer: a
+//// fixture that doesn't parse, an invalid rule set, a replaced `infer` or
+//// the coverage record. What rules report is tested with the kit, in
+//// `rules_test`. First which modules rules run on, then typed runs: queries
+//// on modules girard couldn't fully type, when girard runs, a typed run
+//// from a project on disk, and the coverage notes. Then where rules run,
+//// how diagnostics are sorted and rendered, invalid reports, the checks of
+//// the rule set and of the codes `gleam.toml` ignores, and last what
+//// ignores and suppressions hide. Edge cases use small rules built in the
+//// test.
 
 import girard
 import glance
-import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/dynamic.{type Dynamic}
 import gleam/int
@@ -20,7 +21,7 @@ import gleam/result
 import gleam/string
 import grice/coverage
 import grice/diagnostic.{type Diagnostic, Diagnostic, Label, Location, Span}
-import grice/facts.{type ModuleFacts, type Syntax, type Typed}
+import grice/facts
 import grice/fixture_rules
 import grice/internal/config
 import grice/internal/line_index
@@ -28,381 +29,9 @@ import grice/internal/loader.{type Project}
 import grice/internal/render/human
 import grice/internal/runner
 import grice/internal/typing.{type ModuleTypes}
-import grice/rule.{type Report, type Rule}
+import grice/rule.{type Rule}
 import grice/support
 import simplifile
-
-// Module rules
-
-const echoes = "pub fn main() {\n  echo 1\n  echo 2 as \"two\"\n}\n"
-
-pub fn no_echo_reports_each_echo_with_its_message_and_hint_test() {
-  let diagnostics =
-    run_files([#("src/app.gleam", echoes)], [fixture_rules.no_echo()])
-  assert diagnostics
-    == [
-      echo_diagnostic(span_of(echoes, "echo 1")),
-      echo_diagnostic(span_of(echoes, "echo 2 as \"two\"")),
-    ]
-}
-
-pub fn many_panics_threads_its_context_and_reports_at_the_function_test() {
-  let wild =
-    "pub fn wild(x) {\n  case x {\n    1 -> panic as \"one\"\n    _ -> panic\n  }\n}"
-  let source = "pub fn calm() {\n  panic\n}\n\n" <> wild <> "\n"
-  let assert [Diagnostic(code:, location: Some(location), ..)] =
-    run_files([#("src/app.gleam", source)], [fixture_rules.many_panics()])
-  assert code == "fixture/many-panics"
-  assert location.primary
-    == Label(
-      span: span_of(source, wild),
-      message: "This function panics in 2 places",
-    )
-}
-
-pub fn on_module_end_sees_the_final_context_test() {
-  let source = "pub fn a() { 1 }\npub fn b() { 2 }\nfn c() { 3 }\n"
-  assert labels(run_files([#("src/app.gleam", source)], [count_functions()]))
-    == ["3 functions"]
-}
-
-pub fn every_module_starts_from_the_initial_context_test() {
-  let files = [
-    #("src/one.gleam", "pub fn a() { 1 }\n"),
-    #("src/two.gleam", "pub fn a() { 1 }\npub fn b() { 2 }\n"),
-  ]
-  let rules = [count_functions()]
-  let project = support.project("", files, [])
-  let assert Ok(first) = runner.run(project, rules)
-  let assert Ok(second) = runner.run(project, rules)
-  assert labels(first.diagnostics) == ["1 functions", "2 functions"]
-  assert second == first
-}
-
-pub fn one_rule_list_holds_rules_of_every_kind_test() {
-  let files = [
-    #("src/one.gleam", "pub fn shared() {\n  echo 1\n}\n"),
-    #("src/two.gleam", "pub fn shared() {\n  panic\n  panic\n}\n"),
-  ]
-  let rules = [
-    fixture_rules.no_echo(),
-    fixture_rules.many_panics(),
-    fixture_rules.duplicate_public_function(),
-  ]
-  assert describe(run_files(files, rules))
-    == [
-      "fixture/duplicate-public-function src/one.gleam: `two` also defines `shared`",
-      "fixture/no-echo src/one.gleam: This prints when it runs",
-      "fixture/duplicate-public-function src/two.gleam: `one` also defines `shared`",
-      "fixture/many-panics src/two.gleam: This function panics in 2 places",
-    ]
-}
-
-pub fn every_hook_is_called_during_the_walk_test() {
-  let source =
-    "import gleam/list\ntype T { T(Int) }\ntype A = Int\nconst c = 1\nfn f(x: Int) { let y = x\n y }\n"
-  let every_hook =
-    rule.module("fixture/every-hook", title: "Every hook")
-    |> rule.with_context(initial: Nil)
-    |> rule.on_import(report_as("import"))
-    |> rule.on_custom_type(report_as("custom_type"))
-    |> rule.on_type_alias(report_as("type_alias"))
-    |> rule.on_constant(report_as("constant"))
-    |> rule.on_function(report_as("function"))
-    |> rule.on_function_exit(report_as("function_exit"))
-    |> rule.on_statement(report_as("statement"))
-    |> rule.on_expression(report_as("expression"))
-    |> rule.on_expression_exit(report_as("expression_exit"))
-    |> rule.on_pattern(report_as("pattern"))
-    |> rule.on_type(report_as("type"))
-    |> rule.on_module_end(fn(_context, _facts) { [at_start("module_end")] })
-    |> rule.build
-  // Every report is at the same span, so they stay in the order made.
-  assert labels(run_files([#("src/app.gleam", source)], [every_hook]))
-    == [
-      "import", "custom_type", "type", "type_alias", "type", "constant",
-      "expression", "expression_exit", "function", "type", "statement",
-      "pattern", "expression", "expression_exit", "statement", "expression",
-      "expression_exit", "function_exit", "module_end",
-    ]
-}
-
-pub fn hooks_of_one_kind_run_in_the_order_added_test() {
-  let in_order =
-    rule.module("fixture/in-order", title: "In order")
-    |> rule.with_context(initial: "")
-    |> rule.on_expression(fn(context, _expression, _facts) {
-      #(context <> "a", [])
-    })
-    |> rule.on_expression(fn(context, _expression, _facts) {
-      #(context <> "b", [at_start(context <> "b")])
-    })
-    |> rule.on_module_end(fn(context, _facts) {
-      [at_start("end 1 " <> context)]
-    })
-    |> rule.on_module_end(fn(context, _facts) {
-      [at_start("end 2 " <> context)]
-    })
-    |> rule.build
-  let source = "fn f() {\n  x\n  y\n}\n"
-  assert labels(run_files([#("src/app.gleam", source)], [in_order]))
-    == ["ab", "abab", "end 1 abab", "end 2 abab"]
-}
-
-// Facts
-
-pub fn facts_describe_the_module_as_compiled_for_the_target_test() {
-  let source =
-    "import gleam/list
-@target(javascript)
-import gleam/javascript_only
-pub const first_constant = 1
-pub type FirstType { FirstType }
-pub fn first_function() { 1 }
-import app/other
-type FirstAlias = Int
-const second_constant = 2
-type SecondType { SecondType }
-fn second_function() { 2 }
-type SecondAlias = Int
-@target(javascript)
-fn javascript_function() { 3 }
-"
-  let files = [#("src/app.gleam", source), #("src/app/other.gleam", "")]
-  let assert [Diagnostic(message:, ..)] =
-    run_files(files, [describe_facts("app")])
-  assert message
-    == [
-      "app",
-      "src/app.gleam",
-      source,
-      "gleam/list, app/other",
-      "gleam/list, app/other",
-      "FirstType, SecondType",
-      "FirstAlias, SecondAlias",
-      "first_constant, second_constant",
-      "first_function, second_function",
-    ]
-}
-
-// Target
-
-const target_module =
-  "pub fn shared() { 1 }
-@target(javascript)
-pub fn javascript_echo() { echo 1 }
-@target(js)
-pub fn js_function() { 2 }
-@target(erlang)
-pub fn erlang_echo() { echo 2 }
-@target(erl)
-pub fn erl_function() { 3 }
-"
-
-const target_other =
-  "pub fn javascript_echo() { 4 }
-pub fn js_function() { 5 }
-pub fn erlang_echo() { 6 }
-pub fn erl_function() { 7 }
-"
-
-pub fn rules_see_only_erlang_definitions_on_erlang_test() {
-  assert findings_on_target("erlang")
-    == [
-      "fixture/duplicate-public-function src/app.gleam: `other` also defines `erlang_echo`",
-      "fixture/no-echo src/app.gleam: This prints when it runs",
-      "fixture/duplicate-public-function src/app.gleam: `other` also defines `erl_function`",
-      "fixture/duplicate-public-function src/other.gleam: `app` also defines `erlang_echo`",
-      "fixture/duplicate-public-function src/other.gleam: `app` also defines `erl_function`",
-    ]
-}
-
-pub fn rules_see_only_javascript_definitions_on_javascript_test() {
-  assert findings_on_target("javascript")
-    == [
-      "fixture/duplicate-public-function src/app.gleam: `other` also defines `javascript_echo`",
-      "fixture/no-echo src/app.gleam: This prints when it runs",
-      "fixture/duplicate-public-function src/app.gleam: `other` also defines `js_function`",
-      "fixture/duplicate-public-function src/other.gleam: `app` also defines `javascript_echo`",
-      "fixture/duplicate-public-function src/other.gleam: `app` also defines `js_function`",
-    ]
-}
-
-// What the echo and duplicate rules find in the two target modules on
-// `target`.
-fn findings_on_target(target: String) -> List(String) {
-  run_files_with(
-    "target = \"" <> target <> "\"\n",
-    [#("src/app.gleam", target_module), #("src/other.gleam", target_other)],
-    [fixture_rules.no_echo(), fixture_rules.duplicate_public_function()],
-  )
-  |> describe
-}
-
-// Comments
-
-pub fn comments_come_in_source_order_with_kind_span_and_text_test() {
-  let source =
-    "//// The module.
-/// The function.
-pub fn main() {
-  // In the body.
-  let text = \"// not a comment\" // After code.
-  text
-}
-// At the end, with no newline."
-  assert comments_of("", source)
-    == [
-      expected_comment(source, "////", " The module."),
-      expected_comment(source, "///", " The function."),
-      expected_comment(source, "//", " In the body."),
-      expected_comment(source, "//", " After code."),
-      expected_comment(source, "//", " At the end, with no newline."),
-    ]
-}
-
-// Spans are bytes: `é` is two and `🙂` four, so the first comment spans
-// 13, and the `\r` of each line ending is in neither the text nor the span.
-pub fn comment_spans_count_bytes_and_skip_carriage_returns_test() {
-  let source = "// café 🙂\r\npub fn main() {\r\n  1 // one\r\n}\r\n"
-  assert comments_of("", source)
-    == ["// 0-13 \" café 🙂\"", expected_comment(source, "//", " one")]
-}
-
-const target_comments =
-  "// Above the attribute.
-@target(javascript)
-// Between the attribute and the function.
-pub fn javascript() {
-  // In JavaScript.
-  1
-}
-@target(erlang)
-pub fn erlang() {
-  // In Erlang.
-  2
-}
-@target(erlang)
-const erlang_constant = #(
-  // In an Erlang constant.
-  1,
-)
-@target(javascript)
-import gleam/list.{
-  // In a JavaScript import.
-  map,
-}
-@target(js)
-type JavaScriptType {
-  // In a JavaScript custom type.
-  JavaScriptType
-}
-@target(erl)
-type ErlangAlias =
-  #(
-    // In an Erlang alias.
-    Int,
-  )
-// After them all.
-"
-
-pub fn comments_inside_definitions_for_the_other_target_are_left_out_test() {
-  let comment = expected_comment(target_comments, "//", _)
-  let around = [
-    comment(" Above the attribute."),
-    comment(" Between the attribute and the function."),
-  ]
-  assert comments_of("target = \"erlang\"\n", target_comments)
-    == list.flatten([
-      around,
-      [
-        comment(" In Erlang."),
-        comment(" In an Erlang constant."),
-        comment(" In an Erlang alias."),
-      ],
-      [comment(" After them all.")],
-    ])
-  assert comments_of("target = \"javascript\"\n", target_comments)
-    == list.flatten([
-      around,
-      [
-        comment(" In JavaScript."),
-        comment(" In a JavaScript import."),
-        comment(" In a JavaScript custom type."),
-      ],
-      [comment(" After them all.")],
-    ])
-}
-
-pub fn syntax_and_typed_rules_see_the_same_comments_test() {
-  let source = "/// Docs.\npub fn main() {\n  // Body.\n  1\n}\n"
-  let rules = [
-    on_module_end("fixture/syntax-comments", report_comments),
-    typed_on_module_end("fixture/typed-comments", report_comments),
-  ]
-  let assert [syntax, typed] = run_files([#("src/app.gleam", source)], rules)
-  assert syntax.message == typed.message
-  assert syntax.message == comments_of("", source)
-}
-
-// What `facts.comments` gives for `source`, as `src/app.gleam` with the
-// `gleam.toml` text `toml`, each as `report_comments` describes it.
-fn comments_of(toml: String, source: String) -> List(String) {
-  let rule = on_module_end("fixture/comments", report_comments)
-  let assert [Diagnostic(message:, ..)] =
-    run_files_with(toml, [#("src/app.gleam", source)], [rule])
-  message
-}
-
-// How `report_comments` describes the comment `marker <> text`, found in
-// `source`.
-fn expected_comment(source: String, marker: String, text: String) -> String {
-  let span = support.glance_span(source, marker <> text)
-  describe_comment(facts.Comment(
-    kind: case marker {
-      "////" -> facts.ModuleDoc
-      "///" -> facts.Doc
-      _ -> facts.Regular
-    },
-    span:,
-    text:,
-  ))
-}
-
-// Project rules
-
-pub fn duplicate_public_function_reports_on_every_module_defining_it_test() {
-  let files = [
-    #("src/a.gleam", "pub fn shared() { 1 }\npub fn alone() { 2 }\n"),
-    #("src/b.gleam", "fn shared() { 3 }\n"),
-    #("src/c.gleam", "pub fn other() { 4 }\npub fn shared() { 5 }\n"),
-    #("src/d.gleam", "pub fn shared() { 6 }\n"),
-  ]
-  let diagnostics =
-    run_files(files, [fixture_rules.duplicate_public_function()])
-  // Each label names the first other module that defines the function.
-  assert describe(diagnostics)
-    == [
-      "fixture/duplicate-public-function src/a.gleam: `c` also defines `shared`",
-      "fixture/duplicate-public-function src/c.gleam: `a` also defines `shared`",
-      "fixture/duplicate-public-function src/d.gleam: `a` also defines `shared`",
-    ]
-  let assert [_, Diagnostic(location: Some(location), ..), _] = diagnostics
-  assert location.primary.span
-    == span_of(
-      "pub fn other() { 4 }\npub fn shared() { 5 }\n",
-      "pub fn shared() { 5 }",
-    )
-}
-
-pub fn project_rules_get_the_summaries_in_lint_set_order_test() {
-  let files = [
-    #("src/zeta.gleam", ""),
-    #("src/alpha.gleam", ""),
-    #("src/mid/one.gleam", ""),
-  ]
-  assert labels(run_files(files, [module_order()])) == ["alpha, mid/one, zeta"]
-}
 
 // Lint set only
 
@@ -418,10 +47,10 @@ pub fn rules_run_on_parsed_lint_set_modules_only_test() {
   let assert Ok(runner.Linted(diagnostics:, ..)) =
     runner.run(project, [
       fixture_rules.no_echo(),
-      module_order(),
-      count_functions(),
+      support.module_order(),
+      support.count_functions(),
     ])
-  assert describe(diagnostics)
+  assert support.describe(diagnostics)
     == [
       "fixture/count-functions src/app.gleam: 1 functions",
       "fixture/module-order src/app.gleam: app",
@@ -430,203 +59,7 @@ pub fn rules_run_on_parsed_lint_set_modules_only_test() {
     ]
 }
 
-// Typed rules
-
-const discards =
-  "fn parse() -> Result(Int, Nil) {
-  Ok(1)
-}
-
-pub fn main() {
-  let _ = parse()
-  let _ = 1
-  let _ = Ok(\"two\")
-  Nil
-}
-
-// girard can't type this function, and neither could the compiler.
-pub fn skipped() {
-  let _ = parse()
-  1 + \"one\"
-}
-"
-
-pub fn discarded_result_reports_a_discarded_prelude_result_test() {
-  let diagnostics =
-    run_files([#("src/app.gleam", discards)], [fixture_rules.discarded_result()])
-    |> list.filter(fn(found) { found.code == "fixture/discarded-result" })
-  assert diagnostics
-    == [
-      discarded_diagnostic(span_of(discards, "let _ = parse()")),
-      discarded_diagnostic(span_of(discards, "let _ = Ok(\"two\")")),
-    ]
-}
-
-pub fn a_typed_project_rule_sees_types_in_per_module_test() {
-  let signatures =
-    rule.project("fixture/signatures", title: "Made in a test")
-    |> rule.typed
-    |> rule.per_module(fn(module_facts) {
-      facts.signature(module_facts, "parse")
-      |> result.map(fn(scheme) { girard.type_to_string(scheme.type_) })
-    })
-    |> rule.final(fn(summaries) {
-      use #(name, signature) <- list.map(summaries)
-      #(name, at_start(string.inspect(signature)))
-    })
-  assert labels(run_files([#("src/app.gleam", discards)], [signatures]))
-    == [
-      "Ok(\"fn() -> Result(Int, Nil)\")",
-      "girard couldn't type this definition",
-    ]
-}
-
-// `typed_calls` reports on the call into the other module on each target.
-pub fn typed_rules_see_types_across_target_specific_imports_test() {
-  let files = support.crossed
-  assert describe(run_files(files, [typed_calls()]))
-    == ["fixture/typed-calls src/a.gleam: Ok(Named(\"b\", \"B\", []))"]
-  assert describe(
-      run_files_with("target = \"javascript\"\n", files, [typed_calls()]),
-    )
-    == ["fixture/typed-calls src/b.gleam: Ok(Named(\"a\", \"A\", []))"]
-}
-
-// Queries
-
-const box =
-  "pub type Box {\n  Box(content: String)\n}\n\npub fn shout(text: String) -> String {\n  text\n}\n"
-
-const queried =
-  "import dep/box
-
-pub type Point {
-  Point(x: Int, y: Int)
-}
-
-pub const origin = Point(0, 0)
-
-pub fn identity(value) {
-  value
-}
-
-pub fn main() {
-  let n = 42
-  let loud = box.shout(\"hi\")
-  let same = identity(n)
-  let piped = \"hey\" |> box.shout
-  let point = Point(1, 2)
-  let x = point.x
-  let f = fn(v) { v }
-  f(same)
-}
-"
-
-pub fn type_of_answers_for_expressions_test() {
-  assert answers(queried, fn(module_facts) {
-      list.map(
-        ["42", "box.shout(\"hi\")", "identity(n)", "\"hey\" |> box.shout"],
-        fn(needle) {
-          facts.type_of(module_facts, support.glance_span(queried, needle))
-          |> string.inspect
-        },
-      )
-    })
-    == [
-      "Ok(Named(\"gleam\", \"Int\", []))",
-      "Ok(Named(\"gleam\", \"String\", []))",
-      "Ok(Named(\"gleam\", \"Int\", []))",
-      "Ok(Named(\"gleam\", \"String\", []))",
-    ]
-}
-
-pub fn resolution_of_answers_for_references_test() {
-  let references = [
-    #("box.shout(\"hi\")", "box.shout"),
-    #("Point(1, 2)", "Point"),
-    #("point.x", "point.x"),
-    #("f(same)", "f"),
-  ]
-  assert answers(queried, fn(module_facts) {
-      use #(around, reference) <- list.map(references)
-      facts.resolution_of(
-        module_facts,
-        glance_span_in(queried, around, reference),
-      )
-      |> string.inspect
-    })
-    == [
-      "Ok(ModuleFn(\"dep/box\", \"shout\"))",
-      "Ok(Constructor(\"app\", \"Point\"))",
-      "Ok(RecordField(Named(\"app\", \"Point\", []), \"x\"))",
-      "Ok(LocalVariable(\"f\"))",
-    ]
-}
-
-pub fn signature_answers_for_functions_and_constants_test() {
-  assert answers(queried, fn(module_facts) {
-      let assert Ok(girard.Scheme(vars:, type_:)) =
-        facts.signature(module_facts, "identity")
-      [
-        girard.type_to_string(type_),
-        string.inspect(list.length(vars)),
-        string.inspect(facts.signature(module_facts, "origin")),
-      ]
-    })
-    == [
-      "fn(a) -> a",
-      "1",
-      "Ok(Scheme([], Named(\"app\", \"Point\", [])))",
-    ]
-}
-
 // Unknown
-
-const unknowns =
-  "@target(javascript)
-pub fn elsewhere() {
-  \"js\"
-}
-
-pub fn main() {
-  let pattern = 1
-  pattern
-}
-
-// girard can't type this function, and neither could the compiler.
-pub fn skipped() {
-  let inside = 2
-  inside + \"two\"
-}
-"
-
-pub fn queries_say_why_girard_has_no_answer_test() {
-  assert answers(unknowns, fn(module_facts) {
-      [
-        facts.type_of(module_facts, support.glance_span(unknowns, "pattern")),
-        facts.type_of(module_facts, support.glance_span(unknowns, "2")),
-        facts.type_of(module_facts, support.glance_span(unknowns, "\"js\"")),
-      ]
-      |> list.map(string.inspect)
-      |> list.append(
-        list.map(["pattern", "skipped", "elsewhere", "Point"], fn(name) {
-          string.inspect(facts.signature(module_facts, name))
-        }),
-      )
-      |> list.append([
-        string.inspect(facts.resolution_of(
-          module_facts,
-          support.glance_span(unknowns, "inside + \"two\""),
-        )),
-      ])
-    })
-    == [
-      "Error(NotRecorded)", "Error(Skipped(\"skipped\"))",
-      "Error(Dropped(\"elsewhere\"))", "Error(NotRecorded)",
-      "Error(Skipped(\"skipped\"))", "Error(Dropped(\"elsewhere\"))",
-      "Error(NotRecorded)", "Error(Skipped(\"skipped\"))",
-    ]
-}
 
 pub fn queries_on_a_module_girard_returned_nothing_for_test() {
   let files = [
@@ -640,7 +73,7 @@ pub fn queries_on_a_module_girard_returned_nothing_for_test() {
     })
   // The module's rules still run.
   let assert [note, ..reports] = linted.diagnostics
-  assert describe(reports)
+  assert support.describe(reports)
     == [
       "fixture/every-query src/app.gleam: Error(NotInferred) Error(NotInferred) Error(NotInferred)",
       "fixture/every-query src/other.gleam: Ok(Named(\"gleam\", \"Int\", [])) Error(NotRecorded) Ok(Scheme([], Fn([], Named(\"gleam\", \"Int\", []))))",
@@ -674,13 +107,13 @@ pub fn no_query_answers_in_a_module_with_an_unavailable_import_test() {
     #("src/app.gleam", source),
     #("src/other.gleam", "pub fn main() {\n  2\n}\n"),
   ]
-  let project = support.project("", files, [#("dep/box", box)])
+  let project = support.project("", files, [#("dep/box", support.box)])
   let assert Ok(app) =
     typing.infer(project, typing.resolver(project)) |> dict.get("app")
   assert dict.get(app.resolutions, support.glance_span(source, "box.shout"))
     == Ok(girard.ModuleFn("dep/box", "shout"))
   let assert Ok(linted) = runner.run(project, [every_query()])
-  assert describe(linted.diagnostics)
+  assert support.describe(linted.diagnostics)
     == [
       "fixture/every-query src/app.gleam: Error(Unavailable([\"gone\"])) Error(Unavailable([\"gone\"])) Error(Unavailable([\"gone\"]))",
       "grice/unavailable-import src/app.gleam: girard couldn't use this",
@@ -702,45 +135,14 @@ pub fn no_query_answers_in_a_module_with_an_unavailable_import_test() {
     )
 }
 
-// `d` is unavailable, so girard reads `Result` as the prelude's: an answer
-// no rule can tell from a real one.
-const shadowed =
-  "import d.{type Result}
-
-fn parse() -> Result(Int, String) {
-  Ok(1)
-}
-
-pub fn main() {
-  let _ = parse()
-  Nil
-}
-"
-
-pub fn discarded_result_is_silent_where_a_prelude_name_is_shadowed_test() {
-  let project = support.project("", [#("src/app.gleam", shadowed)], [])
-  let assert Ok(types) =
-    typing.infer(project, typing.resolver(project)) |> dict.get("app")
-  let assert Ok(girard.Named(module: "gleam", name: "Result", ..)) =
-    dict.get(
-      types.expressions,
-      glance_span_in(shadowed, "let _ = parse()", "parse()"),
-    )
-  assert run_files([#("src/app.gleam", shadowed)], [
-      fixture_rules.discarded_result(),
-    ])
-    |> list.filter(fn(found) { found.code == "fixture/discarded-result" })
-    == []
-}
-
 // Planning
 
 pub fn an_invalid_rule_set_never_infers_test() {
-  let project = support.project("", [#("src/app.gleam", discards)], [])
+  let project = support.project("", [#("src/app.gleam", support.discards)], [])
   let assert Error(_) =
     runner.run_with(
       project,
-      [fixture_rules.discarded_result(), named("Bad")],
+      [fixture_rules.discarded_result(), support.named("Bad")],
       infer: never_infer,
     )
 }
@@ -749,8 +151,11 @@ pub fn a_run_infers_once_for_every_typed_rule_test() {
   let project =
     support.project(
       "",
-      [#("src/app.gleam", discards), #("src/other.gleam", queried)],
-      [#("dep/box", box)],
+      [
+        #("src/app.gleam", support.discards),
+        #("src/other.gleam", support.queried),
+      ],
+      [#("dep/box", support.box)],
     )
   take_mailbox()
   let assert Ok(_) =
@@ -759,7 +164,7 @@ pub fn a_run_infers_once_for_every_typed_rule_test() {
       [
         fixture_rules.discarded_result(),
         fixture_rules.no_echo(),
-        typed_calls(),
+        support.typed_calls(),
         every_query(),
         rule.project("fixture/typed-project", title: "Made in a test")
           |> rule.typed
@@ -802,12 +207,12 @@ pub fn typed_runs_dont_depend_on_the_working_directory_test() {
   let runs =
     list.map([directory, absolute], fn(root) {
       let assert Ok(project) = loader.load_project(root)
-      let assert Ok(linted) = runner.run(project, [typed_calls()])
+      let assert Ok(linted) = runner.run(project, [support.typed_calls()])
       linted
     })
   support.cleanup(directory)
   let assert [relative_run, absolute_run] = runs
-  assert describe(relative_run.diagnostics)
+  assert support.describe(relative_run.diagnostics)
     == [
       "fixture/typed-calls src/app.gleam: Ok(Named(\"shapes/square\", \"Square\", []))",
     ]
@@ -849,7 +254,7 @@ pub fn untyped_definition_notes_each_skipped_definition_of_the_lint_set_test() {
         location: Some(Location(
           path: "src/app.gleam",
           primary: Label(
-            span_of(source, skipped),
+            support.span_of(source, skipped),
             "girard couldn't type this definition",
           ),
           secondary: [],
@@ -901,7 +306,7 @@ pub fn unavailable_import_notes_each_module_girard_couldnt_use_test() {
   let project =
     support.project(toml, unavailable_files, unavailable_dependencies)
   let linted = run_typed(project)
-  assert describe(linted.diagnostics)
+  assert support.describe(linted.diagnostics)
     == [
       "grice/unavailable-import", "grice/unavailable-import",
       "grice/parse-error src/broken_linted.gleam: glance didn't expect this",
@@ -1019,7 +424,7 @@ pub fn unavailable_import_notes_a_project_module_girard_couldnt_use_test() {
     ]
   let assert Ok(note) =
     list.find(linted.diagnostics, fn(found) {
-      describe([found])
+      support.describe([found])
       == ["grice/unavailable-import src/two.gleam: girard couldn't use this"]
     })
   assert note.message
@@ -1084,7 +489,7 @@ pub fn a_syntax_only_run_never_infers_and_reports_only_parse_errors_test() {
       [fixture_rules.no_echo(), fixture_rules.duplicate_public_function()],
       infer: never_infer,
     )
-  assert describe(linted.diagnostics)
+  assert support.describe(linted.diagnostics)
     == ["grice/parse-error src/broken.gleam: glance didn't expect this"]
   assert linted.coverage
     == coverage.Coverage(
@@ -1106,8 +511,10 @@ const two_modules = [
 
 pub fn module_hooks_run_outside_the_calling_process_test() {
   let where_hooks_run =
-    on_module_end("fixture/where", fn(_facts) { [at_start(process_label())] })
-  let ran_in = labels(run_files(two_modules, [where_hooks_run]))
+    support.on_module_end("fixture/where", fn(_facts) {
+      [support.at_start(process_label())]
+    })
+  let ran_in = support.labels(run_files(two_modules, [where_hooks_run]))
   assert list.length(ran_in) == 2
   assert !list.contains(ran_in, process_label())
 }
@@ -1117,50 +524,16 @@ pub fn project_summaries_run_outside_the_calling_process_test() {
     rule.project("fixture/where", title: "Made in a test")
     |> rule.per_module(fn(_facts) { process_label() })
     |> rule.final(fn(summaries) {
-      list.map(summaries, fn(summary) { #(summary.0, at_start(summary.1)) })
+      list.map(summaries, fn(summary) {
+        #(summary.0, support.at_start(summary.1))
+      })
     })
-  let ran_in = labels(run_files(two_modules, [where_summaries_run]))
+  let ran_in = support.labels(run_files(two_modules, [where_summaries_run]))
   assert list.length(ran_in) == 2
   assert !list.contains(ran_in, process_label())
 }
 
 // Resolution
-
-pub fn reports_become_diagnostics_with_the_rule_and_the_module_test() {
-  let source = "pub fn main() {\n  let x = 1\n  x\n}\n"
-  let explained =
-    on_module_end("fixture/explained", fn(_facts) {
-      [
-        rule.report(at: support.glance_span(source, "x\n}"), label: "used here")
-        |> rule.with_label(
-          at: support.glance_span(source, "x = 1"),
-          label: "bound here",
-        )
-        |> rule.with_label(at: support.glance_span(source, "main"), label: "")
-        |> rule.with_message(["First paragraph.", "Second paragraph."])
-        |> rule.with_hint("A hint."),
-      ]
-    })
-  assert run_files([#("src/app.gleam", source)], [explained])
-    == [
-      Diagnostic(
-        code: "fixture/explained",
-        severity: diagnostic.Warning,
-        title: "Made in a test",
-        location: Some(Location(
-          path: "src/app.gleam",
-          primary: Label(span_of(source, "x\n}"), "used here"),
-          secondary: [
-            Label(span_of(source, "x = 1"), "bound here"),
-            Label(span_of(source, "main"), ""),
-          ],
-          fix: None,
-        )),
-        message: ["First paragraph.", "Second paragraph."],
-        hint: Some("A hint."),
-      ),
-    ]
-}
 
 pub fn diagnostics_come_out_sorted_test() {
   let files = [
@@ -1169,7 +542,7 @@ pub fn diagnostics_come_out_sorted_test() {
     #("src/a.gleam", "pub fn f() { 1 }\n"),
   ]
   let second =
-    on_module_end("fixture/second", fn(_facts) {
+    support.on_module_end("fixture/second", fn(_facts) {
       [
         rule.report(at: glance.Span(10, 12), label: ""),
         rule.report(at: glance.Span(0, 3), label: ""),
@@ -1178,7 +551,7 @@ pub fn diagnostics_come_out_sorted_test() {
       ]
     })
   let first =
-    on_module_end("fixture/first", fn(_facts) {
+    support.on_module_end("fixture/first", fn(_facts) {
       [rule.report(at: glance.Span(0, 3), label: "")]
     })
   let positions =
@@ -1209,7 +582,7 @@ pub fn diagnostics_come_out_sorted_test() {
 }
 
 pub fn resolved_diagnostics_render_like_the_compiler_test() {
-  let project = support.project("", [#("src/app.gleam", echoes)], [])
+  let project = support.project("", [#("src/app.gleam", support.echoes)], [])
   let assert Ok(runner.Linted(diagnostics: [diagnostic, _], ..)) =
     runner.run(project, [fixture_rules.no_echo()])
   let assert Ok(text) =
@@ -1231,33 +604,6 @@ Hint: Remove it once you're done debugging.
 "
 }
 
-// Severity
-
-pub fn rules_default_to_warnings_test() {
-  assert severities([fixture_rules.no_echo(), module_order()])
-    == [diagnostic.Warning, diagnostic.Warning]
-}
-
-pub fn with_severity_sets_the_severity_of_any_rule_test() {
-  assert severities([
-      fixture_rules.no_echo() |> rule.with_severity(diagnostic.Error),
-      module_order() |> rule.with_severity(diagnostic.Note),
-    ])
-    == [diagnostic.Note, diagnostic.Error]
-}
-
-pub fn with_severity_keeps_the_last_severity_test() {
-  assert severities([
-      fixture_rules.no_echo()
-        |> rule.with_severity(diagnostic.Error)
-        |> rule.with_severity(diagnostic.Note),
-      module_order()
-        |> rule.with_severity(diagnostic.Note)
-        |> rule.with_severity(diagnostic.Error),
-    ])
-    == [diagnostic.Error, diagnostic.Note]
-}
-
 // Invalid reports
 
 // 22 bytes, with a two-byte `é` at bytes 16 and 17.
@@ -1265,7 +611,7 @@ const accented = "pub fn f() {\n  \"é\"\n}\n"
 
 pub fn a_report_with_a_bad_primary_span_is_an_invalid_report_test() {
   let bad_spans =
-    on_module_end("fixture/spans", fn(_facts) {
+    support.on_module_end("fixture/spans", fn(_facts) {
       [
         rule.report(at: glance.Span(0, 99), label: "out of bounds"),
         rule.report(at: glance.Span(0, 3), label: "valid sibling"),
@@ -1302,12 +648,12 @@ pub fn a_report_with_a_bad_primary_span_is_an_invalid_report_test() {
       first_paragraph("fixture/spans"),
       "The span of the primary label, from byte 17 to byte 18, has an end inside a multi-byte character.",
     ]
-  assert labels([valid]) == ["valid sibling"]
+  assert support.labels([valid]) == ["valid sibling"]
 }
 
 pub fn a_report_with_a_bad_secondary_span_is_an_invalid_report_test() {
   let bad_secondary =
-    on_module_end("fixture/spans", fn(_facts) {
+    support.on_module_end("fixture/spans", fn(_facts) {
       [
         rule.report(at: glance.Span(0, 3), label: "")
         |> rule.with_label(at: glance.Span(4, 6), label: "")
@@ -1325,7 +671,7 @@ pub fn a_report_with_a_bad_secondary_span_is_an_invalid_report_test() {
 
 pub fn a_report_with_several_bad_spans_is_one_invalid_report_test() {
   let bad_spans =
-    on_module_end("fixture/spans", fn(_facts) {
+    support.on_module_end("fixture/spans", fn(_facts) {
       [
         rule.report(at: glance.Span(0, 99), label: "")
         |> rule.with_label(at: glance.Span(3, 1), label: ""),
@@ -1343,14 +689,14 @@ pub fn a_report_with_several_bad_spans_is_one_invalid_report_test() {
 
 pub fn empty_spans_at_the_end_and_spans_around_characters_are_valid_test() {
   let edges =
-    on_module_end("fixture/edges", fn(_facts) {
+    support.on_module_end("fixture/edges", fn(_facts) {
       [
         rule.report(at: glance.Span(22, 22), label: "end")
         |> rule.with_label(at: glance.Span(16, 18), label: "é")
         |> rule.with_label(at: glance.Span(18, 18), label: "after é"),
       ]
     })
-  assert describe(run_files([#("src/app.gleam", accented)], [edges]))
+  assert support.describe(run_files([#("src/app.gleam", accented)], [edges]))
     == ["fixture/edges src/app.gleam: end"]
 }
 
@@ -1370,7 +716,7 @@ pub fn a_project_rule_report_on_an_unlinted_module_is_an_invalid_report_test() {
       })
     })
   let diagnostics = run_files_with(toml, files, [elsewhere])
-  assert describe(diagnostics)
+  assert support.describe(diagnostics)
     == [
       "grice/invalid-report",
       "grice/invalid-report",
@@ -1406,7 +752,8 @@ pub fn rule_codes_follow_one_syntax_test() {
   ]
   assert list.filter(accepted, is_rejected) == []
   assert list.filter(rejected, fn(code) { !is_rejected(code) }) == []
-  let assert Error([diagnostic]) = check_rules([named("my_app/no echo")])
+  let assert Error([diagnostic]) =
+    check_rules([support.named("my_app/no echo")])
   assert diagnostic
     == Diagnostic(
       code: "grice/invalid-rule",
@@ -1430,12 +777,12 @@ pub fn rule_set_problems_are_reported_together_and_nothing_runs_test() {
   let assert Error(problems) =
     check_rules([
       fixture_rules.no_echo(),
-      named("fixture/twice"),
-      named("grice/thing"),
+      support.named("fixture/twice"),
+      support.named("grice/thing"),
       untitled,
-      named("fixture/twice"),
-      named("Bad"),
-      named("fixture/twice"),
+      support.named("fixture/twice"),
+      support.named("Bad"),
+      support.named("fixture/twice"),
     ])
   assert list.map(problems, fn(problem) { #(problem.code, problem.title) })
     == [
@@ -1510,7 +857,7 @@ reason = \"r\"
   let assert Error(problems) =
     runner.run(support.project(toml, [#("src/app.gleam", "")], []), [
       fixture_rules.no_echo(),
-      named("fixture/broken_name"),
+      support.named("fixture/broken_name"),
       panics_if_run(),
     ])
   assert list.map(problems, fn(problem) { problem.title })
@@ -1543,7 +890,7 @@ pub fn shared() { 1 }
     fixture_rules.no_echo(),
     fixture_rules.duplicate_public_function(),
   ]
-  assert describe(run_files(files, rules))
+  assert support.describe(run_files(files, rules))
     == [
       "fixture/no-echo src/one.gleam: This prints when it runs",
       "fixture/duplicate-public-function src/two.gleam: `one` also defines `shared`",
@@ -1609,7 +956,7 @@ pub fn suppression_warnings_render_in_a_crlf_file_with_non_ascii_text_test() {
   let project = support.project("", [#("src/app.gleam", source)], [])
   let assert Ok(runner.Linted(diagnostics: [kept, misplaced, unused], ..)) =
     runner.run(project, [fixture_rules.no_echo()])
-  assert kept == echo_diagnostic(span_of(source, "echo 2"))
+  assert kept == echo_diagnostic(support.span_of(source, "echo 2"))
   let sources = dict.from_list([#("src/app.gleam", line_index.new(source))])
   let assert Ok(text) =
     human.render(
@@ -1667,7 +1014,7 @@ pub fn suppressions_follow_the_target_view_test() {
     run_files_with(toml, [#("src/app.gleam", target_suppressions)], [
       fixture_rules.no_echo(),
     ])
-    |> describe
+    |> support.describe
   }
   let unused = "grice/unused-suppression src/app.gleam: This hides nothing"
   let after_code =
@@ -1702,10 +1049,10 @@ reason = \"why\"
     #("src/broken.gleam", "// grice-ignore-file fixture/no-echo: why\npub fn ("),
   ]
   let bad_span =
-    on_module_end("fixture/spans", fn(_facts) {
+    support.on_module_end("fixture/spans", fn(_facts) {
       [rule.report(at: glance.Span(0, 999), label: "out of bounds")]
     })
-  assert describe(
+  assert support.describe(
       run_files_with(toml, files, [fixture_rules.no_echo(), bad_span]),
     )
     == [
@@ -1717,155 +1064,17 @@ reason = \"why\"
 
 // Rules made in the tests
 
-// Reports how many functions the module has once it has been walked.
-fn count_functions() -> Rule {
-  rule.module("fixture/count-functions", title: "Made in a test")
-  |> rule.with_context(initial: 0)
-  |> rule.on_function(fn(count, _function, _facts) { #(count + 1, []) })
-  |> rule.on_module_end(fn(count, _facts) {
-    [at_start(int.to_string(count) <> " functions")]
-  })
-  |> rule.build
-}
-
-// Reports, on the first module it's given, the names of every module in
-// the order its summaries came in.
-fn module_order() -> Rule {
-  rule.project("fixture/module-order", title: "Made in a test")
-  |> rule.per_module(facts.module_name)
-  |> rule.final(fn(summaries) {
-    let names = list.map(summaries, fn(summary) { summary.1 })
-    case names {
-      [first, ..] -> [#(first, at_start(string.join(names, ", ")))]
-      [] -> []
-    }
-  })
-}
-
-// Reports on the module named `name` what its facts hold, one paragraph
-// each.
-fn describe_facts(name: String) -> Rule {
-  use module_facts <- on_module_end("fixture/describe-facts")
-  use <- bool.guard(when: facts.module_name(module_facts) != name, return: [])
-  let module = facts.module(module_facts)
-  [
-    at_start("facts")
-    |> rule.with_message([
-      facts.module_name(module_facts),
-      facts.path(module_facts),
-      facts.source(module_facts),
-      string.join(facts.imports(module_facts), ", "),
-      names(module.imports, fn(import_: glance.Import) { import_.module }),
-      names(module.custom_types, fn(custom_type: glance.CustomType) {
-        custom_type.name
-      }),
-      names(module.type_aliases, fn(alias: glance.TypeAlias) { alias.name }),
-      names(module.constants, fn(constant: glance.Constant) { constant.name }),
-      names(module.functions, fn(function: glance.Function) { function.name }),
-    ]),
-  ]
-}
-
-// Reports the module's comments, one paragraph each.
-fn report_comments(module_facts: ModuleFacts(kind)) -> List(Report) {
-  [
-    at_start("comments")
-    |> rule.with_message(list.map(
-      facts.comments(module_facts),
-      describe_comment,
-    )),
-  ]
-}
-
-// A comment as its marker, its span and its text, such as
-// `// 0-6 " TODO"`.
-fn describe_comment(comment: facts.Comment) -> String {
-  let marker = case comment.kind {
-    facts.Regular -> "//"
-    facts.Doc -> "///"
-    facts.ModuleDoc -> "////"
-  }
-  marker
-  <> " "
-  <> int.to_string(comment.span.start)
-  <> "-"
-  <> int.to_string(comment.span.end)
-  <> " "
-  <> string.inspect(comment.text)
-}
-
-// The name of each definition, joined with commas.
-fn names(
-  definitions: List(glance.Definition(definition)),
-  name_of: fn(definition) -> String,
-) -> String {
-  definitions
-  |> list.map(fn(definition) { name_of(definition.definition) })
-  |> string.join(", ")
-}
-
-// A hook that reports `name` at the start of the module.
-fn report_as(
-  name: String,
-) -> fn(context, node, ModuleFacts(Syntax)) -> #(context, List(Report)) {
-  fn(context, _node, _facts) { #(context, [at_start(name)]) }
-}
-
-// A module rule that reports what `reports` gives once each module has
-// been walked.
-fn on_module_end(
-  code: String,
-  reports: fn(ModuleFacts(Syntax)) -> List(Report),
-) -> Rule {
-  rule.module(code, title: "Made in a test")
-  |> rule.with_context(initial: Nil)
-  |> rule.on_module_end(fn(_context, module_facts) { reports(module_facts) })
-  |> rule.build
-}
-
-// A typed module rule that reports what `reports` gives once each module
-// has been walked.
-fn typed_on_module_end(
-  code: String,
-  reports: fn(ModuleFacts(Typed)) -> List(Report),
-) -> Rule {
-  rule.module(code, title: "Made in a test")
-  |> rule.typed
-  |> rule.with_context(initial: Nil)
-  |> rule.on_module_end(fn(_context, module_facts) { reports(module_facts) })
-  |> rule.build
-}
-
-// Reports each call with what `type_of` answers for it.
-fn typed_calls() -> Rule {
-  rule.module("fixture/typed-calls", title: "Made in a test")
-  |> rule.typed
-  |> rule.with_context(initial: Nil)
-  |> rule.on_expression(fn(context, expression, module_facts) {
-    case expression {
-      glance.Call(location:, ..) -> #(context, [
-        rule.report(
-          at: location,
-          label: string.inspect(facts.type_of(module_facts, location)),
-        ),
-      ])
-      _ -> #(context, [])
-    }
-  })
-  |> rule.build
-}
-
 // Reports, on each module, what `type_of` and `resolution_of` answer for
 // the last expression of `main`, and what `signature` answers for `main`.
 fn every_query() -> Rule {
-  use module_facts <- typed_on_module_end("fixture/every-query")
+  use module_facts <- support.typed_on_module_end("fixture/every-query")
   let assert Ok(main) =
     list.find(facts.module(module_facts).functions, fn(function) {
       function.definition.name == "main"
     })
   let assert Ok(glance.Expression(last)) = list.last(main.definition.body)
   [
-    at_start(
+    support.at_start(
       [
         string.inspect(facts.type_of(module_facts, last.location)),
         string.inspect(facts.resolution_of(module_facts, last.location)),
@@ -1874,24 +1083,6 @@ fn every_query() -> Rule {
       |> string.join(" "),
     ),
   ]
-}
-
-// What `ask` answers on the module `app`, whose source is `source`, with
-// the dependency module `dep/box`.
-fn answers(
-  source: String,
-  ask: fn(ModuleFacts(Typed)) -> List(String),
-) -> List(String) {
-  let asking =
-    typed_on_module_end("fixture/answers", fn(module_facts) {
-      [at_start("answers") |> rule.with_message(ask(module_facts))]
-    })
-  let project =
-    support.project("", [#("src/app.gleam", source)], [#("dep/box", box)])
-  let assert Ok(runner.Linted(diagnostics:, ..)) = runner.run(project, [asking])
-  let assert Ok(Diagnostic(message:, ..)) =
-    list.find(diagnostics, fn(found) { found.code == "fixture/answers" })
-  message
 }
 
 // The run of a typed rule that reports nothing on the modules it's used on
@@ -1907,25 +1098,14 @@ fn never_infer(_project: Project) -> Dict(String, ModuleTypes) {
   panic as "girard ran although no rule needs types"
 }
 
-// A rule with the code `code` that reports nothing.
-fn named(code: String) -> Rule {
-  rule.module(code, title: "Made in a test")
-  |> rule.with_context(initial: Nil)
-  |> rule.build
-}
-
 fn panics_if_run() -> Rule {
-  use _facts <- on_module_end("fixture/panics-if-run")
+  use _facts <- support.on_module_end("fixture/panics-if-run")
   panic as "a rule ran although the rule set is invalid"
 }
 
 // The process that calls it, as a label.
 fn process_label() -> String {
   string.inspect(self_pid())
-}
-
-fn at_start(label: String) -> Report {
-  rule.report(at: glance.Span(0, 0), label:)
 }
 
 // Helpers
@@ -1943,24 +1123,6 @@ fn echo_diagnostic(span: diagnostic.Span) -> Diagnostic {
     )),
     message: ["`echo` prints its value each time it runs."],
     hint: Some("Remove it once you're done debugging."),
-  )
-}
-
-fn discarded_diagnostic(span: diagnostic.Span) -> Diagnostic {
-  Diagnostic(
-    code: "fixture/discarded-result",
-    severity: diagnostic.Warning,
-    title: "Result discarded",
-    location: Some(Location(
-      path: "src/app.gleam",
-      primary: Label(span, "This discards a `Result`"),
-      secondary: [],
-      fix: None,
-    )),
-    message: [
-      "A `Result` says whether something failed, and discarding it hides the failure.",
-    ],
-    hint: Some("Handle the error, or assert that there is none."),
   )
 }
 
@@ -1992,51 +1154,7 @@ fn check_rules(rules: List(Rule)) -> Result(runner.Linted, List(Diagnostic)) {
 }
 
 fn is_rejected(code: String) -> Bool {
-  result.is_error(check_rules([named(code)]))
-}
-
-// The severity of each diagnostic of the rules run on one module with an
-// `echo`.
-fn severities(rules: List(Rule)) -> List(diagnostic.Severity) {
-  run_files([#("src/app.gleam", "pub fn f() { echo 1 }\n")], rules)
-  |> list.map(fn(found) { found.severity })
-}
-
-// The primary label of each diagnostic.
-fn labels(diagnostics: List(Diagnostic)) -> List(String) {
-  list.map(diagnostics, fn(found) {
-    let assert Some(location) = found.location
-    location.primary.message
-  })
-}
-
-// Each diagnostic as its code, then its path and primary label if it has a
-// location.
-fn describe(diagnostics: List(Diagnostic)) -> List(String) {
-  list.map(diagnostics, fn(found) {
-    case found.location {
-      Some(location) ->
-        found.code <> " " <> location.path <> ": " <> location.primary.message
-      None -> found.code
-    }
-  })
-}
-
-// The span of the first `needle` in `source`.
-fn span_of(source: String, needle: String) -> diagnostic.Span {
-  let glance.Span(start:, end:) = support.glance_span(source, needle)
-  Span(start:, end:)
-}
-
-// The span of the first `needle` inside the first `around` in `source`.
-fn glance_span_in(
-  source: String,
-  around: String,
-  needle: String,
-) -> glance.Span {
-  let outer = support.glance_span(source, around)
-  let inner = support.glance_span(around, needle)
-  glance.Span(outer.start + inner.start, outer.start + inner.end)
+  result.is_error(check_rules([support.named(code)]))
 }
 
 type Pid

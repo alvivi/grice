@@ -1,0 +1,34 @@
+---
+version: 2.0.2
+title: rules: no_echo reports each echo with its message and hint
+file: ./test/grice/rules_test.gleam
+test_name: no_echo_reports_each_echo_with_its_message_and_hint_test
+---
+-- src/app.gleam
+pub fn main() {
+  echo 1
+  echo 2 as "two"
+}
+-- output
+warning[fixture/no-echo]: Echo left in the code
+  ┌─ src/app.gleam:2:3
+  │
+2 │   echo 1
+  │   ^^^^^^ This prints when it runs
+
+`echo` prints its value each time it runs.
+
+Hint: Remove it once you're done debugging.
+
+warning[fixture/no-echo]: Echo left in the code
+  ┌─ src/app.gleam:3:3
+  │
+3 │   echo 2 as "two"
+  │   ^^^^^^^^^^^^^^^ This prints when it runs
+
+`echo` prints its value each time it runs.
+
+Hint: Remove it once you're done debugging.
+
+2 warnings in 1 module.
+

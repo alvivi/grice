@@ -1,0 +1,30 @@
+---
+version: 2.0.2
+title: rules: a report becomes a diagnostic with the rule and the module
+file: ./test/grice/rules_test.gleam
+test_name: reports_become_diagnostics_with_the_rule_and_the_module_test
+---
+-- src/app.gleam
+pub fn main() {
+  let x = 1
+  x
+}
+-- output
+warning[fixture/explained]: Made in a test
+  ┌─ src/app.gleam:3:3
+  │
+1 │ pub fn main() {
+  │        ----
+2 │   let x = 1
+  │       ----- bound here
+3 │   x
+  │   ^ used here
+
+First paragraph.
+
+Second paragraph.
+
+Hint: A hint.
+
+1 warning in 1 module.
+

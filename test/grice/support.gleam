@@ -1,14 +1,19 @@
-//// Fixture projects for the tests. Most are built in memory with
-//// `project`. The tests that read from disk write the tree they need under
-//// `build/fixtures/<test>/`, which git ignores and the compiler doesn't
-//// read, and delete it afterwards, except the end-to-end fixture, which
-//// keeps its build between runs.
+//// What the tests share: fixture projects, the sources and rules more
+//// than one test module runs, and ways to read diagnostics. Most projects
+//// are built in memory with `project`. The tests that read from disk write
+//// the tree they need under `build/fixtures/<test>/`, which git ignores
+//// and the compiler doesn't read, and delete it afterwards, except the
+//// end-to-end fixture, which keeps its build between runs.
 
 import glance
 import gleam/dict
+import gleam/int
 import gleam/list
+import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
+import grice/diagnostic.{type Diagnostic, Span}
+import grice/facts.{type ModuleFacts, type Syntax, type Typed}
 import grice/fixture_rules
 import grice/internal/cli
 import grice/internal/config
@@ -16,7 +21,13 @@ import grice/internal/loader.{type Project}
 import grice/internal/runner.{type Linted}
 import grice/internal/stats
 import grice/internal/typing
+import grice/rule.{type Report, type Rule}
 import simplifile
+
+// Projects in memory
+//
+// Projects loaded with `loader.load` from files the test gives, and the
+// sources that tests in more than one module run rules over.
 
 /// The project with the `gleam.toml` text `toml`, the files of `files`,
 /// `#(path, source)` with root-relative paths, and the dependency modules
@@ -56,6 +67,61 @@ pub const crossed = [
     "@target(javascript)\nimport a\npub type B {\n  B\n}\n@target(javascript)\npub fn from_other() { a.make() }\npub fn make() { B }\n",
   ),
 ]
+
+/// A module with two `echo`s, the second with a message.
+pub const echoes = "pub fn main() {\n  echo 1\n  echo 2 as \"two\"\n}\n"
+
+/// A module that discards a prelude `Result` twice, with a function girard
+/// can't type.
+pub const discards =
+  "fn parse() -> Result(Int, Nil) {
+  Ok(1)
+}
+
+pub fn main() {
+  let _ = parse()
+  let _ = 1
+  let _ = Ok(\"two\")
+  Nil
+}
+
+// girard can't type this function, and neither could the compiler.
+pub fn skipped() {
+  let _ = parse()
+  1 + \"one\"
+}
+"
+
+/// The dependency module `dep/box`.
+pub const box =
+  "pub type Box {\n  Box(content: String)\n}\n\npub fn shout(text: String) -> String {\n  text\n}\n"
+
+/// A module with something for every type query to answer, which imports
+/// `dep/box`.
+pub const queried =
+  "import dep/box
+
+pub type Point {
+  Point(x: Int, y: Int)
+}
+
+pub const origin = Point(0, 0)
+
+pub fn identity(value) {
+  value
+}
+
+pub fn main() {
+  let n = 42
+  let loud = box.shout(\"hi\")
+  let same = identity(n)
+  let piped = \"hey\" |> box.shout
+  let point = Point(1, 2)
+  let x = point.x
+  let f = fn(v) { v }
+  f(same)
+}
+"
 
 /// A typed run, in memory, that shows every kind of diagnostic and gap a
 /// completed run can: `fixture/no-echo` findings, one of them hidden, both
@@ -115,6 +181,97 @@ const showcase_dependencies = [
   #("dep/inner", "pub const x = 1\npub fn ("),
 ]
 
+// Rules
+//
+// Rules made for the tests, with the `fixture/` prefix of the fixture
+// rules. Most report at the start of the module, where any source has a
+// valid span.
+
+/// Reports how many functions the module has once it has been walked.
+pub fn count_functions() -> Rule {
+  rule.module("fixture/count-functions", title: "Made in a test")
+  |> rule.with_context(initial: 0)
+  |> rule.on_function(fn(count, _function, _facts) { #(count + 1, []) })
+  |> rule.on_module_end(fn(count, _facts) {
+    [at_start(int.to_string(count) <> " functions")]
+  })
+  |> rule.build
+}
+
+/// Reports, on the first module it's given, the names of every module in
+/// the order its summaries came in.
+pub fn module_order() -> Rule {
+  rule.project("fixture/module-order", title: "Made in a test")
+  |> rule.per_module(facts.module_name)
+  |> rule.final(fn(summaries) {
+    let names = list.map(summaries, fn(summary) { summary.1 })
+    case names {
+      [first, ..] -> [#(first, at_start(string.join(names, ", ")))]
+      [] -> []
+    }
+  })
+}
+
+/// Reports each call with what `type_of` answers for it.
+pub fn typed_calls() -> Rule {
+  rule.module("fixture/typed-calls", title: "Made in a test")
+  |> rule.typed
+  |> rule.with_context(initial: Nil)
+  |> rule.on_expression(fn(context, expression, module_facts) {
+    case expression {
+      glance.Call(location:, ..) -> #(context, [
+        rule.report(
+          at: location,
+          label: string.inspect(facts.type_of(module_facts, location)),
+        ),
+      ])
+      _ -> #(context, [])
+    }
+  })
+  |> rule.build
+}
+
+/// A module rule that reports what `reports` gives once each module has
+/// been walked.
+pub fn on_module_end(
+  code: String,
+  reports: fn(ModuleFacts(Syntax)) -> List(Report),
+) -> Rule {
+  rule.module(code, title: "Made in a test")
+  |> rule.with_context(initial: Nil)
+  |> rule.on_module_end(fn(_context, module_facts) { reports(module_facts) })
+  |> rule.build
+}
+
+/// A typed module rule that reports what `reports` gives once each module
+/// has been walked.
+pub fn typed_on_module_end(
+  code: String,
+  reports: fn(ModuleFacts(Typed)) -> List(Report),
+) -> Rule {
+  rule.module(code, title: "Made in a test")
+  |> rule.typed
+  |> rule.with_context(initial: Nil)
+  |> rule.on_module_end(fn(_context, module_facts) { reports(module_facts) })
+  |> rule.build
+}
+
+/// A rule with the code `code` that reports nothing.
+pub fn named(code: String) -> Rule {
+  rule.module(code, title: "Made in a test")
+  |> rule.with_context(initial: Nil)
+  |> rule.build
+}
+
+/// A report at the start of the module, labelled `label`.
+pub fn at_start(label: String) -> Report {
+  rule.report(at: glance.Span(0, 0), label:)
+}
+
+// The command line
+//
+// What `cli.execute` is given besides the arguments.
+
 /// A working directory at the root of the project in `root`, an absolute
 /// path, with standard output not a terminal and `NO_COLOR` unset.
 pub fn environment(root: String) -> cli.Environment {
@@ -132,12 +289,47 @@ pub fn environment(root: String) -> cli.Environment {
 @external(erlang, "grice_test_ffi", "counting_sample")
 pub fn counting_sample() -> fn() -> stats.Sample
 
+// Diagnostics
+//
+// What a run reported, as text that's short to compare, and the spans its
+// locations are compared with.
+
+/// Each diagnostic as its code, then its path and primary label if it has
+/// a location.
+pub fn describe(diagnostics: List(Diagnostic)) -> List(String) {
+  list.map(diagnostics, fn(found) {
+    case found.location {
+      Some(location) ->
+        found.code <> " " <> location.path <> ": " <> location.primary.message
+      None -> found.code
+    }
+  })
+}
+
+/// The primary label of each diagnostic, which must all have a location.
+pub fn labels(diagnostics: List(Diagnostic)) -> List(String) {
+  list.map(diagnostics, fn(found) {
+    let assert Some(location) = found.location
+    location.primary.message
+  })
+}
+
 /// The span of the first `needle` in `source`.
 pub fn glance_span(source: String, needle: String) -> glance.Span {
   let assert Ok(#(before, _)) = string.split_once(source, needle)
   let start = string.byte_size(before)
   glance.Span(start, start + string.byte_size(needle))
 }
+
+/// The span of the first `needle` in `source`, as a diagnostic's.
+pub fn span_of(source: String, needle: String) -> diagnostic.Span {
+  let glance.Span(start:, end:) = glance_span(source, needle)
+  Span(start:, end:)
+}
+
+// Projects on disk
+//
+// Fixture trees written under `build/fixtures/`, and the paths to them.
 
 /// `path`, relative to the working directory, as an absolute path.
 pub fn absolute(path: String) -> String {
