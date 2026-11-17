@@ -30,6 +30,22 @@ pub fn absolute(path: String, in directory: String) -> String {
   "/" <> string.join(segments(directory <> "/" <> path), "/")
 }
 
+/// The directory holding the absolute `path`, or `Error(Nil)` for `/`.
+pub fn parent(path: String) -> Result(String, Nil) {
+  case list.reverse(segments(path)) {
+    [] -> Error(Nil)
+    [_, ..rest] -> Ok("/" <> string.join(list.reverse(rest), "/"))
+  }
+}
+
+/// The entry `name` of the directory `directory`: `/gleam.toml` in `/`.
+pub fn join(directory: String, name: String) -> String {
+  case string.ends_with(directory, "/") {
+    True -> directory <> name
+    False -> directory <> "/" <> name
+  }
+}
+
 fn drop_common(
   from: List(String),
   to: List(String),

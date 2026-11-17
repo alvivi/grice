@@ -1,0 +1,28 @@
+---
+version: 2.0.2
+title: cli: a failed run with an invalid configuration
+---
+{
+  "version": 1,
+  "root": "/home/me/app",
+  "summary": {
+    "errors": 1,
+    "warnings": 0,
+    "notes": 0,
+    "hidden": 0
+  },
+  "coverage": null,
+  "diagnostics": [
+    {
+      "code": "grice/invalid-config",
+      "severity": "error",
+      "title": "Unknown key in `gleam.toml`",
+      "location": null,
+      "message": [
+        "`gleam.toml` sets `tools.grice.includes`, which grice doesn't read. The keys of `[tools.grice]` are `include`, `exclude`, `ignore` and `suppression_comments`."
+      ],
+      "hint": "Remove the key, or fix its spelling."
+    }
+  ]
+}
+

@@ -1,0 +1,42 @@
+---
+version: 2.0.2
+title: end to end: warnings as errors fails over a warning
+file: ./test/grice/end_to_end_test.gleam
+test_name: warnings_as_errors_fails_over_a_warning_test
+---
+exit: 1
+
+stdout:
+warning[cli_fixture/discarded-result]: Result discarded
+  ┌─ src/app.gleam:4:3
+  │
+4 │   let _ = int.parse("1")
+  │   ^^^^^^^^^^^^^^^^^^^^^^ This discards a `Result`
+
+warning[cli_fixture/no-panic]: Panic in the code
+  ┌─ src/app.gleam:9:3
+  │
+9 │   panic as "This never runs."
+  │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^ This panics
+
+note[grice/untyped-definition]: Can't infer the types of this definition
+   ┌─ src/app.gleam:18:1
+   │
+18 │ pub fn broken() -> Int {
+   │ ^^^^^^^^^^^^^^^^^^^^^^^^ girard couldn't type this definition
+
+girard couldn't type `broken`: type mismatch: String vs Int. Typed rules
+get no answers about the code inside it, so they may miss problems there.
+
+Hint: If `gleam build` accepts this code, it's a gap in girard, the type
+inference grice uses, so please report it at
+https://github.com/alvivi/girard/issues.
+
+2 warnings and 1 note in 1 module, 1 hidden by ignores and suppressions.
+Coverage is incomplete: 1 definition in 1 module couldn't be typed, so
+typed rules didn't see all of the code.
+The run fails: --warnings-as-errors counts the 2 warnings as errors.
+
+
+stderr:
+

@@ -1,7 +1,8 @@
 %% Erlang code behind grice's `@external` functions.
 -module(grice_ffi).
 
--export([parallel_map/2]).
+-export([parallel_map/2, variable/1, stdout_is_terminal/0, sample/0, exit/1,
+         is_supported/0]).
 
 %% Parallel map
 %%
@@ -108,3 +109,38 @@ work(Caller, Ref, Monitor, F) ->
         {'DOWN', Monitor, process, Caller, _} ->
             ok
     end.
+
+%% Platform
+%%
+%% What a run needs from the runtime, for `grice/internal/platform'.
+
+%% `{ok, Value}' when the variable is set, `{error, nil}' when it isn't.
+variable(Name) ->
+    case os:getenv(unicode:characters_to_list(Name)) of
+        false -> {error, nil};
+        Value -> {ok, unicode:characters_to_binary(Value)}
+    end.
+
+%% `io:getopts' has `{stdout, true}' only when standard output is a
+%% terminal. Without the key, as before OTP 26, it isn't one.
+stdout_is_terminal() ->
+    case io:getopts(standard_io) of
+        Options when is_list(Options) ->
+            lists:keyfind(stdout, 1, Options) =:= {stdout, true};
+        _ ->
+            false
+    end.
+
+%% A `stats.Sample': the monotonic clock in milliseconds, and the total
+%% reductions of every process, `parallel_map''s workers included.
+sample() ->
+    {Reductions, _} = erlang:statistics(exact_reductions),
+    {sample, erlang:monotonic_time(millisecond), Reductions}.
+
+%% `halt/1' flushes standard output and standard error before the runtime
+%% stops.
+exit(Code) ->
+    erlang:halt(Code).
+
+is_supported() ->
+    true.

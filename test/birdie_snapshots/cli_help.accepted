@@ -1,0 +1,31 @@
+---
+version: 2.0.2
+title: cli: help
+file: ./test/grice/internal/cli_test.gleam
+test_name: help_shows_the_options_and_exit_codes_test
+---
+grice, a type-aware linter for Gleam
+
+Usage:
+  gleam run -m grice -- [OPTIONS]
+  gleam run -m <entry module> -- [OPTIONS]
+
+grice lints the project of the nearest gleam.toml, from the working
+directory upwards. `gleam run -m grice` runs grice's built-in rules; an
+entry module of your own, such as dev/lint.gleam, runs yours by calling
+grice.run. The `--` ends gleam's own options, so the options after it reach
+grice.
+
+Options:
+  --format <FORMAT>     human (the default) or json
+  --warnings-as-errors  Fail the run when it shows a warning
+  --strict              Fail the run when coverage has a gap
+  --no-color            Don't colour the output
+  --stats               Show how long loading and linting took
+  -h, --help            Show this help
+
+Exit codes:
+  0  No error shown
+  1  An error shown, or a warning or a coverage gap an option counts as one
+  2  No result: a usage error, or the project or the rules couldn't be used
+

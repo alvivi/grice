@@ -1,0 +1,18 @@
+---
+version: 2.0.2
+title: cli: colour
+file: ./test/grice/internal/cli_test.gleam
+test_name: colour_test
+---
+[1;33mwarning[fixture/no-echo][0m[1m: Echo left in the code[0m
+  [36m┌─[0m src/app.gleam:2:3
+  [36m│[0m
+[36m2 │[0m   echo 1
+  [36m│[0m   [33m^^^^^^ This prints when it runs[0m
+
+`echo` prints its value each time it runs.
+
+Hint: Remove it once you're done debugging.
+
+1 warning in 1 module.
+

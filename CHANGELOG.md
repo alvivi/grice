@@ -20,8 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   type it meets, threading an accumulator through them. The walk follows
   source order, definitions of every kind included, and functions and
   expressions also have exit hooks, called after their children. Attribute
-  arguments and the sizes in bit array patterns aren't walked. grice has no
-  command line yet, so nothing runs a walk over a project.
+  arguments and the sizes in bit array patterns aren't walked.
 - **Rules.** The new `grice/rule` module builds rules. A module rule looks
   at one module at a time: `rule.module` names it, `rule.with_context` gives
   it the context it threads through the module, the `on_*` functions add
@@ -33,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `rule.with_severity` sets another severity. A rule code is a
   package-style prefix, a slash and a kebab-case name, such as
   `my_app/no-echo`, and the `grice/` prefix is reserved for grice's own
-  diagnostics. Rules can't be run from the command line yet.
+  diagnostics.
 - **Module facts.** The new `grice/facts` module holds what a rule hook
   knows about the module it's looking at: its name, path, source, imports
   and syntax tree, as the module is compiled for the project's target. A
@@ -45,8 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ProjectSchema`: its `ModuleForm` or `ProjectForm` says which kind of
   rule it builds, so `rule.with_context` takes only a module rule's schema
   and `rule.per_module` only a project rule's. The types are inferred once
-  per run, and only when a rule of the set is typed. Rules can't be run
-  from the command line yet.
+  per run, and only when a rule of the set is typed.
 - **Type facts.** `Typed` facts answer what girard, the type inference
   grice uses, found in the module: `facts.type_of` gives the type of an
   expression, `facts.resolution_of` what a field access or a name in call
@@ -77,8 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   run found, and `grice.render` writes it as text, with or without colour
   and with paths relative to a directory, followed by a summary of the
   counts, the diagnostics ignores and suppressions hid, and the gaps in
-  coverage, or as a JSON document. grice can't be run from the command line
-  yet.
+  coverage, or as a JSON document.
 - **Coverage.** The new `grice/coverage` module holds a run's `Coverage`:
   how many lint-set modules there are, how many parse and how many girard
   typed, and each `Gap`: a module that doesn't parse, a definition girard
@@ -86,3 +83,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   use, with the `Cause`, and a dependency whose sources are missing. Each
   gap matches one diagnostic, so a tool can pattern-match on the gaps
   instead of reading text.
+- **The command line.** `gleam run -m grice` runs grice's built-in rules,
+  an empty set for now, over the project of the nearest `gleam.toml`, and
+  an entry module of a project's own, such as `dev/lint.gleam`, runs its
+  rules with `grice.run(rules)`, as `gleam run -m lint`. The options, after
+  gleam's `--`, are `--format human` or `--format json`,
+  `--warnings-as-errors`, `--strict`, which fails the run over any gap in
+  coverage, `--no-color`, `--stats` and `--help`; anything else, an option
+  given twice included, is a usage error. The exit code is 0 when no error
+  is shown, 1 when one is or an option counts a warning or a gap as one,
+  and 2 when the run has no result, with the reason as diagnostics:
+  `grice/cannot-read`, `grice/invalid-manifest` or `grice/internal-error`
+  when it isn't one already. Human output is coloured only on a terminal,
+  and never when `NO_COLOR` is set to a non-empty value. grice runs on the
+  Erlang target: a JavaScript project runs it with
+  `gleam run --target erlang`, and its JavaScript builds still compile the
+  entry module.
+- **JSON output.** `--format json` prints one JSON document, schema
+  version 1: the absolute root, the counts, the coverage with each gap, and
+  every diagnostic with its spans in bytes and as lines and columns. Within
+  version 1, fields are only added. A run with no result gives the same
+  document with `coverage: null`.
+- **Stats.** `--stats` adds how long loading, linting and the whole run
+  took, in milliseconds and in reductions, with the number of modules and
+  rules, after the summary or as the document's `stats`.

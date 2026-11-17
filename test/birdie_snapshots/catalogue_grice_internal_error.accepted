@@ -1,0 +1,14 @@
+---
+version: 2.0.2
+title: catalogue: grice/internal-error
+---
+error[grice/internal-error]: grice couldn't show its results
+
+The run finished, but grice couldn't render its diagnostics: the span from
+byte 0 to byte 9 in `src/app.gleam` isn't inside the source. This is a bug
+in grice, not a problem in your code.
+
+Hint: Please report it at https://github.com/alvivi/grice/issues, with the
+rules you ran.
+
+

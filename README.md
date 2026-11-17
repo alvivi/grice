@@ -4,15 +4,13 @@
 
 A type-aware linter for Gleam, with clear, compiler-style diagnostics.
 
-> **Status: early development.** grice has no built-in rules and no CLI yet,
-> and it is not published on Hex. So far it holds the diagnostic model, a
-> renderer that prints diagnostics in the compiler's style, the loader that
-> reads a project's configuration, modules and dependencies, and the API for
-> writing rules, with a runner that runs them over a loaded project. Rules
-> can ask girard for types, and the runner reports what those types don't
-> cover. Diagnostics can be hidden by ignores in `gleam.toml` and by
-> `grice-ignore` comments, and a suppression that hides nothing is reported.
-> Rules can't be run from the command line yet.
+> **Status: early development.** grice has no built-in rules yet, and it is
+> not published on Hex. It has the API for writing rules, which can ask
+> girard for types, and runs them from the command line, with output in the
+> compiler's style or as JSON. It reports what the types don't cover, and
+> diagnostics can be hidden by ignores in `gleam.toml` and by
+> `grice-ignore` comments, with a warning for each suppression that hides
+> nothing.
 
 ## Why?
 

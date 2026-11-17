@@ -1,0 +1,28 @@
+---
+version: 2.0.2
+title: cli: a failed run with a render error
+---
+{
+  "version": 1,
+  "root": "/home/me/app",
+  "summary": {
+    "errors": 1,
+    "warnings": 0,
+    "notes": 0,
+    "hidden": 0
+  },
+  "coverage": null,
+  "diagnostics": [
+    {
+      "code": "grice/internal-error",
+      "severity": "error",
+      "title": "grice couldn't show its results",
+      "location": null,
+      "message": [
+        "The run finished, but grice couldn't render its diagnostics: the span from byte 0 to byte 9 in `src/app.gleam` isn't inside the source. This is a bug in grice, not a problem in your code."
+      ],
+      "hint": "Please report it at https://github.com/alvivi/grice/issues, with the rules you ran."
+    }
+  ]
+}
+

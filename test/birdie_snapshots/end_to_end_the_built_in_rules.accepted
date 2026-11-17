@@ -1,0 +1,29 @@
+---
+version: 2.0.2
+title: end to end: the built-in rules
+file: ./test/grice/end_to_end_test.gleam
+test_name: the_built_in_rules_run_with_gleam_run_m_grice_test
+---
+exit: 0
+
+stdout:
+warning[grice/unused-suppression]: Unused suppression
+   ┌─ src/app.gleam:13:3
+   │
+13 │   // grice-ignore cli_fixture/no-panic: The tests show a hidden finding.
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ No rule of this run has this code
+
+This suppression names `cli_fixture/no-panic`, but no rule of this run has
+that code, so it hides nothing. It's most likely a typo, a rule that was
+removed, or a rule of another rule set.
+
+Hint: Fix the suppression, or remove it. Write `// grice-ignore <rule
+code>: <reason>` on its own line, above the code it covers, or `//
+grice-ignore-file <rule code>: <reason>` before the module's first line of
+code to cover the whole module.
+
+1 warning in 1 module.
+
+
+stderr:
+

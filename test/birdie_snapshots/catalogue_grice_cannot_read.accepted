@@ -1,0 +1,13 @@
+---
+version: 2.0.2
+title: catalogue: grice/cannot-read
+---
+error[grice/cannot-read]: Can't read a file
+
+grice couldn't read `src/app.gleam`, which it needs to lint the project:
+Permission denied.
+
+Hint: Check that it's there and that you can read it. Sources must be
+UTF-8.
+
+

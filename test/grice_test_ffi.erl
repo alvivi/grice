@@ -1,11 +1,13 @@
 %% What the tests need from Erlang that Gleam can't express: catching an
-%% exception, process identity, timing and the mailbox.
+%% exception, process identity, timing, the mailbox, a clock that counts
+%% and running a program.
 -module(grice_test_ffi).
 
 -export([rescue/1, class/1, raise_sentinel/1, sentinel/1, self_pid/0,
          schedulers_online/0, sleep/1, kill_self/0, block/0,
          worker_exit_killed/0, take_mailbox/0, send_self/1,
-         monitor_exit_after/1, caller_death/1]).
+         monitor_exit_after/1, caller_death/1, counting_sample/0,
+         run_gleam/3, once/2]).
 
 %% `{ok, Result}' when `F' returns, and `{error, {exception, Class, Reason,
 %% Stack}}' when it raises an exception of any class.
@@ -106,4 +108,57 @@ await_idle(Worker) ->
 await_down(Monitor) ->
     receive {'DOWN', Monitor, process, _, _} -> true
     after 1000 -> false
+    end.
+
+%% A clock for `cli.execute' whose n-th reading is the `stats.Sample'
+%% `{sample, N * N, N * N * N}', so the spans between any two pairs of
+%% readings differ in both counters.
+counting_sample() ->
+    Counter = counters:new(1, []),
+    fun() ->
+        counters:add(Counter, 1, 1),
+        N = counters:get(Counter, 1),
+        {sample, N * N, N * N * N}
+    end.
+
+%% Run the `gleam' on `PATH' with `Arguments' in `Directory', and return
+%% `{ok, {ExitStatus, Stdout, Stderr}}', or `{error, Reason}' when there's
+%% no `gleam'. A port reads only standard output, so `/bin/sh' sends
+%% standard error to `StderrFile', read once the program exits.
+run_gleam(Directory, Arguments, StderrFile) ->
+    case os:find_executable("gleam") of
+        false ->
+            {error, <<"There's no gleam executable on PATH.">>};
+        Gleam ->
+            Script = "exec \"$0\" \"$@\" 2>\"$GRICE_TEST_STDERR\"",
+            Port = open_port(
+                {spawn_executable, "/bin/sh"},
+                [{args, ["-c", Script, Gleam
+                         | [binary_to_list(A) || A <- Arguments]]},
+                 {cd, binary_to_list(Directory)},
+                 {env, [{"GRICE_TEST_STDERR", binary_to_list(StderrFile)}]},
+                 exit_status, binary, use_stdio, hide]
+            ),
+            {Status, Stdout} = collect(Port, []),
+            {ok, Stderr} = file:read_file(StderrFile),
+            {ok, {Status, Stdout, Stderr}}
+    end.
+
+collect(Port, Chunks) ->
+    receive
+        {Port, {data, Data}} -> collect(Port, [Data | Chunks]);
+        {Port, {exit_status, Status}} ->
+            {Status, iolist_to_binary(lists:reverse(Chunks))}
+    end.
+
+%% Call `F' the first time `once' is called with `Key' in this runtime, and
+%% do nothing after that.
+once(Key, F) ->
+    Flag = {grice_test_once, Key},
+    case persistent_term:get(Flag, false) of
+        true -> nil;
+        false ->
+            F(),
+            persistent_term:put(Flag, true),
+            nil
     end.

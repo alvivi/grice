@@ -1,0 +1,62 @@
+---
+version: 2.0.2
+title: cli: usage errors
+file: ./test/grice/internal/cli_test.gleam
+test_name: usage_errors_go_to_stderr_with_exit_code_2_test
+---
+["--nope"]
+error: unknown option --nope
+Run with --help to see the options.
+
+["-x"]
+error: unknown option -x
+Run with --help to see the options.
+
+["--strict=yes"]
+error: unknown option --strict=yes
+Run with --help to see the options.
+
+["src/app.gleam"]
+error: unexpected argument "src/app.gleam": grice takes no paths
+Run with --help to see the options.
+
+[""]
+error: unexpected argument "": grice takes no paths
+Run with --help to see the options.
+
+["--"]
+error: unexpected --, after the one that ends gleam's options
+Run with --help to see the options.
+
+["--strict", "--", "--stats"]
+error: unexpected --, after the one that ends gleam's options
+Run with --help to see the options.
+
+["--format"]
+error: --format needs a value: human or json
+Run with --help to see the options.
+
+["--format="]
+error: --format needs a value: human or json
+Run with --help to see the options.
+
+["--format", "xml"]
+error: unknown format "xml": use human or json
+Run with --help to see the options.
+
+["--format=JSON"]
+error: unknown format "JSON": use human or json
+Run with --help to see the options.
+
+["--strict", "--strict"]
+error: --strict is given more than once
+Run with --help to see the options.
+
+["--format", "json", "--format=human"]
+error: --format is given more than once
+Run with --help to see the options.
+
+["-h", "--help"]
+error: --help is given more than once
+Run with --help to see the options.
+

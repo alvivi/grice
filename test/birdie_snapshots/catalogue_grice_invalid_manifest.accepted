@@ -1,0 +1,13 @@
+---
+version: 2.0.2
+title: catalogue: grice/invalid-manifest
+---
+error[grice/invalid-manifest]: Invalid `manifest.toml`
+
+grice reads `manifest.toml` to find the sources of the project's
+dependencies, but `packages` in `manifest.toml` isn't a list.
+
+Hint: `gleam deps download` writes it again. If you edited it by hand, undo
+or fix the edit.
+
+

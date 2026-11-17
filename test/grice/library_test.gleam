@@ -1,6 +1,7 @@
 //// Tests for the library API in `grice`, over fixture projects on disk:
 //// the root as given and made absolute, a root through a symbolic link,
-//// the load errors, the rule set's problems, and rendering.
+//// the load errors, the rule set's problems, and rendering, whose document
+//// is the command line's.
 
 import gleam/list
 import gleam/string
@@ -8,6 +9,8 @@ import grice
 import grice/coverage
 import grice/diagnostic
 import grice/fixture_rules
+import grice/internal/cli
+import grice/internal/loader
 import grice/rule
 import grice/support
 
@@ -159,6 +162,22 @@ pub fn human_output_has_the_summary_and_relative_paths_test() {
   )
   let assert [_, note] = grice.diagnostics(linted)
   assert note.severity == diagnostic.Note
+  support.cleanup(directory)
+}
+
+// The library's document is the command line's for the same run, without
+// `--stats`.
+pub fn the_document_is_the_command_lines_test() {
+  let directory = write_app("library-document", app)
+  let outcome =
+    cli.execute(
+      ["--format", "json"],
+      support.environment(support.absolute(directory)),
+      loader.load_project,
+      rules(),
+      support.counting_sample(),
+    )
+  assert outcome.stdout == grice.render(lint(directory), format: grice.Json)
   support.cleanup(directory)
 }
 
