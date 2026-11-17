@@ -1,0 +1,28 @@
+---
+version: 2.0.2
+title: cli: a failed run without a project
+---
+{
+  "version": 1,
+  "root": null,
+  "summary": {
+    "errors": 1,
+    "warnings": 0,
+    "notes": 0,
+    "hidden": 0
+  },
+  "coverage": null,
+  "diagnostics": [
+    {
+      "code": "grice/cannot-read",
+      "severity": "error",
+      "title": "Can't find the project",
+      "location": null,
+      "message": [
+        "grice lints the project of the nearest `gleam.toml`, but there's none in `/home/me/app` or any directory above it."
+      ],
+      "hint": "Run grice from inside a Gleam project, such as in the directory of its `gleam.toml`."
+    }
+  ]
+}
+

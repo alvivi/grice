@@ -1,0 +1,28 @@
+---
+version: 2.0.2
+title: cli: a failed run with an unreadable file
+---
+{
+  "version": 1,
+  "root": "/home/me/app",
+  "summary": {
+    "errors": 1,
+    "warnings": 0,
+    "notes": 0,
+    "hidden": 0
+  },
+  "coverage": null,
+  "diagnostics": [
+    {
+      "code": "grice/cannot-read",
+      "severity": "error",
+      "title": "Can't read a file",
+      "location": null,
+      "message": [
+        "grice couldn't read `src/app.gleam`, which it needs to lint the project: Permission denied."
+      ],
+      "hint": "Check that it's there and that you can read it. Sources must be UTF-8."
+    }
+  ]
+}
+

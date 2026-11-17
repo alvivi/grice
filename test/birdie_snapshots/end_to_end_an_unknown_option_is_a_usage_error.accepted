@@ -1,0 +1,15 @@
+---
+version: 2.0.2
+title: end to end: an unknown option is a usage error
+file: ./test/grice/end_to_end_test.gleam
+test_name: an_unknown_option_is_a_usage_error_test
+---
+exit: 2
+
+stdout:
+
+
+stderr:
+error: unknown option --nope
+Run with --help to see the options.
+

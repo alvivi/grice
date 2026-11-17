@@ -1,5 +1,5 @@
-//// Tests for paths as text: shown relative to a directory, and made
-//// absolute.
+//// Tests for paths as text: shown relative to a directory, made absolute,
+//// and walked up for the project root.
 
 import grice/internal/path
 
@@ -24,4 +24,12 @@ pub fn absolute_paths_keep_parent_segments_test() {
   assert path.absolute("./app/.", in: "/home/me") == "/home/me/app"
   assert path.absolute("link/../app", in: "/home/me") == "/home/me/link/../app"
   assert path.absolute("app", in: "/") == "/app"
+}
+
+pub fn parents_end_at_the_root_test() {
+  assert path.parent("/home/me") == Ok("/home")
+  assert path.parent("/home") == Ok("/")
+  assert path.parent("/") == Error(Nil)
+  assert path.join("/home", "gleam.toml") == "/home/gleam.toml"
+  assert path.join("/", "gleam.toml") == "/gleam.toml"
 }

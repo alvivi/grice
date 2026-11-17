@@ -1,10 +1,27 @@
 //// grice, a type-aware linter for Gleam.
 ////
-//// This module is the library API, for tools that lint a project
-//// themselves, such as an editor integration or a script:
+//// `gleam run -m grice` runs grice's built-in rules over the project, with
+//// `main`. A project with rules of its own gives grice a module of its own,
+//// such as `dev/lint.gleam`, whose `main` calls `run` with them:
 ////
 //// ```gleam
-//// //// import grice
+//// import grice
+//// import my_app/lint/no_io_in_view
+////
+//// pub fn main() -> Nil {
+////   grice.run([no_io_in_view.rule()])
+//// }
+//// ```
+////
+//// and runs it with `gleam run -m lint -- [OPTIONS]`; `--help` lists the
+//// options.
+////
+//// The rest of this module is the library API, for tools that lint a
+//// project themselves, such as an editor integration or a script:
+////
+//// ```gleam
+//// import gleam/io
+//// import grice
 //// import grice/rule.{type Rule}
 ////
 //// pub fn report(rules: List(Rule)) -> Nil {
@@ -22,18 +39,70 @@
 //// the text grice prints.
 
 import gleam/bool
+import gleam/io
 import gleam/option.{None}
 import gleam/result
 import gleam/string
 import grice/coverage.{type Coverage}
 import grice/diagnostic.{type Diagnostic}
+import grice/internal/cli
 import grice/internal/loader
 import grice/internal/path
+import grice/internal/platform
 import grice/internal/render/human
 import grice/internal/render/json
 import grice/internal/runner
 import grice/rule.{type Rule}
 import simplifile
+
+// Running
+//
+// The command line: the arguments, the environment and the terminal are
+// read here, everything else is `cli.execute`, and the process exits with
+// its code.
+
+/// Run grice's built-in rules from the command line: `gleam run -m grice`.
+pub fn main() -> Nil {
+  run([])
+}
+
+/// Run `rules` from the command line, as the `main` of an entry module, and
+/// exit with the run's exit code: 0 when no error is shown, 1 when one is
+/// or an option counts a warning or a coverage gap as one, and 2 when the
+/// run has no result.
+///
+/// grice runs on the Erlang target for now. An entry module still compiles
+/// for JavaScript, so a JavaScript project's builds keep working, but there
+/// this panics before it reads anything: run it with
+/// `gleam run --target erlang -m <module>`.
+pub fn run(rules: List(Rule)) -> Nil {
+  use <- bool.lazy_guard(when: !platform.is_supported(), return: fn() {
+    panic as "grice runs on the Erlang target for now: run gleam run --target erlang -m <module> -- …"
+  })
+  // A working directory that's gone has no project to find, and the
+  // diagnostic about that names it as `.`.
+  let directory = simplifile.current_directory() |> result.unwrap(".")
+  let environment =
+    cli.Environment(
+      directory:,
+      root: cli.find_root(directory, fn(path) {
+        simplifile.is_file(path) == Ok(True)
+      }),
+      no_color: platform.variable("NO_COLOR") |> result.unwrap("") != "",
+      terminal: platform.stdout_is_terminal(),
+    )
+  let outcome =
+    cli.execute(
+      platform.arguments(),
+      environment,
+      loader.load_project,
+      rules,
+      platform.sample,
+    )
+  io.print(outcome.stdout)
+  io.print_error(outcome.stderr)
+  platform.exit(outcome.exit_code)
+}
 
 // Loading
 //

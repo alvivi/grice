@@ -1,6 +1,8 @@
 //// One snapshot of each of grice's own diagnostics, rendered as a user sees
-//// it, without colour. Together they're all the prose grice writes about
-//// a run, in one place to review.
+//// it, without colour: the configuration's and the rule set's, those about
+//// parsing and types, the suppression warnings, and why a run failed.
+//// Together they're all the prose grice writes about a run, in one place to
+//// review.
 
 import birdie
 import glance
@@ -9,6 +11,7 @@ import gleam/list
 import gleam/option.{None}
 import gleam/string
 import grice/diagnostic.{type Diagnostic}
+import grice/internal/cli
 import grice/internal/config
 import grice/internal/line_index.{type LineIndex}
 import grice/internal/loader.{type Project}
@@ -94,6 +97,41 @@ pub fn unused_suppression_test() {
 
 pub fn invalid_suppression_test() {
   snap_from_showcase("grice/invalid-suppression", located: True)
+}
+
+// Failed runs
+//
+// Why a run has no result, as the command line reports it.
+
+pub fn cannot_read_test() {
+  let assert [found] =
+    cli.load_error(loader.CannotRead("src/app.gleam", "Permission denied"))
+  snap_alone(found, "grice/cannot-read")
+}
+
+pub fn cannot_read_without_a_project_test() {
+  snap_alone(
+    cli.no_project("/home/me/app"),
+    "grice/cannot-read without a project",
+  )
+}
+
+pub fn invalid_manifest_test() {
+  let assert [found] =
+    cli.load_error(loader.InvalidManifest(
+      "`packages` in `manifest.toml` isn't a list",
+    ))
+  snap_alone(found, "grice/invalid-manifest")
+}
+
+pub fn internal_error_test() {
+  let error =
+    human.InvalidSpan(
+      "src/app.gleam",
+      diagnostic.Span(0, 9),
+      line_index.OutOfBounds,
+    )
+  snap_alone(cli.internal_error(error), "grice/internal-error")
 }
 
 // The showcase holds each code the snapshots above pick from it, once,

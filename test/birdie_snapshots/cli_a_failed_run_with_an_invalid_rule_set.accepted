@@ -1,0 +1,28 @@
+---
+version: 2.0.2
+title: cli: a failed run with an invalid rule set
+---
+{
+  "version": 1,
+  "root": "/home/me/app",
+  "summary": {
+    "errors": 1,
+    "warnings": 0,
+    "notes": 0,
+    "hidden": 0
+  },
+  "coverage": null,
+  "diagnostics": [
+    {
+      "code": "grice/invalid-rule",
+      "severity": "error",
+      "title": "Rule code used more than once",
+      "location": null,
+      "message": [
+        "2 rules have the code `fixture/no-echo`. Ignores name rules by their code, so each code must belong to one rule."
+      ],
+      "hint": "Give each rule a code of its own, or remove the duplicates from the rule set."
+    }
+  ]
+}
+

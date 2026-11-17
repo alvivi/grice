@@ -1,7 +1,8 @@
 //// Fixture projects for the tests. Most are built in memory with
 //// `project`. The tests that read from disk write the tree they need under
 //// `build/fixtures/<test>/`, which git ignores and the compiler doesn't
-//// read, and delete it afterwards.
+//// read, and delete it afterwards, except the end-to-end fixture, which
+//// keeps its build between runs.
 
 import glance
 import gleam/dict
@@ -9,9 +10,11 @@ import gleam/list
 import gleam/result
 import gleam/string
 import grice/fixture_rules
+import grice/internal/cli
 import grice/internal/config
 import grice/internal/loader.{type Project}
 import grice/internal/runner.{type Linted}
+import grice/internal/stats
 import grice/internal/typing
 import simplifile
 
@@ -112,6 +115,23 @@ const showcase_dependencies = [
   #("dep/inner", "pub const x = 1\npub fn ("),
 ]
 
+/// A working directory at the root of the project in `root`, an absolute
+/// path, with standard output not a terminal and `NO_COLOR` unset.
+pub fn environment(root: String) -> cli.Environment {
+  cli.Environment(
+    directory: root,
+    root: Ok(root),
+    no_color: False,
+    terminal: False,
+  )
+}
+
+/// A clock for `cli.execute` whose n-th reading is `Sample(n * n, n * n * n)`,
+/// so loading, linting and the total each cost a different amount, in both
+/// counters.
+@external(erlang, "grice_test_ffi", "counting_sample")
+pub fn counting_sample() -> fn() -> stats.Sample
+
 /// The span of the first `needle` in `source`.
 pub fn glance_span(source: String, needle: String) -> glance.Span {
   let assert Ok(#(before, _)) = string.split_once(source, needle)
@@ -134,6 +154,13 @@ pub fn fixture_directory(name: String) -> String {
 /// directories as needed, after deleting whatever was there.
 pub fn write_fixture(directory: String, files: List(#(String, String))) -> Nil {
   cleanup(directory)
+  write_files(directory, files)
+}
+
+/// Write each `#(path, contents)` under `directory` as `write_fixture` does,
+/// but over whatever is there, deleting nothing: a fixture project keeps
+/// its build and its manifest between tests.
+pub fn write_files(directory: String, files: List(#(String, String))) -> Nil {
   list.each(files, fn(file) {
     let #(path, contents) = file
     write_file(directory <> "/" <> path, contents)

@@ -1,0 +1,16 @@
+---
+version: 2.0.2
+title: cli: a failed run in human output
+file: ./test/grice/internal/cli_test.gleam
+test_name: a_failed_run_says_it_didnt_complete_test
+---
+error[grice/cannot-read]: Can't find the project
+
+grice lints the project of the nearest `gleam.toml`, but there's none in
+`/home/me/app` or any directory above it.
+
+Hint: Run grice from inside a Gleam project, such as in the directory of
+its `gleam.toml`.
+
+grice couldn't complete the run. Fix the problems above and run it again.
+

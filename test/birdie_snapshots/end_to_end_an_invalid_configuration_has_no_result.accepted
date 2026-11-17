@@ -1,0 +1,22 @@
+---
+version: 2.0.2
+title: end to end: an invalid configuration has no result
+file: ./test/grice/end_to_end_test.gleam
+test_name: an_invalid_configuration_has_no_result_test
+---
+exit: 2
+
+stdout:
+error[grice/invalid-config]: Unknown key in `gleam.toml`
+
+`gleam.toml` sets `tools.grice.nope`, which grice doesn't read. The keys of
+`[tools.grice]` are `include`, `exclude`, `ignore` and
+`suppression_comments`.
+
+Hint: Remove the key, or fix its spelling.
+
+grice couldn't complete the run. Fix the problems above and run it again.
+
+
+stderr:
+

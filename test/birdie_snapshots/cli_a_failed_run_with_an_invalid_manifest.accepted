@@ -1,0 +1,28 @@
+---
+version: 2.0.2
+title: cli: a failed run with an invalid manifest
+---
+{
+  "version": 1,
+  "root": "/home/me/app",
+  "summary": {
+    "errors": 1,
+    "warnings": 0,
+    "notes": 0,
+    "hidden": 0
+  },
+  "coverage": null,
+  "diagnostics": [
+    {
+      "code": "grice/invalid-manifest",
+      "severity": "error",
+      "title": "Invalid `manifest.toml`",
+      "location": null,
+      "message": [
+        "grice reads `manifest.toml` to find the sources of the project's dependencies, but `packages` in `manifest.toml` isn't a list."
+      ],
+      "hint": "`gleam deps download` writes it again. If you edited it by hand, undo or fix the edit."
+    }
+  ]
+}
+

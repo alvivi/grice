@@ -48,6 +48,7 @@ import grice/internal/line_index.{type LineIndex, type SpanProblem}
 import grice/internal/loader.{type Project}
 import grice/internal/path
 import grice/internal/runner.{type Linted}
+import grice/internal/stats.{type Phase, type Stats}
 import string_width
 
 /// How to render. Whether to colour is decided by the caller, which knows
@@ -101,6 +102,13 @@ pub fn run(
     options,
   ))
   text <> summary(linted)
+}
+
+/// Render a run that has no result: grice's own diagnostics saying why,
+/// which have no location, and a line saying the run didn't complete.
+pub fn failure(diagnostics: List(Diagnostic), colour colour: Bool) -> String {
+  write(list.map(diagnostics, Unlocated), Options(colour:, directory: ""))
+  <> "grice couldn't complete the run. Fix the problems above and run it again.\n"
 }
 
 /// What a render error says is wrong, as a clause for a sentence that
@@ -579,15 +587,54 @@ fn enumerate(items: List(String)) -> String {
   }
 }
 
+// Stats
+//
+// The block `--stats` adds after the summary: one row per phase, then the
+// counts.
+
+/// The `--stats` block, for after the summary: what loading, linting and
+/// the whole run cost, and how much there was to load and lint.
+pub fn stats(stats: Stats) -> String {
+  // `total` spans `load` and `lint`, on a monotonic clock and a growing
+  // reduction count, so its numbers are the widest.
+  let milliseconds = string.length(int.to_string(stats.total.milliseconds))
+  let reductions = string.length(int.to_string(stats.total.reductions))
+  let row = fn(name: String, phase: Phase) {
+    "  "
+    <> string.pad_end(name, to: 5, with: " ")
+    <> "  "
+    <> string.pad_start(int.to_string(phase.milliseconds), milliseconds, " ")
+    <> " ms  "
+    <> string.pad_start(int.to_string(phase.reductions), reductions, " ")
+    <> " reductions\n"
+  }
+  let types = case stats.types {
+    True -> "types inferred"
+    False -> "types not inferred"
+  }
+  "\nStats:\n"
+  <> row("load", stats.load)
+  <> row("lint", stats.lint)
+  <> row("total", stats.total)
+  <> "  "
+  <> plural(stats.loaded, "project module", "project modules")
+  <> ", "
+  <> plural(stats.dependencies, "dependency module", "dependency modules")
+  <> ", "
+  <> plural(stats.rules, "rule", "rules")
+  <> ", "
+  <> types
+  <> ".\n"
+}
+
 // Wrapping
 //
 // Each line of a paragraph is filled greedily up to 75 columns, the width
 // the compiler wraps its text to. Words are never cut, so one longer than
 // that gets a line of its own.
 
-const wrap_width = 75
-
-fn wrap(text: String) -> String {
+/// Fill each line of `text` up to 75 columns, as message paragraphs are.
+pub fn wrap(text: String) -> String {
   text
   |> string.split("\n")
   |> list.map(fn(line) {
@@ -596,6 +643,8 @@ fn wrap(text: String) -> String {
   })
   |> string.join("\n")
 }
+
+const wrap_width = 75
 
 fn fill(
   state: #(List(String), String),

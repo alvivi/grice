@@ -1,0 +1,13 @@
+---
+version: 2.0.2
+title: catalogue: grice/cannot-read without a project
+---
+error[grice/cannot-read]: Can't find the project
+
+grice lints the project of the nearest `gleam.toml`, but there's none in
+`/home/me/app` or any directory above it.
+
+Hint: Run grice from inside a Gleam project, such as in the directory of
+its `gleam.toml`.
+
+

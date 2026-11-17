@@ -1,0 +1,132 @@
+---
+version: 2.0.2
+title: end to end: json output
+file: ./test/grice/end_to_end_test.gleam
+test_name: json_output_test
+---
+exit: 0
+
+stdout:
+{
+  "version": 1,
+  "root": "<root>",
+  "summary": {
+    "errors": 0,
+    "warnings": 2,
+    "notes": 1,
+    "hidden": 1
+  },
+  "coverage": {
+    "complete": false,
+    "modules": 1,
+    "parsed": 1,
+    "types": {
+      "requested": true,
+      "full": 0,
+      "partial": 1,
+      "none": 0
+    },
+    "gaps": [
+      {
+        "kind": "untyped-definition",
+        "path": "src/app.gleam",
+        "definition": "broken"
+      }
+    ]
+  },
+  "diagnostics": [
+    {
+      "code": "cli_fixture/discarded-result",
+      "severity": "warning",
+      "title": "Result discarded",
+      "location": {
+        "path": "src/app.gleam",
+        "primary": {
+          "span": {
+            "start": 43,
+            "end": 65
+          },
+          "range": {
+            "start": {
+              "line": 4,
+              "column": 3
+            },
+            "end": {
+              "line": 4,
+              "column": 25
+            }
+          },
+          "message": "This discards a `Result`"
+        },
+        "secondary": [],
+        "fix": null
+      },
+      "message": [],
+      "hint": null
+    },
+    {
+      "code": "cli_fixture/no-panic",
+      "severity": "warning",
+      "title": "Panic in the code",
+      "location": {
+        "path": "src/app.gleam",
+        "primary": {
+          "span": {
+            "start": 107,
+            "end": 134
+          },
+          "range": {
+            "start": {
+              "line": 9,
+              "column": 3
+            },
+            "end": {
+              "line": 9,
+              "column": 30
+            }
+          },
+          "message": "This panics"
+        },
+        "secondary": [],
+        "fix": null
+      },
+      "message": [],
+      "hint": null
+    },
+    {
+      "code": "grice/untyped-definition",
+      "severity": "note",
+      "title": "Can't infer the types of this definition",
+      "location": {
+        "path": "src/app.gleam",
+        "primary": {
+          "span": {
+            "start": 291,
+            "end": 332
+          },
+          "range": {
+            "start": {
+              "line": 18,
+              "column": 1
+            },
+            "end": {
+              "line": 20,
+              "column": 2
+            }
+          },
+          "message": "girard couldn't type this definition"
+        },
+        "secondary": [],
+        "fix": null
+      },
+      "message": [
+        "girard couldn't type `broken`: type mismatch: String vs Int. Typed rules get no answers about the code inside it, so they may miss problems there."
+      ],
+      "hint": "If `gleam build` accepts this code, it's a gap in girard, the type inference grice uses, so please report it at https://github.com/alvivi/girard/issues."
+    }
+  ]
+}
+
+
+stderr:
+

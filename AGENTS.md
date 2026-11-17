@@ -20,8 +20,9 @@ that its diagnostics follow the Gleam compiler's layout.
 line index, the human renderer, project loading (configuration, discovery,
 the load set and dependency sources), the rule API (`grice/visit`,
 `grice/facts`, `grice/rule`) with its runner, type facts from girard with
-the coverage notes, and ignores and suppression comments have landed; there
-are no built-in rules and no CLI yet.
+the coverage notes, ignores and suppression comments, the library API, the
+command line and the JSON output have landed; there are no built-in rules
+yet.
 
 ## Build and Test
 
@@ -48,7 +49,7 @@ notice.
 
 | File | Responsibility |
 |---|---|
-| `src/grice.gleam` | **Exists:** the library API: `load_project`, `lint`, `diagnostics`, `coverage` and `render`. Planned: `main()` for the built-in rule set and `run(rules)` for a client's own set |
+| `src/grice.gleam` | **Exists:** entry points: `main()` for the built-in rule set, `run(rules)` for a client's own set, and the library API: `load_project`, `lint`, `diagnostics`, `coverage` and `render` |
 | `src/grice/coverage.gleam` | **Exists:** the coverage of a run and its gaps, public so tools can pattern-match on them |
 | `src/grice/rule.gleam` | **Exists:** module and project rule builders, reports and severities |
 | `src/grice/facts.gleam` | **Exists:** per-module facts: name, path, source, imports, comments and the syntax tree as compiled for the target, and for typed rules the type queries and the `Unknown` type |
@@ -63,14 +64,15 @@ notice.
 | `src/grice/internal/typing.gleam` | **Exists:** girard integration: the order modules are typed in, the in-memory resolver and each module's type index |
 | `src/grice/internal/runner.gleam` | **Exists:** checking the rule set, planning which facts the rules need, running rules over the lint set, resolving reports, dropping what ignores and suppressions hide, and the coverage record with its notes |
 | `src/grice/internal/suppress.gleam` | **Exists:** applying ignores and suppression comments, and the unused- and invalid-suppression warnings |
-| `src/grice/internal/render/human.gleam` | **Exists:** human output in a layout modelled on the compiler's, and a run's summary |
+| `src/grice/internal/render/human.gleam` | **Exists:** human output in a layout modelled on the compiler's, and a run's summary and stats |
 | `src/grice/internal/render/json.gleam` | **Exists:** the JSON document, schema version 1, pretty-printed |
+| `src/grice/internal/cli.gleam` | **Exists:** the command line as a pure function: arguments, help, root discovery, exit codes and failed runs |
 | `src/grice/internal/stats.gleam` | **Exists:** what `--stats` measures: samples, phases and counts |
-| `src/grice/internal/path.gleam` | **Exists:** paths as text: segments, relative and absolute paths |
+| `src/grice/internal/path.gleam` | **Exists:** paths as text: segments, relative and absolute paths, parents |
 | `src/grice/internal/parallel.gleam` | **Exists:** an order-keeping parallel map, as an Erlang FFI in `src/grice_ffi.erl` |
-| `src/grice/internal/platform.gleam` | Terminal access, arguments and exit (Erlang FFI) |
+| `src/grice/internal/platform.gleam` | **Exists:** arguments, environment, terminal detection, the clock and exit, as an Erlang FFI with Gleam bodies for other targets |
 
-### Pipeline (planned)
+### Pipeline
 
 1. **Config.** Read `[tools.grice]` from `gleam.toml`, plus the package name and
    target, and validate it strictly.

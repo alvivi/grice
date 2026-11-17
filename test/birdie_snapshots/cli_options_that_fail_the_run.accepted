@@ -1,0 +1,30 @@
+---
+version: 2.0.2
+title: cli: options that fail the run
+file: ./test/grice/internal/cli_test.gleam
+test_name: options_that_fail_the_run_say_so_test
+---
+[] exits with 0
+1 warning and 1 note in 1 module.
+Coverage is incomplete: 1 definition in 1 module couldn't be typed, so
+typed rules didn't see all of the code.
+
+["--warnings-as-errors"] exits with 1
+1 warning and 1 note in 1 module.
+Coverage is incomplete: 1 definition in 1 module couldn't be typed, so
+typed rules didn't see all of the code.
+The run fails: --warnings-as-errors counts the warning as an error.
+
+["--strict"] exits with 1
+1 warning and 1 note in 1 module.
+Coverage is incomplete: 1 definition in 1 module couldn't be typed, so
+typed rules didn't see all of the code.
+The run fails: --strict counts the coverage gap as an error.
+
+["--strict", "--warnings-as-errors"] exits with 1
+1 warning and 1 note in 1 module.
+Coverage is incomplete: 1 definition in 1 module couldn't be typed, so
+typed rules didn't see all of the code.
+The run fails: --warnings-as-errors counts the warning as an error and
+--strict counts the coverage gap as an error.
+

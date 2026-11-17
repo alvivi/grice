@@ -1,0 +1,18 @@
+---
+version: 2.0.2
+title: cli: paths from a subdirectory
+file: ./test/grice/internal/cli_test.gleam
+test_name: paths_are_relative_to_the_working_directory_test
+---
+warning[fixture/no-echo]: Echo left in the code
+  ┌─ ../../src/app.gleam:2:3
+  │
+2 │   echo 1
+  │   ^^^^^^ This prints when it runs
+
+`echo` prints its value each time it runs.
+
+Hint: Remove it once you're done debugging.
+
+1 warning in 1 module.
+
