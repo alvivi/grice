@@ -1,10 +1,10 @@
 %% What the tests need from Erlang that Gleam can't express: catching an
-%% exception, process identity, timing, the mailbox, a clock that counts
-%% and running a program.
+%% exception and reading a panic's message, process identity, timing, the
+%% mailbox, a clock that counts and running a program.
 -module(grice_test_ffi).
 
--export([rescue/1, class/1, raise_sentinel/1, sentinel/1, self_pid/0,
-         schedulers_online/0, sleep/1, kill_self/0, block/0,
+-export([rescue/1, panic_message/1, class/1, raise_sentinel/1, sentinel/1,
+         self_pid/0, schedulers_online/0, sleep/1, kill_self/0, block/0,
          worker_exit_killed/0, take_mailbox/0, send_self/1,
          monitor_exit_after/1, caller_death/1, counting_sample/0,
          run_gleam/3, once/2]).
@@ -15,6 +15,12 @@ rescue(F) ->
     try {ok, F()}
     catch Class:Reason:Stack -> {error, {exception, Class, Reason, Stack}}
     end.
+
+%% `{ok, Message}' when `Reason', the reason of an exception `rescue'
+%% caught, is a Gleam `panic' with the message `Message', and `{error, nil}'
+%% otherwise.
+panic_message(#{gleam_error := panic, message := Message}) -> {ok, Message};
+panic_message(_) -> {error, nil}.
 
 %% The class named `Name': `error', `throw' or `exit'.
 class(Name) ->

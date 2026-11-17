@@ -1,0 +1,28 @@
+---
+version: 2.0.2
+title: testing: a typed rule silent over a definition girard couldn't type
+file: ./test/grice/testing_test.gleam
+test_name: render_shows_the_coverage_of_a_typed_run_test
+---
+-- src/app.gleam
+pub fn main() {
+  let _ = 1 + "one"
+}
+-- output
+note[grice/untyped-definition]: Can't infer the types of this definition
+  ┌─ src/app.gleam:1:1
+  │
+1 │ pub fn main() {
+  │ ^^^^^^^^^^^^^^^ girard couldn't type this definition
+
+girard couldn't type `main`: type mismatch: String vs Int. Typed rules get
+no answers about the code inside it, so they may miss problems there.
+
+Hint: If `gleam build` accepts this code, it's a gap in girard, the type
+inference grice uses, so please report it at
+https://github.com/alvivi/girard/issues.
+
+1 note in 1 module.
+Coverage is incomplete: 1 definition in 1 module couldn't be typed, so
+typed rules didn't see all of the code.
+

@@ -1,0 +1,25 @@
+---
+version: 2.0.2
+title: testing: a dependency in place of an installed module
+file: ./test/grice/testing_test.gleam
+test_name: a_dependency_takes_the_place_of_an_installed_module_test
+---
+-- src/app.gleam
+import gleam/int
+
+pub fn main() {
+  int.to_string(42)
+}
+-- dependency gleam/int
+pub fn to_string(_number: Int) -> Bool {
+  True
+}
+-- output
+warning[fixture/main-signature]: Made in a test
+  ┌─ src/app.gleam:3:1
+  │
+3 │ pub fn main() {
+  │ ^^^^^^^^^^^^^^^ fn() -> Bool
+
+1 warning in 1 module.
+

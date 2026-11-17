@@ -1,0 +1,23 @@
+---
+version: 2.0.2
+title: testing: a finding
+file: ./test/grice/testing_test.gleam
+test_name: module_is_one_file_at_src_app_test
+---
+-- src/app.gleam
+pub fn main() {
+  echo 1
+}
+-- output
+warning[fixture/no-echo]: Echo left in the code
+  ┌─ src/app.gleam:2:3
+  │
+2 │   echo 1
+  │   ^^^^^^ This prints when it runs
+
+`echo` prints its value each time it runs.
+
+Hint: Remove it once you're done debugging.
+
+1 warning in 1 module.
+

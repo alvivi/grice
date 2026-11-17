@@ -258,9 +258,11 @@ fn field(
 
 const lowercase = "abcdefghijklmnopqrstuvwxyz"
 
-// The module name of a path whose first segment is `src`, `test` or `dev`,
-// such as `app/router` for `src/app/router.gleam`.
-fn module_name(path: String) -> Result(String, Nil) {
+/// The module name of a path whose first segment is `src`, `test` or `dev`,
+/// such as `app/router` for `src/app/router.gleam`, or `Error` when the path
+/// isn't a module path.
+@internal
+pub fn module_name(path: String) -> Result(String, Nil) {
   let relative = case path {
     "src/" <> relative | "test/" <> relative | "dev/" <> relative -> relative
     _ -> ""
@@ -537,12 +539,7 @@ pub fn load_project(root: String) -> Result(Project, LoadError) {
   use config <- result.try(
     config.parse(gleam_toml) |> result.map_error(InvalidConfig),
   )
-  use manifest <- result.try(read_file(root, "manifest.toml"))
-  use packages <- result.try(packages(manifest))
-  use #(dependencies, missing_dependencies) <- result.try(read_dependencies(
-    root,
-    packages,
-  ))
+  use #(dependencies, missing_dependencies) <- result.try(installed(root))
   use paths <- result.try(
     ["src", "test", "dev"]
     |> list.try_map(walk(root, "", _))
@@ -559,6 +556,18 @@ pub fn load_project(root: String) -> Result(Project, LoadError) {
     dependencies:,
     missing_dependencies:,
   )
+}
+
+/// The dependencies installed for the project in the directory `root`, as
+/// `load_project` reads them: the source of every module in each
+/// `manifest.toml` package's `src/`, by module name, and the packages whose
+/// `src/` isn't a directory, in manifest order.
+pub fn installed(
+  root: String,
+) -> Result(#(Dict(String, String), List(Package)), LoadError) {
+  use manifest <- result.try(read_file(root, "manifest.toml"))
+  use packages <- result.try(packages(manifest))
+  read_dependencies(root, packages)
 }
 
 fn read_file(root: String, path: String) -> Result(String, LoadError) {

@@ -1,0 +1,13 @@
+---
+version: 2.0.2
+title: testing: a silent rule
+file: ./test/grice/testing_test.gleam
+test_name: render_shows_a_silent_rule_with_its_input_test
+---
+-- src/app.gleam
+pub fn main() {
+  1
+}
+-- output
+No diagnostics in 1 module.
+

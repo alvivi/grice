@@ -1,0 +1,17 @@
+---
+version: 2.0.2
+title: testing: nothing to lint fails the run
+file: ./test/grice/testing_test.gleam
+test_name: nothing_to_lint_fails_the_run_test
+---
+error[grice/invalid-config]: Nothing to lint
+
+`tools.grice.include` and `tools.grice.exclude` in `gleam.toml` select no
+module, so there is nothing to lint, and grice doesn't report success over
+code it didn't check.
+
+Hint: Include at least one module under `src/`, `test/` or `dev/`, and
+check that `exclude` doesn't remove them all.
+
+grice couldn't complete the run. Fix the problems above and run it again.
+

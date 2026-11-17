@@ -107,6 +107,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Stats.** `--stats` adds how long loading, linting and the whole run
   took, in milliseconds and in reductions, with the number of modules and
   rules, after the summary or as the document's `stats`.
+- **A testing kit for rules.** The new `grice/testing` module runs rules
+  over a project built in memory, loaded and linted as grice lints one on
+  disk. `testing.module` is a project with one module and
+  `testing.project` takes the files of a project tree, `gleam.toml`
+  included; a path grice would skip, such as one outside `src/`, `test/`
+  and `dev/`, panics. `testing.with_dependency` adds a dependency module,
+  and a typed run also reads the dependencies installed for the project,
+  through `manifest.toml` in the working directory. `testing.render` gives
+  the fixture and what grice prints for the run, for a snapshot, and
+  `testing.expect_none` and `testing.expect_codes` check the diagnostics'
+  codes, grice's own included, panicking with the rendered run when they
+  don't match. `testing.diagnostics` gives the diagnostics. A run panics
+  with the problem as grice shows it when it couldn't prove anything: an
+  invalid `gleam.toml`, a module to lint that doesn't parse, an invalid
+  rule set, or installed dependencies that can't be read. The kit depends
+  on no test runner or snapshot library.
 - **Documentation.** The README shows how to add grice, run its built-in
   rules or a project's own, run it in a JavaScript project and which of
   those can't yet, and lists the options and exit codes. New pages

@@ -21,8 +21,8 @@ line index, the human renderer, project loading (configuration, discovery,
 the load set and dependency sources), the rule API (`grice/visit`,
 `grice/facts`, `grice/rule`) with its runner, type facts from girard with
 the coverage notes, ignores and suppression comments, the library API, the
-command line and the JSON output have landed; there are no built-in rules
-yet.
+command line, the JSON output and the testing kit have landed; there are no
+built-in rules yet.
 
 ## Build and Test
 
@@ -58,7 +58,7 @@ notice.
 | `src/grice/types.gleam` | Type predicates over girard's `Type` |
 | `src/grice/visit.gleam` | **Exists:** the glance syntax tree walk, in source order, with a hook per kind of node |
 | `src/grice/diagnostic.gleam` | **Exists:** the diagnostic model (`Diagnostic`, `Severity`, `Location`, `Label`, `Span`, `Fix`, `Edit`). Planned: report, label and fix builders |
-| `src/grice/testing.gleam` | Testing kit for rule authors |
+| `src/grice/testing.gleam` | **Exists:** the testing kit for rule authors: fixtures built in memory, with installed dependencies for typed runs, a run's render for snapshots, and assertions on its codes |
 | `src/grice/internal/glob.gleam` | **Exists:** the glob syntax of `include`, `exclude` and the `paths` of ignores, and path matching; the name patterns of their `definitions` |
 | `src/grice/internal/config.gleam` | **Exists:** `[tools.grice]` and `target` parsing and validation, with the `[[tools.grice.ignore]]` entries and the `suppression_comments` switch |
 | `src/grice/internal/loader.gleam` | **Exists:** discovery, the load set, reading, parsing and dependency sources |

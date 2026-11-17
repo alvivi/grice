@@ -231,11 +231,6 @@ pub fn render(linted: Linted, format format: Format) -> String {
   }
   case rendered {
     Ok(text) -> text
-    Error(error) ->
-      panic as {
-        "grice couldn't render this run: "
-        <> human.describe_error(error)
-        <> ". This is a bug in grice, so please report it at https://github.com/alvivi/grice/issues."
-      }
+    Error(error) -> panic as human.bug_report(error)
   }
 }
