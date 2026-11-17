@@ -1,0 +1,19 @@
+---
+version: 2.0.2
+title: testing: a typed run without a manifest
+file: ./test/grice/testing_test.gleam
+test_name: a_typed_run_without_a_manifest_says_where_to_run_the_tests_test
+---
+Typed tests read the installed dependencies through `manifest.toml` in the
+working directory, so run `gleam test` from the project root.
+
+error[grice/cannot-read]: Can't read a file
+
+grice couldn't read `manifest.toml`, which it needs to lint the project: No
+such file or directory.
+
+Hint: Check that it's there and that you can read it. Sources must be
+UTF-8.
+
+grice couldn't complete the run. Fix the problems above and run it again.
+

@@ -1,0 +1,31 @@
+---
+version: 2.0.2
+title: testing: a JavaScript target
+file: ./test/grice/testing_test.gleam
+test_name: a_javascript_target_is_the_view_rules_see_test
+---
+-- gleam.toml
+target = "javascript"
+-- src/app.gleam
+@target(erlang)
+pub fn erlang() {
+  echo 1
+}
+
+@target(javascript)
+pub fn javascript() {
+  echo 2
+}
+-- output
+warning[fixture/no-echo]: Echo left in the code
+  ┌─ src/app.gleam:8:3
+  │
+8 │   echo 2
+  │   ^^^^^^ This prints when it runs
+
+`echo` prints its value each time it runs.
+
+Hint: Remove it once you're done debugging.
+
+1 warning in 1 module.
+

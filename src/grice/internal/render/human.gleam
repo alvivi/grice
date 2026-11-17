@@ -111,6 +111,14 @@ pub fn failure(diagnostics: List(Diagnostic), colour colour: Bool) -> String {
   <> "grice couldn't complete the run. Fix the problems above and run it again.\n"
 }
 
+/// The message of a panic over a render error, which is a bug in grice:
+/// every span of a run's diagnostics is checked while linting.
+pub fn bug_report(error: RenderError) -> String {
+  "grice couldn't render this run: "
+  <> describe_error(error)
+  <> ". This is a bug in grice, so please report it at https://github.com/alvivi/grice/issues."
+}
+
 /// What a render error says is wrong, as a clause for a sentence that
 /// reports it, such as "the span from byte 4 to byte 2 in `src/app.gleam`
 /// starts after it ends".

@@ -1,0 +1,29 @@
+---
+version: 2.0.2
+title: testing: a project rule over two modules
+file: ./test/grice/testing_test.gleam
+test_name: render_shows_every_file_in_the_order_given_test
+---
+-- src/two.gleam
+pub fn shared() {
+  2
+}
+-- src/one.gleam
+pub fn shared() {
+  1
+}
+-- output
+warning[fixture/duplicate-public-function]: Public function name used twice
+  ┌─ src/one.gleam:1:1
+  │
+1 │ pub fn shared() {
+  │ ^^^^^^^^^^^^^^^^^ `two` also defines `shared`
+
+warning[fixture/duplicate-public-function]: Public function name used twice
+  ┌─ src/two.gleam:1:1
+  │
+1 │ pub fn shared() {
+  │ ^^^^^^^^^^^^^^^^^ `one` also defines `shared`
+
+2 warnings in 2 modules.
+

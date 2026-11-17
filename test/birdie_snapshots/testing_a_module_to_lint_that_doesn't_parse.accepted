@@ -1,0 +1,22 @@
+---
+version: 2.0.2
+title: testing: a module to lint that doesn't parse
+file: ./test/grice/testing_test.gleam
+test_name: a_module_to_lint_that_doesnt_parse_fails_the_run_test
+---
+error[grice/parse-error]: Can't parse this module
+  ┌─ src/app.gleam:3:1
+  │
+3 │ }
+  │ ^ glance didn't expect this
+
+grice reads Gleam code with glance, and glance couldn't parse this file. No
+rule ran on it, and the modules that import it may lose type information.
+
+Hint: If `gleam build` accepts this file, glance doesn't support its syntax
+yet, so please report it to glance.
+
+A test over a module that doesn't parse would prove nothing, so the run
+stops here. Fix the module, or exclude it in `gleam.toml` if the test needs
+a linted module to import one that doesn't parse.
+
