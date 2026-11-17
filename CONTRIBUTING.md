@@ -30,13 +30,14 @@ after cloning.
 
 ## Pre-flight checklist
 
-CI runs three gates. Run them locally before pushing; green here means green
+CI runs these gates. Run them locally before pushing; green here means green
 on CI:
 
 ```sh
-gleam format --check src/ test/   # formatting
-gleam build --warnings-as-errors  # no warnings allowed
-gleam test                        # full suite
+gleam format --check src/ test/       # formatting
+gleam build --warnings-as-errors      # no warnings allowed
+gleam test                            # full suite
+gleam run -m birdie stale check       # no snapshot left unused, after the tests
 ```
 
 `gleam format src/ test/` (no `--check`) fixes formatting in place. When a
@@ -54,6 +55,15 @@ in the same change.
 - Tests use gleeunit and live in [`test/`](test/). Public test functions are
   suffixed `_test`.
 - Add or update a focused test with every behaviour change.
+- Text grice prints is checked with [birdie](https://hexdocs.pm/birdie)
+  snapshots in [`test/birdie_snapshots/`](test/birdie_snapshots/). A new
+  or changed snapshot fails its test; review it with `gleam run -m birdie`,
+  which shows each one and accepts or rejects it. Read every snapshot
+  before accepting it, and accept only text you'd show a user. Titles must
+  be unique.
+- The end-to-end tests run the `gleam` on your `PATH` on a fixture project
+  in `build/fixtures/cli/`. The fixture keeps its build between runs, so
+  only its first run resolves its dependencies, which needs the network.
 
 ## Conventions
 

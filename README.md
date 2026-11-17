@@ -42,6 +42,106 @@ grice sits beside [girard](https://github.com/alvivi/girard) (Hindley-Milner
 type annotation for Gleam) and [graded](https://github.com/alvivi/graded)
 (effect checking for Gleam).
 
+## Usage
+
+grice runs on the Erlang target, so it needs Erlang/OTP installed, even for
+a project that targets JavaScript.
+
+### Adding grice
+
+grice is a dev dependency: your code doesn't depend on it, only your lint
+runs do.
+
+```sh
+gleam add --dev grice
+```
+
+grice isn't on Hex yet. Until it is, add it to `[dev_dependencies]` as a
+git or path dependency.
+
+### Running the built-in rules
+
+```sh
+gleam run -m grice
+```
+
+grice lints the project of the nearest `gleam.toml`, from the working
+directory upwards, and prints its diagnostics and a summary. Options go
+after `--`, which ends `gleam`'s own options:
+
+```sh
+gleam run -m grice -- --format json
+```
+
+### Running your own rules
+
+Rules are Gleam code. Write them with `grice/rule`, and run them from an
+entry module of your own, such as `dev/lint.gleam`:
+
+```gleam
+import grice
+import lint/no_echo
+
+pub fn main() -> Nil {
+  grice.run([no_echo.rule()])
+}
+```
+
+Then run that module:
+
+```sh
+gleam run -m lint -- --strict
+```
+
+Modules in `dev/` can use dev dependencies, and they aren't linted unless
+`include` in `gleam.toml` selects them.
+
+### JavaScript projects
+
+A project whose target is JavaScript runs grice on Erlang:
+
+```sh
+gleam run --target erlang -m lint -- --strict
+```
+
+Its JavaScript builds still compile `dev/lint.gleam`, so nothing else
+changes. This works only when the project's own code, in `src/`, `test/`
+and `dev/`, calls no JavaScript-only function, whether its own `.mjs` code
+or a dependency's: `gleam run` compiles all three for Erlang, and stops
+with "Unsupported target" before grice starts. A JavaScript-only dependency
+that the code never calls is fine. Projects that call one can't run grice
+until it runs on JavaScript.
+
+### Options
+
+| Option | What it does |
+|---|---|
+| `--format human` | Diagnostics and a summary, for a person. The default. |
+| `--format json` | One JSON document, for tools. See [JSON output](https://github.com/alvivi/grice/blob/main/docs/JSON.md). |
+| `--warnings-as-errors` | Fail the run when it shows a warning. Severities print unchanged. |
+| `--strict` | Fail the run when its coverage has a gap: code grice couldn't parse or type. |
+| `--no-color` | Don't colour the output. It's coloured only on a terminal, and never when `NO_COLOR` is set to a non-empty value. |
+| `--stats` | Show how long loading and linting took, in milliseconds and reductions. |
+| `-h`, `--help` | Show the help. |
+
+Each option may be given once, and in any order. grice takes no paths:
+`include` and `exclude` in `gleam.toml` choose what it lints (see
+[Configuration](https://github.com/alvivi/grice/blob/main/docs/CONFIGURATION.md)).
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | No error shown. |
+| 1 | An error shown, or a warning or a coverage gap that `--warnings-as-errors` or `--strict` counts as one. Notes never fail a run. |
+| 2 | No result: a usage error, no `gleam.toml`, a project that couldn't be loaded, a rule set with problems, or an internal error. |
+
+### Configuration
+
+`[tools.grice]` in `gleam.toml` chooses the files to lint and holds
+ignores, and `grice-ignore` comments hide a diagnostic in the source. Both
+are described in [Configuration](https://github.com/alvivi/grice/blob/main/docs/CONFIGURATION.md).
+
 ## Contributing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the development workflow and the

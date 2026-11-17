@@ -30,12 +30,14 @@ yet.
 gleam format --check src/ test/   # check formatting
 gleam build --warnings-as-errors  # compile; no warnings allowed
 gleam test                        # run the test suite
+gleam run -m birdie stale check   # no unused snapshots, after the tests
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the local dev loop and the code,
 changelog and commit conventions.
 
-Tests use **gleeunit** and live in `test/`.
+Tests use **gleeunit** and live in `test/`, with **birdie** snapshots of
+the text grice prints in `test/birdie_snapshots/`.
 
 ## Architecture
 

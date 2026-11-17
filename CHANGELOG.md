@@ -107,3 +107,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Stats.** `--stats` adds how long loading, linting and the whole run
   took, in milliseconds and in reductions, with the number of modules and
   rules, after the summary or as the document's `stats`.
+- **Documentation.** The README shows how to add grice, run its built-in
+  rules or a project's own, run it in a JavaScript project and which of
+  those can't yet, and lists the options and exit codes. New pages
+  document the configuration, every `[tools.grice]` key with its default,
+  the ignores and the suppression comments, and the JSON document with
+  what its stats measure.
