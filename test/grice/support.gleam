@@ -8,8 +8,11 @@ import gleam/dict
 import gleam/list
 import gleam/result
 import gleam/string
+import grice/fixture_rules
 import grice/internal/config
 import grice/internal/loader.{type Project}
+import grice/internal/runner.{type Linted}
+import grice/internal/typing
 import simplifile
 
 /// The project with the `gleam.toml` text `toml`, the files of `files`,
@@ -51,11 +54,75 @@ pub const crossed = [
   ),
 ]
 
+/// A typed run, in memory, that shows every kind of diagnostic and gap a
+/// completed run can: `fixture/no-echo` findings, one of them hidden, both
+/// suppression warnings, a parse error, a definition girard couldn't type,
+/// a module it returned nothing for, an import it couldn't use directly
+/// and one reached through a dependency, and a missing package.
+pub fn showcase() -> #(Project, Linted) {
+  let project =
+    loader.Project(
+      ..project("", showcase_files, showcase_dependencies),
+      missing_dependencies: [
+        loader.Package("hexdep", loader.Hex, "build/packages/hexdep"),
+      ],
+    )
+  let assert Ok(linted) =
+    runner.run_with(
+      project,
+      [fixture_rules.no_echo(), fixture_rules.discarded_result()],
+      infer: fn(project) {
+        typing.infer(project, typing.resolver(project)) |> dict.delete("lonely")
+      },
+    )
+  #(project, linted)
+}
+
+const showcase_files = [
+  #(
+    "src/app.gleam",
+    "pub fn main() {
+  // grice-ignore fixture/no-echo: The test shows a hidden diagnostic.
+  echo 1
+  echo 2
+}
+
+// grice-ignore fixture/no-echo: Nothing here prints.
+pub fn quiet() {
+  1
+}
+
+// grice-ignore fixture/no-echo
+pub fn skipped() {
+  1 + \"one\"
+}
+",
+  ),
+  #("src/broken.gleam", "pub fn ("),
+  #(
+    "src/dependent.gleam",
+    "import dep/outer\n\npub fn main() {\n  outer.value()\n}\n",
+  ),
+  #("src/lonely.gleam", "pub fn main() {\n  2\n}\n"),
+  #("src/nameless.gleam", "import nowhere\n"),
+]
+
+const showcase_dependencies = [
+  #("dep/outer", "import dep/inner\n\npub fn value() {\n  3\n}\n"),
+  #("dep/inner", "pub const x = 1\npub fn ("),
+]
+
 /// The span of the first `needle` in `source`.
 pub fn glance_span(source: String, needle: String) -> glance.Span {
   let assert Ok(#(before, _)) = string.split_once(source, needle)
   let start = string.byte_size(before)
   glance.Span(start, start + string.byte_size(needle))
+}
+
+/// `path`, relative to the working directory, as an absolute path.
+pub fn absolute(path: String) -> String {
+  let assert Ok(working) = simplifile.current_directory()
+  working <> "/" <> path
 }
 
 /// The directory a test named `name` writes its fixture in.

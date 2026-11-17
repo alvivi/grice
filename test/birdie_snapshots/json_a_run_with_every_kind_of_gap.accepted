@@ -1,0 +1,277 @@
+---
+version: 2.0.2
+title: json: a run with every kind of gap
+file: ./test/grice/internal/render/json_test.gleam
+test_name: a_run_with_every_kind_of_gap_test
+---
+{
+  "version": 1,
+  "root": "app",
+  "summary": {
+    "errors": 1,
+    "warnings": 3,
+    "notes": 5,
+    "hidden": 1
+  },
+  "coverage": {
+    "complete": false,
+    "modules": 5,
+    "parsed": 4,
+    "types": {
+      "requested": true,
+      "full": 0,
+      "partial": 3,
+      "none": 1
+    },
+    "gaps": [
+      {
+        "kind": "unparsed-module",
+        "path": "src/broken.gleam"
+      },
+      {
+        "kind": "untyped-definition",
+        "path": "src/app.gleam",
+        "definition": "skipped"
+      },
+      {
+        "kind": "unavailable-import",
+        "path": "src/dependent.gleam",
+        "module": "dep/inner",
+        "cause": "dependency-unparsable"
+      },
+      {
+        "kind": "uninferred-module",
+        "path": "src/lonely.gleam"
+      },
+      {
+        "kind": "unavailable-import",
+        "path": "src/nameless.gleam",
+        "module": "nowhere",
+        "cause": "no-such-module"
+      },
+      {
+        "kind": "missing-package",
+        "package": "hexdep"
+      }
+    ]
+  },
+  "diagnostics": [
+    {
+      "code": "grice/unavailable-import",
+      "severity": "note",
+      "title": "Can't use the types of an imported module",
+      "location": null,
+      "message": [
+        "The module `dependent`, at `src/dependent.gleam`, reaches the module `dep/inner` through the modules it imports, and girard, the type inference grice uses, couldn't use it. It's a dependency module, which glance can't parse: it stopped at line 2, column 1 of its source. Types that depend on it may be incomplete, so typed rules get no answers in this module."
+      ],
+      "hint": "If the package builds, glance doesn't support its syntax yet, so please report it to glance."
+    },
+    {
+      "code": "grice/uninferred-module",
+      "severity": "note",
+      "title": "Can't infer the types of a module",
+      "location": null,
+      "message": [
+        "girard, the type inference grice uses, returned no types for the module `lonely`, at `src/lonely.gleam`. Rules still ran on it, but typed rules got no answers about it, so they may have missed problems there."
+      ],
+      "hint": "If `gleam build` accepts this code, it's a gap in girard, the type inference grice uses, so please report it at https://github.com/alvivi/girard/issues."
+    },
+    {
+      "code": "grice/missing-package",
+      "severity": "note",
+      "title": "A dependency's sources are missing",
+      "location": null,
+      "message": [
+        "The package `hexdep` is in `manifest.toml`, but `build/packages/hexdep/src` isn't a directory, so girard, the type inference grice uses, can't read its modules. Types that come from them may be incomplete."
+      ],
+      "hint": "Run `gleam deps download`."
+    },
+    {
+      "code": "fixture/no-echo",
+      "severity": "warning",
+      "title": "Echo left in the code",
+      "location": {
+        "path": "src/app.gleam",
+        "primary": {
+          "span": {
+            "start": 98,
+            "end": 104
+          },
+          "range": {
+            "start": {
+              "line": 4,
+              "column": 3
+            },
+            "end": {
+              "line": 4,
+              "column": 9
+            }
+          },
+          "message": "This prints when it runs"
+        },
+        "secondary": [],
+        "fix": null
+      },
+      "message": [
+        "`echo` prints its value each time it runs."
+      ],
+      "hint": "Remove it once you're done debugging."
+    },
+    {
+      "code": "grice/unused-suppression",
+      "severity": "warning",
+      "title": "Unused suppression",
+      "location": {
+        "path": "src/app.gleam",
+        "primary": {
+          "span": {
+            "start": 108,
+            "end": 161
+          },
+          "range": {
+            "start": {
+              "line": 7,
+              "column": 1
+            },
+            "end": {
+              "line": 7,
+              "column": 54
+            }
+          },
+          "message": "This hides nothing"
+        },
+        "secondary": [],
+        "fix": null
+      },
+      "message": [
+        "This suppression hides nothing: no diagnostic of the rule `fixture/no-echo` is left to hide on line 8, the next line of code."
+      ],
+      "hint": "Fix the suppression, or remove it. Write `// grice-ignore <rule code>: <reason>` on its own line, above the code it covers, or `// grice-ignore-file <rule code>: <reason>` before the module's first line of code to cover the whole module."
+    },
+    {
+      "code": "grice/invalid-suppression",
+      "severity": "warning",
+      "title": "Invalid suppression",
+      "location": {
+        "path": "src/app.gleam",
+        "primary": {
+          "span": {
+            "start": 186,
+            "end": 217
+          },
+          "range": {
+            "start": {
+              "line": 12,
+              "column": 1
+            },
+            "end": {
+              "line": 12,
+              "column": 32
+            }
+          },
+          "message": "This gives no reason"
+        },
+        "secondary": [],
+        "fix": null
+      },
+      "message": [
+        "A suppression says why the rule doesn't apply, after a colon that follows the rule code, but this one gives no reason. It hides nothing."
+      ],
+      "hint": "Write `// grice-ignore <rule code>: <reason>` on its own line, above the code it covers, or `// grice-ignore-file <rule code>: <reason>` before the module's first line of code to cover the whole module."
+    },
+    {
+      "code": "grice/untyped-definition",
+      "severity": "note",
+      "title": "Can't infer the types of this definition",
+      "location": {
+        "path": "src/app.gleam",
+        "primary": {
+          "span": {
+            "start": 218,
+            "end": 250
+          },
+          "range": {
+            "start": {
+              "line": 13,
+              "column": 1
+            },
+            "end": {
+              "line": 15,
+              "column": 2
+            }
+          },
+          "message": "girard couldn't type this definition"
+        },
+        "secondary": [],
+        "fix": null
+      },
+      "message": [
+        "girard couldn't type `skipped`: type mismatch: String vs Int. Typed rules get no answers about the code inside it, so they may miss problems there."
+      ],
+      "hint": "If `gleam build` accepts this code, it's a gap in girard, the type inference grice uses, so please report it at https://github.com/alvivi/girard/issues."
+    },
+    {
+      "code": "grice/parse-error",
+      "severity": "error",
+      "title": "Can't parse this module",
+      "location": {
+        "path": "src/broken.gleam",
+        "primary": {
+          "span": {
+            "start": 0,
+            "end": 3
+          },
+          "range": {
+            "start": {
+              "line": 1,
+              "column": 1
+            },
+            "end": {
+              "line": 1,
+              "column": 4
+            }
+          },
+          "message": "glance didn't expect this"
+        },
+        "secondary": [],
+        "fix": null
+      },
+      "message": [
+        "grice reads Gleam code with glance, and glance couldn't parse this file. No rule ran on it, and the modules that import it may lose type information."
+      ],
+      "hint": "If `gleam build` accepts this file, glance doesn't support its syntax yet, so please report it to glance."
+    },
+    {
+      "code": "grice/unavailable-import",
+      "severity": "note",
+      "title": "Can't use the types of an imported module",
+      "location": {
+        "path": "src/nameless.gleam",
+        "primary": {
+          "span": {
+            "start": 0,
+            "end": 14
+          },
+          "range": {
+            "start": {
+              "line": 1,
+              "column": 1
+            },
+            "end": {
+              "line": 1,
+              "column": 15
+            }
+          },
+          "message": "girard couldn't use this"
+        },
+        "secondary": [],
+        "fix": null
+      },
+      "message": [
+        "girard, the type inference grice uses, couldn't use the module `nowhere`, which this module imports. No module of the project or of its dependencies has that name. Types that depend on it may be incomplete, so typed rules get no answers in this module."
+      ],
+      "hint": "Check the import. If the module belongs to a dependency, `gleam deps download` fetches its sources."
+    }
+  ]
+}
+

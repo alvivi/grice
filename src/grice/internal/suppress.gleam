@@ -45,12 +45,16 @@ import grice/rule
 /// for each suppression that hid nothing or can't be used. `codes` are the
 /// codes of the run's rules. The diagnostics kept stay in order, and the
 /// warnings come after them.
+///
+/// Also returns how many of `diagnostics` were dropped. Two identical
+/// diagnostics count twice, and one covered by several suppressions or
+/// ignores counts once.
 pub fn apply(
   diagnostics: List(Diagnostic),
   modules: List(ModuleFacts(Syntax)),
   config: Config,
   codes: Set(String),
-) -> List(Diagnostic) {
+) -> #(List(Diagnostic), Int) {
   // Only rule diagnostics, which have a location, can be hidden.
   let by_path =
     diagnostics
@@ -73,9 +77,14 @@ pub fn apply(
     })
     |> list.unzip
   let hidden = set.from_list(list.flatten(hidden))
-  diagnostics
-  |> list.filter(fn(diagnostic) { !set.contains(hidden, diagnostic) })
-  |> list.append(list.flatten(warnings))
+  let kept =
+    list.filter(diagnostics, fn(diagnostic) {
+      !set.contains(hidden, diagnostic)
+    })
+  #(
+    list.append(kept, list.flatten(warnings)),
+    list.length(diagnostics) - list.length(kept),
+  )
 }
 
 // What the ignores and then the suppressions of one module hide among its

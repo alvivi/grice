@@ -53,3 +53,9 @@ jobs:
 
       - name: Run tests
         run: gleam test
+
+      # birdie lists the snapshots `gleam test` used, so this runs after it:
+      # a snapshot no test uses any more fails the job. Once is enough.
+      - name: Check for stale snapshots
+        if: matrix.name == 'pinned'
+        run: gleam run -m birdie stale check

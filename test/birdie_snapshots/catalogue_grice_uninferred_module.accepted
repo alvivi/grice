@@ -1,0 +1,15 @@
+---
+version: 2.0.2
+title: catalogue: grice/uninferred-module
+---
+note[grice/uninferred-module]: Can't infer the types of a module
+
+girard, the type inference grice uses, returned no types for the module
+`lonely`, at `src/lonely.gleam`. Rules still ran on it, but typed rules got
+no answers about it, so they may have missed problems there.
+
+Hint: If `gleam build` accepts this code, it's a gap in girard, the type
+inference grice uses, so please report it at
+https://github.com/alvivi/girard/issues.
+
+

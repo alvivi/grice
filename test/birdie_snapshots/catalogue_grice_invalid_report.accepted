@@ -1,0 +1,17 @@
+---
+version: 2.0.2
+title: catalogue: grice/invalid-report
+---
+error[grice/invalid-report]: A rule made an invalid report
+
+The rule `fixture/out-of-bounds` reported a problem in the module `app`, at
+`src/app.gleam`, with a span that isn't valid for the module's source.
+grice can't show where it points, so the report is dropped.
+
+The span of the primary label, from byte 0 to byte 99, isn't inside the
+source, which is 20 bytes long.
+
+Hint: This is a bug in the rule, so please report it to the rule's author.
+The other reports of the run are unaffected.
+
+

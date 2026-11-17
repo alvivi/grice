@@ -127,6 +127,15 @@ pub fn load(
   ))
 }
 
+/// The source of every loaded project module, by its root-relative path:
+/// every source a diagnostic of the project can point into.
+pub fn sources(project: Project) -> Dict(String, LineIndex) {
+  project.modules
+  |> dict.values
+  |> list.map(fn(module) { #(module.path, module.source) })
+  |> dict.from_list
+}
+
 // Dependencies
 //
 // Where each dependency's sources live, read from `manifest.toml`. The

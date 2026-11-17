@@ -1,0 +1,19 @@
+---
+version: 2.0.2
+title: catalogue: grice/unavailable-import
+---
+note[grice/unavailable-import]: Can't use the types of an imported module
+  ┌─ src/nameless.gleam:1:1
+  │
+1 │ import nowhere
+  │ ^^^^^^^^^^^^^^ girard couldn't use this
+
+girard, the type inference grice uses, couldn't use the module `nowhere`,
+which this module imports. No module of the project or of its dependencies
+has that name. Types that depend on it may be incomplete, so typed rules
+get no answers in this module.
+
+Hint: Check the import. If the module belongs to a dependency, `gleam deps
+download` fetches its sources.
+
+

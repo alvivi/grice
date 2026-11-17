@@ -1,0 +1,31 @@
+---
+version: 2.0.2
+title: human: summary sentences
+file: ./test/grice/internal/render/human_test.gleam
+test_name: summary_sentences_test
+---
+No diagnostics in 1 module.
+
+1 error, 1 warning and 1 note in 3 modules, 1 hidden by ignores and
+suppressions.
+
+2 warnings in 19 modules, 4 hidden by ignores and suppressions.
+Coverage is incomplete: 1 module doesn't parse, so rules didn't see all of
+the code.
+
+4 notes in 19 modules.
+Coverage is incomplete: 3 definitions in 2 modules couldn't be typed and 1
+package is missing its sources, so typed rules didn't see all of the code.
+
+1 error and 3 notes in 2 modules.
+Coverage is incomplete: 1 module doesn't parse, 1 definition in 1 module
+couldn't be typed, 1 module got no types, 1 module can't use the types of a
+module it imports and 1 package is missing its sources, so rules didn't see
+all of the code.
+
+No diagnostics in 9 modules.
+Coverage is incomplete: 2 modules don't parse, 2 definitions in 2 modules
+couldn't be typed, 2 modules got no types, 2 modules can't use the types of
+modules they import and 2 packages are missing their sources, so rules
+didn't see all of the code.
+

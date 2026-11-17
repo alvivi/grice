@@ -1,0 +1,16 @@
+---
+version: 2.0.2
+title: catalogue: grice/unavailable-import through other modules
+---
+note[grice/unavailable-import]: Can't use the types of an imported module
+
+The module `dependent`, at `src/dependent.gleam`, reaches the module
+`dep/inner` through the modules it imports, and girard, the type inference
+grice uses, couldn't use it. It's a dependency module, which glance can't
+parse: it stopped at line 2, column 1 of its source. Types that depend on
+it may be incomplete, so typed rules get no answers in this module.
+
+Hint: If the package builds, glance doesn't support its syntax yet, so
+please report it to glance.
+
+

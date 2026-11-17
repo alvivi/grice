@@ -1,0 +1,31 @@
+---
+version: 2.0.2
+title: json: escaping
+file: ./test/grice/internal/render/json_test.gleam
+test_name: strings_are_escaped_test
+---
+{
+  "version": 1,
+  "root": "quotes \" backslash \\ bell \u0007 tab \t newline \n café 🙂",
+  "summary": {
+    "errors": 0,
+    "warnings": 0,
+    "notes": 1,
+    "hidden": 0
+  },
+  "coverage": null,
+  "diagnostics": [
+    {
+      "code": "fixture/tricky",
+      "severity": "note",
+      "title": "quotes \" backslash \\ bell \u0007 tab \t newline \n café 🙂",
+      "location": null,
+      "message": [
+        "quotes \" backslash \\ bell \u0007 tab \t newline \n café 🙂",
+        "second"
+      ],
+      "hint": "quotes \" backslash \\ bell \u0007 tab \t newline \n café 🙂"
+    }
+  ]
+}
+

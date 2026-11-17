@@ -27,6 +27,12 @@ import gleam/order.{type Order}
 import gleam/result
 import gleam/set.{type Set}
 import gleam/string
+import grice/coverage.{
+  type Cause, type Coverage, type Gap, type TypeCoverage, Coverage,
+  DependencyUnparsable, MissingPackage, NoSuchModule, NotRequested,
+  ProjectModuleUnparsable, ProjectModuleUnusable, Requested, UnavailableImport,
+  UninferredModule, UnparsedModule, UntypedDefinition,
+}
 import grice/diagnostic.{type Diagnostic, type Label, Diagnostic}
 import grice/facts.{type ModuleFacts, type Syntax}
 import grice/internal/config.{type Config}
@@ -46,6 +52,9 @@ pub type Linted {
     /// made, then the rest by path, start, end and code.
     diagnostics: List(Diagnostic),
     coverage: Coverage,
+    /// How many rule diagnostics the ignores and suppressions hid. Each
+    /// occurrence counts once, however many of them cover it.
+    hidden: Int,
   )
 }
 
@@ -75,6 +84,23 @@ pub fn run_with(
     [] -> Ok(lint(project, rules, codes, infer))
     problems -> Error(problems)
   }
+}
+
+/// One of grice's own errors, with no location.
+pub fn error(
+  code: String,
+  title: String,
+  message: List(String),
+  hint: String,
+) -> Diagnostic {
+  Diagnostic(
+    code:,
+    severity: diagnostic.Error,
+    title:,
+    location: None,
+    message:,
+    hint: Some(hint),
+  )
 }
 
 // Running
@@ -145,11 +171,11 @@ fn lint(
   }
   let #(covered, type_gaps) = type_coverage(project, linted, types)
   let #(type_gaps, notes) = list.unzip(type_gaps)
-  let diagnostics =
+  let #(diagnostics, hidden) =
     [project.diagnostics, notes, from_module_rules, from_project_rules]
     |> list.flatten
     |> suppress.apply(linted, project.config, codes)
-    |> list.sort(compare)
+  let diagnostics = list.sort(diagnostics, compare)
   let coverage =
     Coverage(
       modules: list.length(project.lint_set),
@@ -157,7 +183,7 @@ fn lint(
       types: covered,
       gaps: list.append(unparsed_modules(project), type_gaps),
     )
-  Linted(diagnostics:, coverage:)
+  Linted(diagnostics:, coverage:, hidden:)
 }
 
 fn compare(left: Diagnostic, right: Diagnostic) -> Order {
@@ -188,62 +214,6 @@ fn compare(left: Diagnostic, right: Diagnostic) -> Order {
 // import it as a use girard couldn't type or a module it couldn't use.
 // Each is a note, since it's a limit of grice's analysis rather than a
 // problem in the code.
-
-/// How much of the lint set a run analysed.
-pub type Coverage {
-  Coverage(
-    /// The number of modules in the lint set.
-    modules: Int,
-    /// The number of lint-set modules that parse.
-    parsed: Int,
-    /// How much of the parsed lint-set modules girard typed.
-    types: TypeCoverage,
-    /// Everything the run couldn't analyse, each matching one diagnostic:
-    /// first the modules that don't parse, then the gaps of each module in
-    /// lint-set order, then the missing packages.
-    gaps: List(Gap),
-  )
-}
-
-/// How much of the parsed lint-set modules girard typed.
-pub type TypeCoverage {
-  /// No rule of the run is typed, so girard didn't run.
-  NotRequested
-  /// How many modules girard typed completely, how many it typed with
-  /// gaps, and how many it returned nothing for. Together they are the
-  /// parsed lint-set modules.
-  Requested(full: Int, partial: Int, none: Int)
-}
-
-/// Something the run couldn't analyse, and the diagnostic that reports it.
-pub type Gap {
-  /// A lint-set module that doesn't parse: a `grice/parse-error`.
-  UnparsedModule(path: String)
-  /// A definition girard couldn't type: a `grice/untyped-definition`.
-  UntypedDefinition(path: String, definition: String)
-  /// A lint-set module girard returned nothing for: a
-  /// `grice/uninferred-module`.
-  UninferredModule(path: String)
-  /// A module girard couldn't use, which the lint-set module at `path`
-  /// imports directly or reaches through other modules: a
-  /// `grice/unavailable-import`.
-  UnavailableImport(path: String, module: String, cause: Cause)
-  /// A manifest package whose sources are missing: a
-  /// `grice/missing-package`.
-  MissingPackage(package: String)
-}
-
-/// Why girard couldn't use a module.
-pub type Cause {
-  /// It's a project module glance can't parse.
-  ProjectModuleUnparsable
-  /// It's a project module that parses, which girard couldn't use.
-  ProjectModuleUnusable
-  /// It's a dependency module glance can't parse.
-  DependencyUnparsable
-  /// No project or dependency module has its name.
-  NoSuchModule
-}
 
 fn unparsed_modules(project: Project) -> List(Gap) {
   use name <- list.filter_map(project.lint_set)
@@ -540,15 +510,14 @@ fn describe_span(
   source: LineIndex,
 ) -> String {
   let span = label.span
-  let why = case problem {
+  let size = case problem {
     line_index.OutOfBounds ->
-      "isn't inside the source, which is "
+      ", which is "
       <> int.to_string(string.byte_size(line_index.source(source)))
       <> " bytes long"
-    line_index.Reversed -> "starts after it ends"
-    line_index.SplitsCodepoint -> "has an end inside a multi-byte character"
-    line_index.SplitsLineEnding ->
-      "has an end between a carriage return and the line feed after it"
+    line_index.Reversed
+    | line_index.SplitsCodepoint
+    | line_index.SplitsLineEnding -> ""
   }
   "The span of the "
   <> name
@@ -557,7 +526,8 @@ fn describe_span(
   <> " to byte "
   <> int.to_string(span.end)
   <> ", "
-  <> why
+  <> line_index.describe_problem(problem)
+  <> size
   <> "."
 }
 
@@ -597,23 +567,6 @@ fn invalid_report(message: List(String)) -> Diagnostic {
     "A rule made an invalid report",
     message,
     report_hint,
-  )
-}
-
-// One of grice's own errors, with no location.
-fn error(
-  code: String,
-  title: String,
-  message: List(String),
-  hint: String,
-) -> Diagnostic {
-  Diagnostic(
-    code:,
-    severity: diagnostic.Error,
-    title:,
-    location: None,
-    message:,
-    hint: Some(hint),
   )
 }
 
