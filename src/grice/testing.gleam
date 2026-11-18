@@ -1,26 +1,25 @@
 //// Testing rules: `module` or `project` builds a project in memory, `run`
-//// runs rules over it, `render` gives the run as text to snapshot, and
-//// `expect_none` and `expect_codes` check it. A fixture is loaded and
-//// linted the way grice lints a project on disk, so its `gleam.toml`, its
-//// target, the modules its linted modules import, ignores and suppression
-//// comments all apply:
+//// runs rules over it, and `expect_none` and `expect_codes` check it. A
+//// fixture is loaded and linted the way grice lints a project on disk, so
+//// its `gleam.toml`, its target, the modules its linted modules import,
+//// ignores and suppression comments all apply:
 ////
 //// ```gleam
-//// import birdie
 //// import grice/testing
 //// import my_rules/no_echo
 ////
 //// pub fn no_echo_reports_each_echo_test() {
-////   testing.module("pub fn main() {\n  echo 1\n}\n")
+////   testing.module("pub fn main() {\n  echo 1\n  echo 2\n}\n")
 ////   |> testing.run([no_echo.rule()])
-////   |> testing.render
-////   |> birdie.snap(title: "no_echo reports each echo")
+////   |> testing.expect_codes(["my_rules/no-echo", "my_rules/no-echo"])
 //// }
 //// ```
 ////
-//// The kit depends on no test runner and no snapshot library: a check that
-//// fails panics, which every test runner reports, and `render` returns a
-//// `String` for whichever snapshot library the tests use.
+//// When the codes don't match, `expect_none` and `expect_codes` panic with
+//// the fixture and what grice printed for it, and every test runner reports
+//// the panic as a failure. A test can also check the run's `diagnostics`
+//// itself, or snapshot its `render` with a library such as birdie. The kit
+//// depends on no test runner and no snapshot library.
 ////
 //// A run with a typed rule reads the dependencies installed for the
 //// project through `manifest.toml` in the working directory, so a fixture
@@ -41,6 +40,9 @@
 ////   |> testing.expect_codes(["grice/untyped-definition"])
 //// }
 //// ```
+////
+//// [Testing rules](https://github.com/alvivi/grice/blob/main/docs/TESTING.md)
+//// covers each way to check a run, with examples.
 
 import gleam/bool
 import gleam/dict.{type Dict}
