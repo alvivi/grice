@@ -84,12 +84,12 @@ as grice's tests.
 The corpus gate, [`test/grice/corpus_test.gleam`](test/grice/corpus_test.gleam),
 runs the built-in rules over each of the Gleam core team's packages in the
 corpus, with a typed probe that reports nothing, so girard types every
-package even while no built-in rule needs types. Its snapshot,
-`corpus: core packages`, is the gate's manifest: each package's version and
-how many of its modules were parsed and typed, then every finding and
-every coverage gap. A built-in rule is on by default only if it runs clean
-on these packages, so review a change to the snapshot like any other: it
-says what grice now reports on idiomatic Gleam.
+package even while no built-in rule needs types. It asserts that every
+package is clean: no finding, no coverage gap, every module typed. A
+failure lists each package that isn't, with its findings. A built-in rule
+is on by default only if it runs clean on these packages, or keeps a
+finding there with a written reason; when the first one does, the gate
+gains a committed list of the findings it allows, each with its reason.
 
 `gleam run -m grice/bench` runs the benchmark,
 [`test/grice/bench.gleam`](test/grice/bench.gleam), over every package of
@@ -117,9 +117,9 @@ To bump a package, change its version in `test/corpus/gleam.toml` and run
 `gleam test`. The download resolves the corpus again and fails, saying
 the pinned manifest no longer matches; copy
 `build/fixtures/corpus/manifest.toml` over `test/corpus/manifest.toml` as
-it says. In the same change, review the gate's snapshot and re-measure the
-budgets and the corpus totals, even when the totals didn't move: the same
-counts can hide different code.
+it says. In the same change, check that the gate still passes, and
+re-measure the budgets and the corpus totals, even when the totals didn't
+move: the same counts can hide different code.
 
 ## Conventions
 
