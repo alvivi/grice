@@ -1,9 +1,11 @@
 //// The corpus: pinned Hex packages that the corpus gate and the benchmark
-//// run grice over. `corpus/` is a Gleam project with no modules whose
-//// `gleam.toml` pins each package and whose committed `manifest.toml`
-//// pins them with their own dependencies and checksums. `gleam deps
-//// download` in `corpus/` fetches them into `corpus/build/packages/`,
-//// which git ignores.
+//// run grice over. `test/corpus/` holds its pins: a `gleam.toml` that pins
+//// each package, and a committed `manifest.toml` that pins them with their
+//// own dependencies and checksums. They're copied into
+//// `build/fixtures/corpus/`, a Gleam project with no modules, and
+//// `gleam deps download` there fetches the packages under `build/`, which
+//// git ignores and the compiler doesn't read. Downloaded into `test/`,
+//// they'd be compiled as grice's tests.
 ////
 //// Each package is loaded from its downloaded directory, with its own
 //// `gleam.toml` and its `src/` as the lint set, and with every module of
@@ -29,8 +31,12 @@ import grice/support
 import simplifile
 import tom
 
-/// The corpus project's directory, relative to grice's root.
-pub const root = "corpus"
+/// The corpus project's directory, relative to grice's root, where the
+/// packages are downloaded.
+pub const root = "build/fixtures/corpus"
+
+// Where the corpus's pins are committed. Never run gleam there.
+const pins = "test/corpus"
 
 /// The Gleam core team's packages in the corpus, by name: the gate and the
 /// benchmark run over them.
@@ -48,12 +54,19 @@ pub const community = ["girard", "glance", "lustre", "mist", "wisp"]
 pub type Installed =
   #(Dict(String, String), List(loader.Package))
 
-/// Download the corpus with `gleam deps download` in `corpus/`, which
-/// checks each package against the manifest, the first time it's called
-/// in this runtime. Once gleam's cache has the packages, it needs no
-/// network. Panics with gleam's output when the download fails.
+/// Copy the pins into the corpus project and download the corpus with
+/// `gleam deps download`, which checks each package against the manifest,
+/// the first time it's called in this runtime. Once gleam's cache has the
+/// packages, it needs no network. Panics with gleam's output when the
+/// download fails, and when gleam had to resolve the corpus again because
+/// the pinned `gleam.toml` no longer matches the pinned manifest.
 pub fn download() -> Nil {
   use <- support.once("download the corpus")
+  let manifest = read(pins <> "/manifest.toml")
+  support.write_files(root, [
+    #("gleam.toml", read(pins <> "/gleam.toml")),
+    #("manifest.toml", manifest),
+  ])
   let assert Ok(#(status, stdout, stderr)) =
     support.run_gleam(
       support.absolute(root),
@@ -62,7 +75,18 @@ pub fn download() -> Nil {
     )
     as "The corpus is downloaded with the gleam on PATH, and there's none."
   assert status == 0
-    as { "gleam deps download failed in corpus/:\n" <> stdout <> stderr }
+    as { "gleam deps download failed for the corpus:\n" <> stdout <> stderr }
+  assert read(root <> "/manifest.toml") == manifest
+    as {
+      pins
+      <> "/gleam.toml no longer matches "
+      <> pins
+      <> "/manifest.toml, so gleam resolved the corpus again. After a bump on purpose, copy "
+      <> root
+      <> "/manifest.toml over "
+      <> pins
+      <> "/manifest.toml, then review the gate's snapshot and re-measure the budgets."
+    }
 }
 
 /// The directory a downloaded package is in.
@@ -73,8 +97,7 @@ pub fn directory(package: String) -> String {
 /// The version in the `gleam.toml` of the package in `directory`.
 pub fn version(directory: String) -> String {
   let path = directory <> "/gleam.toml"
-  let assert Ok(text) = simplifile.read(path) as { "can't read " <> path }
-  let assert Ok(toml) = tom.parse(text) as { path <> " isn't valid TOML" }
+  let assert Ok(toml) = tom.parse(read(path)) as { path <> " isn't valid TOML" }
   let assert Ok(version) = tom.get_string(toml, ["version"])
     as { path <> " has no version" }
   version
@@ -158,6 +181,11 @@ pub fn describe_diagnostic(
 
 fn fail(context: String, diagnostics: List(Diagnostic)) -> a {
   panic as { context <> ":\n\n" <> human.failure(diagnostics, colour: False) }
+}
+
+fn read(path: String) -> String {
+  let assert Ok(text) = simplifile.read(path) as { "can't read " <> path }
+  text
 }
 
 // `:<line>:<column>` of the byte `offset` in the project's source at

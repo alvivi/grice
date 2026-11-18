@@ -40,9 +40,9 @@ changelog and commit conventions.
 
 Tests use **gleeunit** and live in `test/`, with **birdie** snapshots of
 the text grice prints in `test/birdie_snapshots/`. The corpus gate runs the
-built-in rules over the pinned packages in `corpus/`, and the benchmark
-checks grice's speed over them against budgets; CONTRIBUTING.md says how
-to bump either.
+built-in rules over the packages pinned in `test/corpus/`, and the
+benchmark checks grice's speed over them against budgets; CONTRIBUTING.md
+says how to bump either.
 
 ## Architecture
 
