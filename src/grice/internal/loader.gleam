@@ -535,11 +535,24 @@ fn token_span(source: LineIndex, text: String, offset: Int) -> diagnostic.Span {
 /// manifest, read every dependency's sources, walk `src/`, `test/` and
 /// `dev/`, and `load` the result, reading files under `root`.
 pub fn load_project(root: String) -> Result(Project, LoadError) {
+  load_project_with(root, installed: fn() { installed(root) })
+}
+
+/// Load the project in the directory `root` as `load_project` does, with
+/// `installed` standing in for reading its installed dependencies. It's
+/// called once, after the configuration is read, so a caller loading many
+/// projects over the same dependencies can read them once.
+@internal
+pub fn load_project_with(
+  root: String,
+  installed installed: fn() ->
+    Result(#(Dict(String, String), List(Package)), LoadError),
+) -> Result(Project, LoadError) {
   use gleam_toml <- result.try(read_file(root, "gleam.toml"))
   use config <- result.try(
     config.parse(gleam_toml) |> result.map_error(InvalidConfig),
   )
-  use #(dependencies, missing_dependencies) <- result.try(installed(root))
+  use #(dependencies, missing_dependencies) <- result.try(installed())
   use paths <- result.try(
     ["src", "test", "dev"]
     |> list.try_map(walk(root, "", _))

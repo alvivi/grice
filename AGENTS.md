@@ -21,8 +21,8 @@ line index, the human renderer, project loading (configuration, discovery,
 the load set and dependency sources), the rule API (`grice/visit`,
 `grice/facts`, `grice/rule`) with its runner, type facts from girard with
 the coverage notes, ignores and suppression comments, the library API, the
-command line, the JSON output and the testing kit have landed; there are no
-built-in rules yet.
+command line, the JSON output, the testing kit and the corpus gate over the
+core packages have landed; there are no built-in rules yet.
 
 ## Build and Test
 
@@ -37,7 +37,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the local dev loop and the code,
 changelog and commit conventions.
 
 Tests use **gleeunit** and live in `test/`, with **birdie** snapshots of
-the text grice prints in `test/birdie_snapshots/`.
+the text grice prints in `test/birdie_snapshots/`. The corpus gate runs the
+built-in rules over the pinned packages in `corpus/`; CONTRIBUTING.md says
+how to bump them.
 
 ## Architecture
 
