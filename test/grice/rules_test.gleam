@@ -491,13 +491,12 @@ pub fn typed_rules_see_types_across_target_specific_imports_test() {
     |> testing.diagnostics
     |> support.describe
   }
-  assert on_target(support.crossed)
-    == ["fixture/typed-calls src/a.gleam: Ok(Named(\"b\", \"B\", []))"]
+  assert on_target(support.crossed) == ["fixture/typed-calls src/a.gleam: b.B"]
   assert on_target([
       #("gleam.toml", "target = \"javascript\"\n"),
       ..support.crossed
     ])
-    == ["fixture/typed-calls src/b.gleam: Ok(Named(\"a\", \"A\", []))"]
+    == ["fixture/typed-calls src/b.gleam: a.A"]
 }
 
 // Queries
@@ -506,6 +505,8 @@ pub fn typed_rules_see_types_across_target_specific_imports_test() {
 // module `dep/box`.
 
 pub fn type_of_answers_for_expressions_test() {
+  let int_type = girard.Named("gleam", "Int", [])
+  let string_type = girard.Named("gleam", "String", [])
   assert answers(support.queried, fn(module_facts) {
       list.map(
         ["42", "box.shout(\"hi\")", "identity(n)", "\"hey\" |> box.shout"],
@@ -514,16 +515,10 @@ pub fn type_of_answers_for_expressions_test() {
             module_facts,
             support.glance_span(support.queried, needle),
           )
-          |> string.inspect
         },
       )
     })
-    == [
-      "Ok(Named(\"gleam\", \"Int\", []))",
-      "Ok(Named(\"gleam\", \"String\", []))",
-      "Ok(Named(\"gleam\", \"Int\", []))",
-      "Ok(Named(\"gleam\", \"String\", []))",
-    ]
+    == [Ok(int_type), Ok(string_type), Ok(int_type), Ok(string_type)]
 }
 
 pub fn resolution_of_answers_for_references_test() {
@@ -539,13 +534,12 @@ pub fn resolution_of_answers_for_references_test() {
         module_facts,
         glance_span_in(support.queried, around, reference),
       )
-      |> string.inspect
     })
     == [
-      "Ok(ModuleFn(\"dep/box\", \"shout\"))",
-      "Ok(Constructor(\"app\", \"Point\"))",
-      "Ok(RecordField(Named(\"app\", \"Point\", []), \"x\"))",
-      "Ok(LocalVariable(\"f\"))",
+      Ok(girard.ModuleFn("dep/box", "shout")),
+      Ok(girard.Constructor("app", "Point")),
+      Ok(girard.RecordField(girard.Named("app", "Point", []), "x")),
+      Ok(girard.LocalVariable("f")),
     ]
 }
 
@@ -553,17 +547,17 @@ pub fn signature_answers_for_functions_and_constants_test() {
   assert answers(support.queried, fn(module_facts) {
       let assert Ok(girard.Scheme(vars:, type_:)) =
         facts.signature(module_facts, "identity")
-      [
+      #(
         girard.type_to_string(type_),
-        string.inspect(list.length(vars)),
-        string.inspect(facts.signature(module_facts, "origin")),
-      ]
+        list.length(vars),
+        facts.signature(module_facts, "origin"),
+      )
     })
-    == [
+    == #(
       "fn(a) -> a",
-      "1",
-      "Ok(Scheme([], Named(\"app\", \"Point\", [])))",
-    ]
+      1,
+      Ok(girard.Scheme([], girard.Named("app", "Point", []))),
+    )
 }
 
 // Unknown
@@ -590,31 +584,35 @@ pub fn skipped() {
 "
 
 pub fn queries_say_why_girard_has_no_answer_test() {
-  assert answers(unknowns, fn(module_facts) {
-      [
-        facts.type_of(module_facts, support.glance_span(unknowns, "pattern")),
-        facts.type_of(module_facts, support.glance_span(unknowns, "2")),
-        facts.type_of(module_facts, support.glance_span(unknowns, "\"js\"")),
-      ]
-      |> list.map(string.inspect)
-      |> list.append(
-        list.map(["pattern", "skipped", "elsewhere", "Point"], fn(name) {
-          string.inspect(facts.signature(module_facts, name))
+  let #(types, signatures, resolution) =
+    answers(unknowns, fn(module_facts) {
+      #(
+        list.map(["pattern", "2", "\"js\""], fn(needle) {
+          facts.type_of(module_facts, support.glance_span(unknowns, needle))
         }),
-      )
-      |> list.append([
-        string.inspect(facts.resolution_of(
+        list.map(["pattern", "skipped", "elsewhere", "Point"], fn(name) {
+          facts.signature(module_facts, name)
+        }),
+        facts.resolution_of(
           module_facts,
           support.glance_span(unknowns, "inside + \"two\""),
-        )),
-      ])
+        ),
+      )
     })
+  assert types
     == [
-      "Error(NotRecorded)", "Error(Skipped(\"skipped\"))",
-      "Error(Dropped(\"elsewhere\"))", "Error(NotRecorded)",
-      "Error(Skipped(\"skipped\"))", "Error(Dropped(\"elsewhere\"))",
-      "Error(NotRecorded)", "Error(Skipped(\"skipped\"))",
+      Error(facts.NotRecorded),
+      Error(facts.Skipped("skipped")),
+      Error(facts.Dropped("elsewhere")),
     ]
+  assert signatures
+    == [
+      Error(facts.NotRecorded),
+      Error(facts.Skipped("skipped")),
+      Error(facts.Dropped("elsewhere")),
+      Error(facts.NotRecorded),
+    ]
+  assert resolution == Error(facts.Skipped("skipped"))
 }
 
 // `d` is unavailable, so girard reads `Result` as the prelude's: an answer
@@ -648,22 +646,22 @@ pub fn discarded_result_is_silent_where_a_prelude_name_is_shadowed_test() {
 }
 
 // What `ask` answers on the module `app`, whose source is `source`, with
-// the dependency module `dep/box`.
-fn answers(
-  source: String,
-  ask: fn(ModuleFacts(Typed)) -> List(String),
-) -> List(String) {
-  let asking =
-    support.typed_on_module_end("fixture/answers", fn(module_facts) {
-      [support.at_start("answers") |> rule.with_message(ask(module_facts))]
-    })
-  let assert Ok(Diagnostic(message:, ..)) =
-    testing.module(source)
-    |> testing.with_dependency(module: "dep/box", source: support.box)
-    |> testing.run([asking])
-    |> testing.diagnostics
-    |> list.find(fn(found) { found.code == "fixture/answers" })
-  message
+// the dependency module `dep/box`, given the facts a typed rule gets, built
+// as the runner builds them. The answers are values, compared as they are.
+fn answers(source: String, ask: fn(ModuleFacts(Typed)) -> a) -> a {
+  let project =
+    support.project("", [#("src/app.gleam", source)], [
+      #("dep/box", support.box),
+    ])
+  let types = typing.infer(project, typing.resolver(project))
+  let assert Ok(module) = dict.get(project.modules, "app")
+  let assert Ok(module_facts) =
+    facts.new(
+      module,
+      project.config.target,
+      option.from_result(dict.get(types, "app")),
+    )
+  ask(facts.change_kind(module_facts))
 }
 
 // Resolution

@@ -1,11 +1,13 @@
 //// What the tests share: fixture projects, the sources and rules more
-//// than one test module runs, ways to read diagnostics, and running the
-//// `gleam` on `PATH`. Most projects are built in memory with `project`.
+//// than one test module runs, ways to read diagnostics, what the tests
+//// need from the runtime, on both targets, and running the `gleam` on
+//// `PATH`. Most projects are built in memory with `project`.
 //// The tests that read from disk write the tree they need under
 //// `build/fixtures/<test>/`, which git ignores and the compiler doesn't
 //// read, and delete it afterwards, except the end-to-end fixture, which
 //// keeps its build between runs.
 
+import girard
 import glance
 import gleam/dict
 import gleam/int
@@ -235,7 +237,8 @@ pub fn module_order() -> Rule {
   })
 }
 
-/// Reports each call with what `type_of` answers for it.
+/// Reports each call with what `type_of` answers for it, as
+/// `describe_type` gives it.
 pub fn typed_calls() -> Rule {
   rule.module("fixture/typed-calls", title: "Made in a test")
   |> rule.typed
@@ -245,7 +248,7 @@ pub fn typed_calls() -> Rule {
       glance.Call(location:, ..) -> #(context, [
         rule.report(
           at: location,
-          label: string.inspect(facts.type_of(module_facts, location)),
+          label: describe_type(facts.type_of(module_facts, location)),
         ),
       ])
       _ -> #(context, [])
@@ -309,8 +312,13 @@ pub fn environment(root: String) -> cli.Environment {
 /// A clock for `cli.execute` whose n-th reading is `Sample(n * n, n * n * n)`,
 /// so loading, linting and the total each cost a different amount, in both
 /// counters.
-@external(erlang, "grice_test_ffi", "counting_sample")
-pub fn counting_sample() -> fn() -> stats.Sample
+pub fn counting_sample() -> fn() -> stats.Sample {
+  let readings = new_counter()
+  fn() {
+    let n = increment(readings)
+    stats.Sample(milliseconds: n * n, reductions: n * n * n)
+  }
+}
 
 // Diagnostics
 //
@@ -327,6 +335,30 @@ pub fn describe(diagnostics: List(Diagnostic)) -> List(String) {
       None -> found.code
     }
   })
+}
+
+/// What `type_of` answered, without `string.inspect`, which prints
+/// differently on each target: a named type as `module.Name`, any other
+/// type as girard writes it, or why there's no answer.
+pub fn describe_type(answer: Result(girard.Type, facts.Unknown)) -> String {
+  case answer {
+    Ok(girard.Named(module:, name:, ..)) -> module <> "." <> name
+    Ok(type_) -> girard.type_to_string(type_)
+    Error(unknown) -> describe_unknown(unknown)
+  }
+}
+
+/// Why a typed query has no answer, without `string.inspect`, such as
+/// `Skipped(main)`.
+pub fn describe_unknown(unknown: facts.Unknown) -> String {
+  case unknown {
+    facts.NotRecorded -> "NotRecorded"
+    facts.Skipped(definition:) -> "Skipped(" <> definition <> ")"
+    facts.Dropped(definition:) -> "Dropped(" <> definition <> ")"
+    facts.NotInferred -> "NotInferred"
+    facts.Unavailable(modules:) ->
+      "Unavailable(" <> string.join(modules, ", ") <> ")"
+  }
 }
 
 /// The primary label of each diagnostic, which must all have a location.
@@ -498,6 +530,41 @@ fn create_parent(path: String) -> Nil {
   Nil
 }
 
+// The runtime
+//
+// What the tests need from the runtime they run on, the same on both
+// targets.
+
+/// The message of the Gleam `panic` that `run` raises, or `Error` when it
+/// raises anything else or returns.
+@external(erlang, "grice_test_ffi", "panic_message")
+@external(javascript, "../grice_test_ffi.mjs", "panic_message")
+pub fn panic_message(run: fn() -> a) -> Result(String, Nil)
+
+/// A count that starts at 0. On Erlang, every process adds to the same
+/// count.
+pub type Counter
+
+/// A new counter, at 0.
+@external(erlang, "grice_test_ffi", "new_counter")
+@external(javascript, "../grice_test_ffi.mjs", "new_counter")
+pub fn new_counter() -> Counter
+
+/// Add one to the counter, and return its new count.
+@external(erlang, "grice_test_ffi", "increment")
+@external(javascript, "../grice_test_ffi.mjs", "increment")
+pub fn increment(counter: Counter) -> Int
+
+/// The counter's count.
+@external(erlang, "grice_test_ffi", "count")
+@external(javascript, "../grice_test_ffi.mjs", "count")
+pub fn count(counter: Counter) -> Int
+
+/// The runtime the tests run on, such as `OTP 28` or `Node 24.11.1`.
+@external(erlang, "grice_test_ffi", "runtime")
+@external(javascript, "../grice_test_ffi.mjs", "runtime")
+pub fn runtime() -> String
+
 // Running gleam
 //
 // The `gleam` on `PATH`, run as a program, and work done once per runtime,
@@ -505,9 +572,10 @@ fn create_parent(path: String) -> Nil {
 
 /// Run the `gleam` on `PATH` with `arguments` in `directory`, and return
 /// its exit status, standard output and standard error, or `Error` when
-/// there's no `gleam`. Standard error is written to `stderr_file`, an
-/// absolute path, and read back once the program exits.
+/// there's no `gleam`. On Erlang, standard error is written to
+/// `stderr_file`, an absolute path, and read back once the program exits.
 @external(erlang, "grice_test_ffi", "run_gleam")
+@external(javascript, "../grice_test_ffi.mjs", "run_gleam")
 pub fn run_gleam(
   directory: String,
   arguments: List(String),
@@ -525,4 +593,5 @@ pub fn stderr_file(name: String) -> String {
 /// Call `f` the first time `once` is called with `key` in this runtime, and
 /// do nothing after that.
 @external(erlang, "grice_test_ffi", "once")
+@external(javascript, "../grice_test_ffi.mjs", "once")
 pub fn once(key: String, f: fn() -> Nil) -> Nil

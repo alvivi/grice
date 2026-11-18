@@ -10,7 +10,8 @@ mergeable.
 
 ## Setup
 
-Versions are pinned in [`.tool-versions`](.tool-versions). With `asdf` or
+Versions are pinned in [`.tool-versions`](.tool-versions). The suite also
+runs on Node, which CI pins to 24; install it as you like. With `asdf` or
 `mise`:
 
 ```sh
@@ -37,6 +38,8 @@ on CI:
 gleam format --check src/ test/       # formatting
 gleam build --warnings-as-errors      # no warnings allowed
 gleam test                            # full suite
+gleam build --warnings-as-errors --target javascript
+gleam test --target javascript        # the suite again, on Node
 gleam run -m birdie stale check       # no snapshot left unused, after the tests
 gleam run -m grice/bench              # performance budgets, after the tests
 ```
@@ -55,6 +58,17 @@ in the same change.
 
 - Tests use gleeunit and live in [`test/`](test/). Public test functions are
   suffixed `_test`.
+- The suite runs on both targets, and every test runs on both unless it
+  tests something only Erlang has, such as processes: then it, and
+  everything only it uses, is marked `@target(erlang)`. What the tests
+  need from the runtime goes through
+  [`test/grice/support.gleam`](test/grice/support.gleam), with an Erlang
+  and a JavaScript implementation. Compare values in assertions rather than
+  `string.inspect` output, which prints labels on JavaScript only.
+- Spans differ between the targets: glance counts bytes on Erlang and
+  UTF-16 code units on JavaScript, and diagnostics are bytes on both.
+  `support.glance_span` gives a span in glance's units, for what a rule
+  gets and reports, and `support.span_of` one in bytes, for diagnostics.
 - Add or update a focused test with every behaviour change.
 - Text grice prints is checked with [birdie](https://hexdocs.pm/birdie)
   snapshots in [`test/birdie_snapshots/`](test/birdie_snapshots/). A new

@@ -349,8 +349,8 @@ fn header(packages: List(String)) -> String {
   <> int.to_string(corpus_modules)
   <> " modules, "
   <> int.to_string(corpus_lines)
-  <> " lines; OTP "
-  <> otp_release()
+  <> " lines; "
+  <> support.runtime()
   <> ", "
   <> gleam_version()
   <> ", girard "
@@ -458,9 +458,6 @@ fn underscored(value: Int) -> String {
   |> list.reverse
   |> string.join("_")
 }
-
-@external(erlang, "grice_test_ffi", "otp_release")
-fn otp_release() -> String
 
 // What `gleam --version` prints, such as `gleam 1.19.2`.
 fn gleam_version() -> String {

@@ -17,6 +17,7 @@ jobs:
           # The pinned pair, read from `.tool-versions`: every gate.
           - name: pinned
             version-file: .tool-versions
+            target: erlang
             format: true
           # The oldest compiler grice supports: the `gleam` floor in
           # `gleam.toml`. It skips `gleam format --check`: formatter output is
@@ -25,6 +26,13 @@ jobs:
           - name: floor
             gleam: "1.15.4"
             erlang: "28.4.2"
+            target: erlang
+            format: false
+          # The pinned pair again, building and testing for JavaScript, on
+          # Node. The other gates don't depend on the target.
+          - name: javascript
+            version-file: .tool-versions
+            target: javascript
             format: false
 
     name: ${{ matrix.name }}
@@ -41,6 +49,11 @@ jobs:
           otp-version: ${{ matrix.erlang }}
           version-type: strict
 
+      # Node, which runs the suite on the `javascript` row.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
       - name: Download dependencies
         run: gleam deps download
 
@@ -49,10 +62,10 @@ jobs:
         run: gleam format --check src/ test/
 
       - name: Build (warnings as errors)
-        run: gleam build --warnings-as-errors
+        run: gleam build --warnings-as-errors --target ${{ matrix.target }}
 
       - name: Run tests
-        run: gleam test
+        run: gleam test --target ${{ matrix.target }}
 
       # birdie lists the snapshots `gleam test` used, so this runs after it:
       # a snapshot no test uses any more fails the job. Once is enough.

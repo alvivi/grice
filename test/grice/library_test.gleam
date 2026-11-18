@@ -52,7 +52,10 @@ pub fn a_relative_root_is_made_absolute_test() {
 
 // `origin/link` points at `actual/inner`, so `origin/link/../project` is
 // `actual/project` on disk, while cancelling `..` in the text would name
-// `origin/project`. Each project has its own number of `echo`s.
+// `origin/project`. Each project has its own number of `echo`s. On
+// JavaScript, simplifile cancels `..` in the text, so this holds on Erlang
+// only.
+@target(erlang)
 pub fn a_root_through_a_symbolic_link_keeps_its_parent_segments_test() {
   let directory = support.fixture_directory("library-link")
   let project = fn(echoes) {
@@ -214,6 +217,7 @@ fn rules() -> List(rule.Rule) {
   [fixture_rules.no_echo(), fixture_rules.discarded_result()]
 }
 
+@target(erlang)
 fn prefix(
   directory: String,
   files: List(#(String, String)),
