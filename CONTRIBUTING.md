@@ -68,15 +68,18 @@ in the same change.
 
 ## Corpus and benchmark
 
-[`corpus/`](corpus/) is a Gleam project with no modules whose dependencies
-are the corpus: Hex packages grice is checked over. Its
-[`gleam.toml`](corpus/gleam.toml) pins each package with `==`, and the
-committed [`manifest.toml`](corpus/manifest.toml) pins their own
-dependencies too, with Hex checksums, so every run sees the same code
-without it being copied into the repository. `gleam deps download` in
-`corpus/` fetches the packages into `corpus/build/packages/`, which git
-ignores. The first `gleam test` does that itself, so it needs the network;
-after that, gleam's cache serves the packages.
+The corpus is the Hex packages grice is checked over, pinned in
+[`test/corpus/`](test/corpus/): its [`gleam.toml`](test/corpus/gleam.toml)
+pins each package with `==`, and the committed
+[`manifest.toml`](test/corpus/manifest.toml) pins their own dependencies
+too, with Hex checksums, so every run sees the same code without it being
+copied into the repository. The tests copy both files into
+`build/fixtures/corpus/`, a Gleam project with no modules, and run
+`gleam deps download` there, so the packages land under `build/`, which
+git ignores. The first `gleam test` needs the network for that; after
+that, gleam's cache serves the packages. Never run `gleam` in
+`test/corpus/` itself: the packages it downloaded there would be compiled
+as grice's tests.
 
 The corpus gate, [`test/grice/corpus_test.gleam`](test/grice/corpus_test.gleam),
 runs the built-in rules over each of the Gleam core team's packages in the
@@ -110,11 +113,13 @@ corpus, or that makes grice faster or slower on purpose. The benchmark
 prints the constants its run would set, ready to paste. CI runs it on
 the pinned pair only.
 
-To bump a package, change its version in `corpus/gleam.toml` and run
-`gleam deps download` in `corpus/`, which rewrites the manifest. In the
-same change, review the gate's snapshot and re-measure the budgets and
-the corpus totals, even when the totals didn't move: the same counts can
-hide different code.
+To bump a package, change its version in `test/corpus/gleam.toml` and run
+`gleam test`. The download resolves the corpus again and fails, saying
+the pinned manifest no longer matches; copy
+`build/fixtures/corpus/manifest.toml` over `test/corpus/manifest.toml` as
+it says. In the same change, review the gate's snapshot and re-measure the
+budgets and the corpus totals, even when the totals didn't move: the same
+counts can hide different code.
 
 ## Conventions
 

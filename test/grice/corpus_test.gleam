@@ -1,8 +1,8 @@
 //// The corpus gate: grice's built-in rules over the Gleam core team's
-//// packages, pinned in `corpus/`. A rule is on by default only if it runs
-//// clean on them, so the snapshot is the gate's manifest: every finding
-//// and every coverage gap, never hidden, and a change to any of them is a
-//// snapshot diff to review.
+//// packages, pinned in `test/corpus/`. A rule is on by default only if it
+//// runs clean on them, so the snapshot is the gate's manifest: every
+//// finding and every coverage gap, never hidden, and a change to any of
+//// them is a snapshot diff to review.
 ////
 //// A typed probe that reports nothing runs with the built-in rules, so
 //// girard types every package even while no built-in rule needs types,
