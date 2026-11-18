@@ -4,7 +4,6 @@
 //// turned-off suppressions, the ignores of `gleam.toml` and what can never
 //// be hidden, and last how many diagnostics were hidden.
 
-import glance
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -131,9 +130,9 @@ pub fn a_suppression_reaches_primary_spans_starting_on_its_line_test() {
   echo 2
 }
 "
-  let start = fn(needle) { support.glance_span(source, needle).start }
-  let end = fn(needle) { support.glance_span(source, needle).end }
-  let span = fn(from, to) { glance.Span(start(from), end(to)) }
+  let start = fn(needle) { support.span_of(source, needle).start }
+  let end = fn(needle) { support.span_of(source, needle).end }
+  let span = fn(from, to) { Span(start(from), end(to)) }
   let diagnostics = [
     // Starts on the line, ends below it: hidden.
     found("fixture/no-echo", span("echo [", "    x,\n  ]"), []),
@@ -198,7 +197,7 @@ pub fn a_file_suppression_only_covers_its_own_module_test() {
     #("src/app.gleam", "// grice-ignore-file fixture/no-echo: why\n"),
     #("src/other.gleam", "pub fn main() { echo 1 }\n"),
   ]
-  let echo_span = support.glance_span("pub fn main() { echo 1 }\n", "echo 1")
+  let echo_span = support.span_of("pub fn main() { echo 1 }\n", "echo 1")
   let assert Diagnostic(location: Some(location), ..) as other =
     found("fixture/no-echo", echo_span, [])
   let other =
@@ -336,9 +335,8 @@ rules = [\"fixture/no-echo\"]
 reason = \"why\"
 "
   let source = definitions_source
-  let render =
-    support.glance_span(source, "pub fn render_page() {\n  echo 1\n}")
-  let at = fn(needle) { support.glance_span(source, needle) }
+  let render = support.span_of(source, "pub fn render_page() {\n  echo 1\n}")
+  let at = fn(needle) { support.span_of(source, needle) }
   let diagnostics = [
     found("fixture/no-echo", at("echo 1"), []),
     found("fixture/no-echo", at("echo 2"), []),
@@ -348,9 +346,9 @@ reason = \"why\"
     // An import isn't a definition an ignore can name.
     found("fixture/no-echo", at("import gleam/list"), []),
     // Starts inside `render_page`, ends past it: hidden.
-    found("fixture/no-echo", glance.Span(render.end - 1, render.end + 4), []),
+    found("fixture/no-echo", Span(render.end - 1, render.end + 4), []),
     // Starts right at the end of `render_page`: kept.
-    found("fixture/no-echo", glance.Span(render.end, render.end + 4), []),
+    found("fixture/no-echo", Span(render.end, render.end + 4), []),
   ]
   assert describe(source, apply_to(toml, source, diagnostics, codes))
     == [
@@ -376,7 +374,7 @@ reason = \"why\"
   let note =
     found(
       "grice/untyped-definition",
-      support.glance_span(source, "pub fn main() { 1 }"),
+      support.span_of(source, "pub fn main() { 1 }"),
       [],
     )
   let global = Diagnostic(..note, location: None)
@@ -393,8 +391,7 @@ reason = \"why\"
 pub fn a_diagnostic_two_suppressions_cover_counts_once_test() {
   let source =
     "// grice-ignore-file fixture/no-echo: why\npub fn main() {\n  // grice-ignore fixture/no-echo: why\n  echo 1\n}\n"
-  let found =
-    found("fixture/no-echo", support.glance_span(source, "echo 1"), [])
+  let found = found("fixture/no-echo", support.span_of(source, "echo 1"), [])
   assert hidden_count("", source, [found]) == #([], 1)
 }
 
@@ -402,15 +399,14 @@ pub fn a_diagnostic_two_suppressions_cover_counts_once_test() {
 pub fn identical_diagnostics_count_once_each_test() {
   let source =
     "pub fn main() {\n  // grice-ignore fixture/no-echo: why\n  echo 1\n}\n"
-  let found =
-    found("fixture/no-echo", support.glance_span(source, "echo 1"), [])
+  let found = found("fixture/no-echo", support.span_of(source, "echo 1"), [])
   assert hidden_count("", source, [found, found]) == #([], 2)
 }
 
 pub fn an_unused_suppression_adds_its_warning_and_hides_nothing_test() {
   let source =
     "pub fn main() {\n  // grice-ignore fixture/no-echo: why\n  echo 1\n}\n"
-  let other = found("fixture/other", support.glance_span(source, "echo 1"), [])
+  let other = found("fixture/other", support.span_of(source, "echo 1"), [])
   let assert #([kept, unused], 0) = hidden_count("", source, [other])
   assert kept == other
   assert unused.code == "grice/unused-suppression"
@@ -421,7 +417,7 @@ pub fn ignores_and_suppressions_count_alike_test() {
     "[[tools.grice.ignore]]\npaths = [\"src/app.gleam\"]\nrules = [\"fixture/other\"]\nreason = \"why\"\n"
   let source =
     "pub fn main() {\n  // grice-ignore fixture/no-echo: why\n  echo 1\n}\n"
-  let span = support.glance_span(source, "echo 1")
+  let span = support.span_of(source, "echo 1")
   let reported = [
     found("fixture/no-echo", span, []),
     found("fixture/other", span, []),
@@ -455,7 +451,7 @@ fn apply(
   let diagnostics =
     list.map(reported, fn(entry) {
       let #(code, needle) = entry
-      found(code, support.glance_span(source, needle), [])
+      found(code, support.span_of(source, needle), [])
     })
   apply_to(toml, source, diagnostics, codes)
 }
@@ -507,20 +503,17 @@ fn apply_counting(
 // label at each of `secondary`.
 fn found(
   code: String,
-  span: glance.Span,
-  secondary: List(glance.Span),
+  span: diagnostic.Span,
+  secondary: List(diagnostic.Span),
 ) -> Diagnostic {
-  let label = fn(span: glance.Span, message) {
-    Label(Span(start: span.start, end: span.end), message)
-  }
   Diagnostic(
     code:,
     severity: diagnostic.Warning,
     title: "Made in a test",
     location: Some(Location(
       path: "src/app.gleam",
-      primary: label(span, "found"),
-      secondary: list.map(secondary, label(_, "related")),
+      primary: Label(span, "found"),
+      secondary: list.map(secondary, Label(_, "related")),
       fix: None,
     )),
     message: [],

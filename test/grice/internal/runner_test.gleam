@@ -233,9 +233,12 @@ const girard_hint =
 
 pub fn untyped_definition_notes_each_skipped_definition_of_the_lint_set_test() {
   let toml = "[tools.grice]\nexclude = [\"src/gen.gleam\"]\n"
-  let skipped = "pub fn skipped() {\n  1 + \"one\"\n}"
+  // Text outside ASCII comes before the definition and inside it.
+  let skipped = "pub fn skipped() {\n  1 + \"🙂\"\n}"
   let source =
-    "import gen\n\npub fn main() {\n  gen.typed()\n}\n\n" <> skipped <> "\n"
+    "import gen\n\n// café 🙂\npub fn main() {\n  gen.typed()\n}\n\n"
+    <> skipped
+    <> "\n"
   let files = [
     #("src/app.gleam", source),
     // An excluded module's gaps aren't reported.
@@ -285,7 +288,7 @@ const unavailable_files = [
     "src/dependent.gleam",
     "import dep/outer\n\npub fn main() {\n  outer.value()\n}\n",
   ),
-  #("src/direct.gleam", "import gen/broken\n"),
+  #("src/direct.gleam", "// café 🙂\nimport gen/broken\n"),
   #("src/gen/broken.gleam", "pub fn fine() {\n  1\n}\npub fn ("),
   #("src/gen/wrapper.gleam", "import gen/broken\n\npub fn value() {\n  2\n}\n"),
   #("src/importer.gleam", "import broken_linted\n"),
@@ -298,7 +301,7 @@ const unavailable_files = [
 
 const unavailable_dependencies = [
   #("dep/outer", "import dep/inner\n\npub fn value() {\n  3\n}\n"),
-  #("dep/inner", "pub const x = 1\npub fn ("),
+  #("dep/inner", "pub const x = 1\npub const y = \"é🙂\" ]"),
 ]
 
 pub fn unavailable_import_notes_each_module_girard_couldnt_use_test() {
@@ -356,7 +359,7 @@ pub fn unavailable_import_notes_each_module_girard_couldnt_use_test() {
       title: "Can't use the types of an imported module",
       location: None,
       message: [
-        "The module `dependent`, at `src/dependent.gleam`, reaches the module `dep/inner` through the modules it imports, and girard, the type inference grice uses, couldn't use it. It's a dependency module, which glance can't parse: it stopped at line 2, column 1 of its source. Types that depend on it may be incomplete, so typed rules get no answers in this module.",
+        "The module `dependent`, at `src/dependent.gleam`, reaches the module `dep/inner` through the modules it imports, and girard, the type inference grice uses, couldn't use it. It's a dependency module, which glance can't parse: it stopped at line 2, column 20 of its source. Types that depend on it may be incomplete, so typed rules get no answers in this module.",
       ],
       hint: Some(
         "If the package builds, glance doesn't support its syntax yet, so please report it to glance.",
@@ -373,7 +376,8 @@ pub fn unavailable_import_notes_each_module_girard_couldnt_use_test() {
       title: "Can't use the types of an imported module",
       location: Some(Location(
         path: "src/direct.gleam",
-        primary: Label(Span(0, 17), "girard couldn't use this"),
+        // After the 14 bytes of the module's first line.
+        primary: Label(Span(14, 31), "girard couldn't use this"),
         secondary: [],
         fix: None,
       )),
@@ -514,7 +518,7 @@ pub fn module_hooks_run_outside_the_calling_process_test() {
     support.on_module_end("fixture/where", fn(_facts) {
       [support.at_start(process_label())]
     })
-  let ran_in = support.labels(run_files(two_modules, [where_hooks_run]))
+  let ran_in = support.labels(support.run_files(two_modules, [where_hooks_run]))
   assert list.length(ran_in) == 2
   assert !list.contains(ran_in, process_label())
 }
@@ -528,7 +532,8 @@ pub fn project_summaries_run_outside_the_calling_process_test() {
         #(summary.0, support.at_start(summary.1))
       })
     })
-  let ran_in = support.labels(run_files(two_modules, [where_summaries_run]))
+  let ran_in =
+    support.labels(support.run_files(two_modules, [where_summaries_run]))
   assert list.length(ran_in) == 2
   assert !list.contains(ran_in, process_label())
 }
@@ -555,7 +560,7 @@ pub fn diagnostics_come_out_sorted_test() {
       [rule.report(at: glance.Span(0, 3), label: "")]
     })
   let positions =
-    run_files(files, [second, first])
+    support.run_files(files, [second, first])
     |> list.map(fn(found: Diagnostic) {
       case found.location {
         Some(location) ->
@@ -605,25 +610,48 @@ Hint: Remove it once you're done debugging.
 }
 
 // Invalid reports
+//
+// Rules report in glance's units, so the positions below are worked out
+// from the source in them: `🙂` is four bytes on Erlang and two UTF-16
+// code units on JavaScript. Where grice can't turn a span into bytes, the
+// message gives the rule's offsets as they are.
 
-// 22 bytes, with a two-byte `é` at bytes 16 and 17.
-const accented = "pub fn f() {\n  \"é\"\n}\n"
+// 24 bytes, or 22 code units, with `🙂` from offset 16.
+const smiling = "pub fn f() {\n  \"🙂\"\n}\n"
 
+// Bounds, then order, then character boundaries, on both targets: a
+// span from inside `🙂` to past the end is out of bounds, and one from
+// inside it to an earlier offset is reversed.
 pub fn a_report_with_a_bad_primary_span_is_an_invalid_report_test() {
+  let face = support.glance_span(smiling, "🙂")
+  let end = support.tree_length(smiling)
   let bad_spans =
     support.on_module_end("fixture/spans", fn(_facts) {
       [
         rule.report(at: glance.Span(0, 99), label: "out of bounds"),
         rule.report(at: glance.Span(0, 3), label: "valid sibling"),
         rule.report(at: glance.Span(5, 2), label: "reversed"),
-        rule.report(at: glance.Span(17, 18), label: "inside a codepoint"),
+        rule.report(
+          at: glance.Span(face.start + 1, face.end),
+          label: "inside a character",
+        ),
+        rule.report(at: glance.Span(face.start + 1, end + 1), label: ""),
+        rule.report(at: glance.Span(face.start + 1, 3), label: ""),
       ]
     })
-  let assert [out_of_bounds, reversed, inside, valid] =
-    run_files([#("src/app.gleam", accented)], [
+  let assert [
+    out_of_bounds,
+    reversed,
+    inside,
+    inside_past_end,
+    inside_before,
+    valid,
+  ] =
+    support.run_files([#("src/app.gleam", smiling)], [
       bad_spans,
       fixture_rules.no_echo(),
     ])
+  let #(range, size) = unconverted(0, 99)
   assert out_of_bounds
     == Diagnostic(
       code: "grice/invalid-report",
@@ -632,12 +660,17 @@ pub fn a_report_with_a_bad_primary_span_is_an_invalid_report_test() {
       location: None,
       message: [
         "The rule `fixture/spans` reported a problem in the module `app`, at `src/app.gleam`, with a span that isn't valid for the module's source. grice can't show where it points, so the report is dropped.",
-        "The span of the primary label, from byte 0 to byte 99, isn't inside the source, which is 22 bytes long.",
+        "The span of the primary label, "
+          <> range
+          <> ", isn't inside the source, which is "
+          <> size
+          <> " long.",
       ],
       hint: Some(
         "This is a bug in the rule, so please report it to the rule's author. The other reports of the run are unaffected.",
       ),
     )
+  // Before `🙂`, offsets are bytes on both targets.
   assert reversed.message
     == [
       first_paragraph("fixture/spans"),
@@ -646,26 +679,51 @@ pub fn a_report_with_a_bad_primary_span_is_an_invalid_report_test() {
   assert inside.message
     == [
       first_paragraph("fixture/spans"),
-      "The span of the primary label, from byte 17 to byte 18, has an end inside a multi-byte character.",
+      "The span of the primary label, "
+        <> unconverted(face.start + 1, face.end).0
+        <> ", has an end inside a multi-byte character.",
+    ]
+  let #(range, size) = unconverted(face.start + 1, end + 1)
+  assert inside_past_end.message
+    == [
+      first_paragraph("fixture/spans"),
+      "The span of the primary label, "
+        <> range
+        <> ", isn't inside the source, which is "
+        <> size
+        <> " long.",
+    ]
+  assert inside_before.message
+    == [
+      first_paragraph("fixture/spans"),
+      "The span of the primary label, "
+        <> unconverted(face.start + 1, 3).0
+        <> ", starts after it ends.",
     ]
   assert support.labels([valid]) == ["valid sibling"]
 }
 
 pub fn a_report_with_a_bad_secondary_span_is_an_invalid_report_test() {
+  let end = support.tree_length(smiling)
   let bad_secondary =
     support.on_module_end("fixture/spans", fn(_facts) {
       [
         rule.report(at: glance.Span(0, 3), label: "")
         |> rule.with_label(at: glance.Span(4, 6), label: "")
-        |> rule.with_label(at: glance.Span(30, 31), label: ""),
+        |> rule.with_label(at: glance.Span(end + 6, end + 7), label: ""),
       ]
     })
   let assert [Diagnostic(code: "grice/invalid-report", message:, ..)] =
-    run_files([#("src/app.gleam", accented)], [bad_secondary])
+    support.run_files([#("src/app.gleam", smiling)], [bad_secondary])
+  let #(range, size) = unconverted(end + 6, end + 7)
   assert message
     == [
       first_paragraph("fixture/spans"),
-      "The span of the secondary label 2, from byte 30 to byte 31, isn't inside the source, which is 22 bytes long.",
+      "The span of the secondary label 2, "
+        <> range
+        <> ", isn't inside the source, which is "
+        <> size
+        <> " long.",
     ]
 }
 
@@ -678,26 +736,42 @@ pub fn a_report_with_several_bad_spans_is_one_invalid_report_test() {
       ]
     })
   let assert [Diagnostic(code: "grice/invalid-report", message:, ..)] =
-    run_files([#("src/app.gleam", accented)], [bad_spans])
+    support.run_files([#("src/app.gleam", smiling)], [bad_spans])
+  let #(range, size) = unconverted(0, 99)
   assert message
     == [
       first_paragraph("fixture/spans"),
-      "The span of the primary label, from byte 0 to byte 99, isn't inside the source, which is 22 bytes long.",
+      "The span of the primary label, "
+        <> range
+        <> ", isn't inside the source, which is "
+        <> size
+        <> " long.",
       "The span of the secondary label 1, from byte 3 to byte 1, starts after it ends.",
     ]
 }
 
+// Each span comes out in bytes.
 pub fn empty_spans_at_the_end_and_spans_around_characters_are_valid_test() {
+  let face = support.glance_span(smiling, "🙂")
+  let end = support.tree_length(smiling)
   let edges =
     support.on_module_end("fixture/edges", fn(_facts) {
       [
-        rule.report(at: glance.Span(22, 22), label: "end")
-        |> rule.with_label(at: glance.Span(16, 18), label: "é")
-        |> rule.with_label(at: glance.Span(18, 18), label: "after é"),
+        rule.report(at: glance.Span(end, end), label: "end")
+        |> rule.with_label(at: face, label: "🙂")
+        |> rule.with_label(
+          at: glance.Span(face.end, face.end),
+          label: "after 🙂",
+        ),
       ]
     })
-  assert support.describe(run_files([#("src/app.gleam", accented)], [edges]))
-    == ["fixture/edges src/app.gleam: end"]
+  let assert [Diagnostic(location: Some(location), ..)] =
+    support.run_files([#("src/app.gleam", smiling)], [edges])
+  let bytes = string.byte_size(smiling)
+  let face = support.span_of(smiling, "🙂")
+  assert location.primary == Label(Span(bytes, bytes), "end")
+  assert location.secondary
+    == [Label(face, "🙂"), Label(Span(face.end, face.end), "after 🙂")]
 }
 
 pub fn a_project_rule_report_on_an_unlinted_module_is_an_invalid_report_test() {
@@ -715,7 +789,7 @@ pub fn a_project_rule_report_on_an_unlinted_module_is_an_invalid_report_test() {
         #(name, rule.report(at: glance.Span(0, 0), label: name))
       })
     })
-  let diagnostics = run_files_with(toml, files, [elsewhere])
+  let diagnostics = support.run_files_with(toml, files, [elsewhere])
   assert support.describe(diagnostics)
     == [
       "grice/invalid-report",
@@ -729,6 +803,48 @@ pub fn a_project_rule_report_on_an_unlinted_module_is_an_invalid_report_test() {
     == [
       "The project rule `fixture/elsewhere` reported a problem in the module `app/gen/a`, which isn't one of the modules this run linted: it isn't in the lint set, doesn't parse, or isn't a module of the project. The report is dropped.",
     ]
+}
+
+// Spans after text outside ASCII
+//
+// A parse error and a definition-scoped ignore after text outside ASCII
+// give byte spans on both targets, where glance counts UTF-16 code units
+// on JavaScript. The coverage notes and suppressions are checked in bytes
+// in their fixtures above, and reports on each kind of node in
+// `glance_spans_test`.
+
+pub fn a_parse_error_after_text_outside_ascii_is_bytes_test() {
+  let source = "// café 🙂\npub fn main() { \"é\" ] }\n"
+  let assert [
+    Diagnostic(code: "grice/parse-error", location: Some(location), ..),
+  ] = support.run_files([#("src/app.gleam", source)], [])
+  assert location.primary
+    == Label(support.span_of(source, "]"), "glance didn't expect this")
+}
+
+// The 16 `🙂` before `render_page` put its `echo` 32 bytes later than its
+// code units, past where the function ends in code units, so on
+// JavaScript the ignore hides it only if the function's span is turned
+// into bytes.
+pub fn an_ignore_of_a_definition_after_text_outside_ascii_test() {
+  let toml =
+    "[[tools.grice.ignore]]
+paths = [\"src/app.gleam\"]
+definitions = [\"render_*\"]
+rules = [\"fixture/no-echo\"]
+reason = \"why\"
+"
+  let source =
+    "pub const greeting = \"🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂\"
+
+pub fn render_page() { echo 1 }
+
+pub fn main() { echo 2 }
+"
+  assert support.run_files_with(toml, [#("src/app.gleam", source)], [
+      fixture_rules.no_echo(),
+    ])
+    == [echo_diagnostic(support.span_of(source, "echo 2"))]
 }
 
 // The rule set
@@ -890,7 +1006,7 @@ pub fn shared() { 1 }
     fixture_rules.no_echo(),
     fixture_rules.duplicate_public_function(),
   ]
-  assert support.describe(run_files(files, rules))
+  assert support.describe(support.run_files(files, rules))
     == [
       "fixture/no-echo src/one.gleam: This prints when it runs",
       "fixture/duplicate-public-function src/two.gleam: `one` also defines `shared`",
@@ -919,7 +1035,7 @@ reason = \"why\"
       [diagnostic.Error, diagnostic.Warning, diagnostic.Note],
       fn(severity) {
         let rules = [fixture_rules.no_echo() |> rule.with_severity(severity)]
-        run_files_with(toml, files, rules) != []
+        support.run_files_with(toml, files, rules) != []
       },
     )
   assert left == []
@@ -948,15 +1064,21 @@ reason = \"why\"
   assert hidden == 3
 }
 
-// The comment after `echo 2` follows code on its line, and the last one
-// has no code after it but the closing brace, where nothing is reported.
+// The first suppression hides the `echo` on the next line of code, past a
+// documentation comment. The comment after `echo 2` follows code on its
+// line, and the last one has no code after it but the closing brace,
+// where nothing is reported. Every span is bytes, after text outside
+// ASCII.
 pub fn suppression_warnings_render_in_a_crlf_file_with_non_ascii_text_test() {
   let source =
-    "pub fn main() {\r\n  // grice-ignore fixture/no-echo: café 🙂\r\n  // naïve, ünïcödé\r\n  echo 1\r\n  echo 2 // grice-ignore fixture/no-echo: après\r\n  // grice-ignore fixture/no-echo: fin ✓\r\n}\r\n"
+    "pub fn main() {\r\n  // grice-ignore fixture/no-echo: café 🙂\r\n  /// naïve, ünïcödé 🙂\r\n  echo \"é🙂\"\r\n  echo 2 // grice-ignore fixture/no-echo: après\r\n  // grice-ignore fixture/no-echo: fin ✓\r\n}\r\n"
   let project = support.project("", [#("src/app.gleam", source)], [])
   let assert Ok(runner.Linted(diagnostics: [kept, misplaced, unused], ..)) =
     runner.run(project, [fixture_rules.no_echo()])
   assert kept == echo_diagnostic(support.span_of(source, "echo 2"))
+  let assert Some(location) = misplaced.location
+  assert location.primary.span
+    == support.span_of(source, "// grice-ignore fixture/no-echo: après")
   let sources = dict.from_list([#("src/app.gleam", line_index.new(source))])
   let assert Ok(text) =
     human.render(
@@ -1011,7 +1133,7 @@ pub fn main() { 1 }
 
 pub fn suppressions_follow_the_target_view_test() {
   let suppressions = fn(toml) {
-    run_files_with(toml, [#("src/app.gleam", target_suppressions)], [
+    support.run_files_with(toml, [#("src/app.gleam", target_suppressions)], [
       fixture_rules.no_echo(),
     ])
     |> support.describe
@@ -1053,7 +1175,7 @@ reason = \"why\"
       [rule.report(at: glance.Span(0, 999), label: "out of bounds")]
     })
   assert support.describe(
-      run_files_with(toml, files, [fixture_rules.no_echo(), bad_span]),
+      support.run_files_with(toml, files, [fixture_rules.no_echo(), bad_span]),
     )
     == [
       "grice/invalid-report",
@@ -1126,27 +1248,30 @@ fn echo_diagnostic(span: diagnostic.Span) -> Diagnostic {
   )
 }
 
+// How an invalid-report message gives the offsets of a span that isn't
+// valid in `smiling`, and the source's length: in bytes where glance
+// counts them, and as offsets and UTF-16 code units where it counts
+// those, since such a span can't be turned into bytes.
+fn unconverted(start: Int, end: Int) -> #(String, String) {
+  let #(unit, units) = case line_index.tree_units() {
+    line_index.Bytes -> #("byte ", " bytes")
+    line_index.CodeUnits -> #("offset ", " UTF-16 code units")
+  }
+  #(
+    "from "
+      <> unit
+      <> int.to_string(start)
+      <> " to "
+      <> unit
+      <> int.to_string(end),
+    int.to_string(support.tree_length(smiling)) <> units,
+  )
+}
+
 fn first_paragraph(code: String) -> String {
   "The rule `"
   <> code
   <> "` reported a problem in the module `app`, at `src/app.gleam`, with a span that isn't valid for the module's source. grice can't show where it points, so the report is dropped."
-}
-
-fn run_files(
-  files: List(#(String, String)),
-  rules: List(Rule),
-) -> List(Diagnostic) {
-  run_files_with("", files, rules)
-}
-
-fn run_files_with(
-  toml: String,
-  files: List(#(String, String)),
-  rules: List(Rule),
-) -> List(Diagnostic) {
-  let assert Ok(runner.Linted(diagnostics:, ..)) =
-    runner.run(support.project(toml, files, []), rules)
-  diagnostics
 }
 
 fn check_rules(rules: List(Rule)) -> Result(runner.Linted, List(Diagnostic)) {

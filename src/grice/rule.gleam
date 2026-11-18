@@ -106,7 +106,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
 import grice/diagnostic.{
-  type Diagnostic, type Label, type Severity, Diagnostic, Label, Location, Span,
+  type Diagnostic, type Label, type Severity, Diagnostic, Location,
 }
 import grice/facts.{type ModuleFacts, type Syntax, type Typed}
 import grice/internal/parallel
@@ -505,8 +505,9 @@ pub fn final(
 /// One problem a rule found, which becomes one diagnostic.
 pub opaque type Report {
   Report(
-    primary: Label,
-    secondary: List(Label),
+    // Each label's span, in glance's units, and its message.
+    primary: #(glance.Span, String),
+    secondary: List(#(glance.Span, String)),
     message: List(String),
     hint: Option(String),
   )
@@ -515,11 +516,14 @@ pub opaque type Report {
 /// A report about the code at `span`, with `label` printed under it. The
 /// label is a single line, and may be empty.
 ///
-/// Every span of a report must be a valid byte range of the module's source,
-/// as glance's spans are. grice drops a report with an invalid span and
-/// reports a `grice/invalid-report` error about the rule instead.
+/// Spans count glance's units, as every span in the module's facts does:
+/// bytes on Erlang and UTF-16 code units on JavaScript. grice turns them
+/// into the byte offsets of the diagnostic. Every span of a report must be
+/// a valid range of the module's source, as glance's spans are. grice drops
+/// a report with an invalid span and reports a `grice/invalid-report` error
+/// about the rule instead.
 pub fn report(at span: glance.Span, label label: String) -> Report {
-  Report(primary: to_label(span, label), secondary: [], message: [], hint: None)
+  Report(primary: #(span, label), secondary: [], message: [], hint: None)
 }
 
 /// Add a secondary label: related code that helps explain the problem.
@@ -530,10 +534,7 @@ pub fn with_label(
   at span: glance.Span,
   label label: String,
 ) -> Report {
-  Report(
-    ..report,
-    secondary: list.append(report.secondary, [to_label(span, label)]),
-  )
+  Report(..report, secondary: list.append(report.secondary, [#(span, label)]))
 }
 
 /// Set the explanation, as paragraphs of plain, unwrapped text: what is
@@ -547,34 +548,32 @@ pub fn with_hint(report: Report, hint: String) -> Report {
   Report(..report, hint: Some(hint))
 }
 
-/// The report's primary label and its secondary labels, in order.
+/// The report's primary label and its secondary labels, in order, each as
+/// its span in glance's units and its message.
 @internal
-pub fn report_labels(report: Report) -> #(Label, List(Label)) {
+pub fn report_labels(
+  report: Report,
+) -> #(#(glance.Span, String), List(#(glance.Span, String))) {
   #(report.primary, report.secondary)
 }
 
-/// The diagnostic a report by `rule` becomes, on the module at `path`.
+/// The diagnostic a report by `rule` becomes, on the module at `path`,
+/// with `labels`: the report's primary and secondary labels, their spans
+/// turned into bytes.
 @internal
 pub fn to_diagnostic(
   rule: Rule,
   report: Report,
   path path: String,
+  labels labels: #(Label, List(Label)),
 ) -> Diagnostic {
+  let #(primary, secondary) = labels
   Diagnostic(
     code: rule.code,
     severity: rule.severity,
     title: rule.title,
-    location: Some(Location(
-      path:,
-      primary: report.primary,
-      secondary: report.secondary,
-      fix: None,
-    )),
+    location: Some(Location(path:, primary:, secondary:, fix: None)),
     message: report.message,
     hint: report.hint,
   )
-}
-
-fn to_label(span: glance.Span, message: String) -> Label {
-  Label(span: Span(start: span.start, end: span.end), message:)
 }

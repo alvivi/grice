@@ -1,0 +1,72 @@
+---
+version: 2.0.2
+title: cli: leading byte order marks
+file: ./test/grice/internal/cli_test.gleam
+test_name: leading_byte_order_marks_are_kept_test
+---
+One mark, exit code 1:
+
+error[grice/parse-error]: Can't parse this module
+  ┌─ src/app.gleam:1:1
+  │
+1 │ ﻿pub fn main() {
+  │ ^ glance didn't expect this
+
+grice reads Gleam code with glance, and glance couldn't parse this file. No
+rule ran on it, and the modules that import it may lose type information.
+
+Hint: If `gleam build` accepts this file, glance doesn't support its syntax
+yet, so please report it to glance.
+
+1 error in 1 module.
+Coverage is incomplete: 1 module doesn't parse, so rules didn't see all of
+the code.
+
+Two marks, exit code 1:
+
+error[grice/parse-error]: Can't parse this module
+  ┌─ src/app.gleam:1:1
+  │
+1 │ ﻿﻿pub fn main() {
+  │ ^ glance didn't expect this
+
+grice reads Gleam code with glance, and glance couldn't parse this file. No
+rule ran on it, and the modules that import it may lose type information.
+
+Hint: If `gleam build` accepts this file, glance doesn't support its syntax
+yet, so please report it to glance.
+
+1 error in 1 module.
+Coverage is incomplete: 1 module doesn't parse, so rules didn't see all of
+the code.
+
+Only a mark, exit code 1:
+
+error[grice/parse-error]: Can't parse this module
+  ┌─ src/app.gleam:1:1
+  │
+1 │ ﻿
+  │ ^ glance didn't expect this
+
+grice reads Gleam code with glance, and glance couldn't parse this file. No
+rule ran on it, and the modules that import it may lose type information.
+
+Hint: If `gleam build` accepts this file, glance doesn't support its syntax
+yet, so please report it to glance.
+
+1 error in 1 module.
+Coverage is incomplete: 1 module doesn't parse, so rules didn't see all of
+the code.
+
+A mark and bytes that aren't UTF-8, exit code 2:
+
+error[grice/cannot-read]: Can't read a file
+
+grice couldn't read `src/app.gleam`, which it needs to lint the project:
+File not UTF-8 encoded.
+
+Hint: Check that it's there and that you can read it. Sources must be
+UTF-8.
+
+grice couldn't complete the run. Fix the problems above and run it again.
+

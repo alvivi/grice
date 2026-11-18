@@ -2,7 +2,7 @@
 -module(grice_ffi).
 
 -export([parallel_map/2, variable/1, stdout_is_terminal/0, sample/0, exit/1,
-         is_supported/0]).
+         is_supported/0, counts_code_units/0]).
 
 %% Parallel map
 %%
@@ -144,3 +144,11 @@ exit(Code) ->
 
 is_supported() ->
     true.
+
+%% Syntax trees
+%%
+%% What glance's offsets count, for `grice/internal/line_index'.
+
+%% glexer counts bytes on Erlang.
+counts_code_units() ->
+    false.

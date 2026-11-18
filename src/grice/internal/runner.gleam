@@ -36,7 +36,7 @@ import grice/coverage.{
 import grice/diagnostic.{type Diagnostic, type Label, Diagnostic}
 import grice/facts.{type ModuleFacts, type Syntax}
 import grice/internal/config.{type Config}
-import grice/internal/line_index.{type LineIndex, type SpanProblem}
+import grice/internal/line_index.{type LineIndex}
 import grice/internal/loader.{type Project}
 import grice/internal/parallel
 import grice/internal/suppress
@@ -275,19 +275,38 @@ fn module_gaps(
 const girard_hint =
   "If `gleam build` accepts this code, it's a gap in girard, the type inference grice uses, so please report it at https://github.com/alvivi/girard/issues."
 
+// A definition whose span grice can't turn into bytes still gets its
+// note, with no location, naming the module instead.
 fn untyped_definition(
   module_facts: ModuleFacts(Syntax),
   skipped: typing.Skipped,
 ) -> #(Gap, Diagnostic) {
   let path = facts.path(module_facts)
+  let subject = "girard couldn't type `" <> skipped.name <> "`"
+  let #(at, subject) = case
+    line_index.span_to_bytes(facts.line_index(module_facts), skipped.span)
+  {
+    Ok(span) -> #(
+      Some(#(path, span, "girard couldn't type this definition")),
+      subject,
+    )
+    Error(_problem) -> #(
+      None,
+      subject
+        <> ", in the module `"
+        <> facts.module_name(module_facts)
+        <> "` at `"
+        <> path
+        <> "`",
+    )
+  }
   note(
     UntypedDefinition(path:, definition: skipped.name),
     code: "grice/untyped-definition",
     title: "Can't infer the types of this definition",
-    at: Some(#(path, skipped.span, "girard couldn't type this definition")),
-    message: "girard couldn't type `"
-      <> skipped.name
-      <> "`: "
+    at:,
+    message: subject
+      <> ": "
       <> girard.describe_error(skipped.error)
       <> ". Typed rules get no answers about the code inside it, so they may miss problems there.",
     hint: girard_hint,
@@ -312,7 +331,8 @@ fn uninferred_module(module_facts: ModuleFacts(Syntax)) -> #(Gap, Diagnostic) {
 
 // The label sits on the import of the module girard couldn't use when
 // there is one. A module reached through other modules has nothing to
-// point at, since grice doesn't keep the imports of dependency modules.
+// point at, since grice doesn't keep the imports of dependency modules,
+// and neither has an import whose span grice can't turn into bytes.
 fn unavailable_import(
   project: Project,
   module_facts: ModuleFacts(Syntax),
@@ -321,33 +341,46 @@ fn unavailable_import(
   let path = facts.path(module_facts)
   let module = unavailable.module
   let #(cause, why, hint) = find_cause(project, unavailable)
-  let #(at, subject) = case
+  let #(direct, span) = case
     list.find(facts.module(module_facts).imports, fn(definition) {
       definition.definition.module == module
     })
   {
     Ok(definition) -> #(
-      Some(#(path, definition.definition.location, "girard couldn't use this")),
+      True,
+      facts.line_index(module_facts)
+        |> line_index.span_to_bytes(definition.definition.location)
+        |> option.from_result,
+    )
+    Error(Nil) -> #(False, None)
+  }
+  let importer =
+    "The module `"
+    <> facts.module_name(module_facts)
+    <> "`, at `"
+    <> path
+    <> "`, "
+  let subject = case direct, span {
+    True, Some(_span) ->
       "girard, the type inference grice uses, couldn't use the module `"
-        <> module
-        <> "`, which this module imports.",
-    )
-    Error(Nil) -> #(
-      None,
-      "The module `"
-        <> facts.module_name(module_facts)
-        <> "`, at `"
-        <> path
-        <> "`, reaches the module `"
-        <> module
-        <> "` through the modules it imports, and girard, the type inference grice uses, couldn't use it.",
-    )
+      <> module
+      <> "`, which this module imports."
+    True, None ->
+      importer
+      <> "imports the module `"
+      <> module
+      <> "`, and girard, the type inference grice uses, couldn't use it."
+    False, _ ->
+      importer
+      <> "reaches the module `"
+      <> module
+      <> "` through the modules it imports, and girard, the type inference grice uses, couldn't use it."
   }
   note(
     UnavailableImport(path:, module:, cause:),
     code: "grice/unavailable-import",
     title: "Can't use the types of an imported module",
-    at:,
+    at: option.map(span, fn(span) { #(path, span, "girard couldn't use this") }),
     message: subject
       <> " "
       <> why
@@ -432,13 +465,13 @@ fn missing_package(package: loader.Package) -> #(Gap, Diagnostic) {
   )
 }
 
-// The note that reports `gap`, at a span of the module at a path with a
-// label, or with no location.
+// The note that reports `gap`, at a byte span of the module at a path
+// with a label, or with no location.
 fn note(
   gap: Gap,
   code code: String,
   title title: String,
-  at at: Option(#(String, glance.Span, String)),
+  at at: Option(#(String, diagnostic.Span, String)),
   message message: String,
   hint hint: String,
 ) -> #(Gap, Diagnostic) {
@@ -447,10 +480,7 @@ fn note(
       let #(path, span, label) = at
       diagnostic.Location(
         path:,
-        primary: diagnostic.Label(
-          span: diagnostic.Span(start: span.start, end: span.end),
-          message: label,
-        ),
+        primary: diagnostic.Label(span:, message: label),
         secondary: [],
         fix: None,
       )
@@ -483,48 +513,73 @@ fn resolve(
 ) -> Diagnostic {
   let source = facts.line_index(module_facts)
   let #(primary, secondary) = rule.report_labels(report)
-  let problems =
-    [
-      #("primary label", primary),
-      ..list.index_map(secondary, fn(label, index) {
-        #("secondary label " <> int.to_string(index + 1), label)
-      })
-    ]
-    |> list.filter_map(fn(entry) {
-      let #(name, label) = entry
-      case line_index.check_span(source, label.span) {
-        Ok(Nil) -> Error(Nil)
-        Error(problem) -> Ok(describe_span(name, label, problem, source))
-      }
+  let primary = check_label(source, "primary label", primary)
+  let secondary =
+    list.index_map(secondary, fn(label, index) {
+      check_label(source, "secondary label " <> int.to_string(index + 1), label)
     })
-  case problems {
-    [] -> rule.to_diagnostic(lint_rule, report, path: facts.path(module_facts))
-    [_, ..] -> invalid_spans(lint_rule, module_facts, problems)
+  case primary, result.all(secondary) {
+    Ok(primary), Ok(secondary) ->
+      rule.to_diagnostic(
+        lint_rule,
+        report,
+        path: facts.path(module_facts),
+        labels: #(primary, secondary),
+      )
+    _, _ -> {
+      let #(_labels, problems) = result.partition([primary, ..secondary])
+      invalid_spans(lint_rule, module_facts, list.reverse(problems))
+    }
   }
 }
 
+// A report's label, its span in glance's units, as a diagnostic's label in
+// bytes, or a sentence about why it can't be.
+fn check_label(
+  source: LineIndex,
+  name: String,
+  label: #(glance.Span, String),
+) -> Result(Label, String) {
+  let #(span, message) = label
+  line_index.check_tree_span(source, span)
+  |> result.map(diagnostic.Label(span: _, message:))
+  |> result.map_error(describe_span(name, _, source))
+}
+
+// A sentence about an invalid span, with its ends and the length of the
+// source counted in the units it's given in.
 fn describe_span(
   name: String,
-  label: Label,
-  problem: SpanProblem,
+  invalid: line_index.InvalidSpan,
   source: LineIndex,
 ) -> String {
-  let span = label.span
+  let line_index.InvalidSpan(problem:, start:, end:, units:) = invalid
+  let #(unit, size) = case units {
+    line_index.Bytes -> #(
+      "byte",
+      int.to_string(string.byte_size(line_index.source(source))) <> " bytes",
+    )
+    line_index.CodeUnits -> #(
+      "offset",
+      int.to_string(line_index.tree_size(source)) <> " UTF-16 code units",
+    )
+  }
   let size = case problem {
-    line_index.OutOfBounds ->
-      ", which is "
-      <> int.to_string(string.byte_size(line_index.source(source)))
-      <> " bytes long"
+    line_index.OutOfBounds -> ", which is " <> size <> " long"
     line_index.Reversed
     | line_index.SplitsCodepoint
     | line_index.SplitsLineEnding -> ""
   }
   "The span of the "
   <> name
-  <> ", from byte "
-  <> int.to_string(span.start)
-  <> " to byte "
-  <> int.to_string(span.end)
+  <> ", from "
+  <> unit
+  <> " "
+  <> int.to_string(start)
+  <> " to "
+  <> unit
+  <> " "
+  <> int.to_string(end)
   <> ", "
   <> line_index.describe_problem(problem)
   <> size

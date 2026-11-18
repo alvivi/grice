@@ -13,11 +13,12 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
-import grice/diagnostic.{type Diagnostic, Span}
+import grice/diagnostic.{type Diagnostic, Diagnostic, Span}
 import grice/facts.{type ModuleFacts, type Syntax, type Typed}
 import grice/fixture_rules
 import grice/internal/cli
 import grice/internal/config
+import grice/internal/line_index
 import grice/internal/loader.{type Project}
 import grice/internal/runner.{type Linted}
 import grice/internal/stats
@@ -52,6 +53,27 @@ pub fn project(
       missing_dependencies: [],
     )
   project
+}
+
+/// The diagnostics of a run of `rules` over the project of `files`, with
+/// the default configuration.
+pub fn run_files(
+  files: List(#(String, String)),
+  rules: List(Rule),
+) -> List(Diagnostic) {
+  run_files_with("", files, rules)
+}
+
+/// The diagnostics of a run of `rules` over the project with the
+/// `gleam.toml` text `toml` and the files of `files`.
+pub fn run_files_with(
+  toml: String,
+  files: List(#(String, String)),
+  rules: List(Rule),
+) -> List(Diagnostic) {
+  let assert Ok(runner.Linted(diagnostics:, ..)) =
+    runner.run(project(toml, files, []), rules)
+  diagnostics
 }
 
 /// A package where `a` imports `b` on Erlang and `b` imports `a` on
@@ -315,17 +337,59 @@ pub fn labels(diagnostics: List(Diagnostic)) -> List(String) {
   })
 }
 
-/// The span of the first `needle` in `source`.
+/// The span of the first `needle` in `source`, as the syntax tree counts
+/// it: bytes on Erlang and UTF-16 code units on JavaScript. It's what a
+/// rule gets from the tree and gives to `rule.report` and the type queries.
 pub fn glance_span(source: String, needle: String) -> glance.Span {
-  let assert Ok(#(before, _)) = string.split_once(source, needle)
-  let start = string.byte_size(before)
-  glance.Span(start, start + string.byte_size(needle))
+  let #(start, end) = locate(source, needle, tree_length)
+  glance.Span(start:, end:)
 }
 
-/// The span of the first `needle` in `source`, as a diagnostic's.
+/// The length of `text` as the syntax tree counts it: bytes on Erlang and
+/// UTF-16 code units on JavaScript.
+pub fn tree_length(text: String) -> Int {
+  line_index.length(text, in: line_index.tree_units())
+}
+
+/// The span of the first `needle` in `source`, in bytes, as a diagnostic's
+/// on every target.
 pub fn span_of(source: String, needle: String) -> diagnostic.Span {
-  let glance.Span(start:, end:) = glance_span(source, needle)
+  let #(start, end) = locate(source, needle, string.byte_size)
   Span(start:, end:)
+}
+
+/// A warning on `src/app.gleam` at `span`, labelled `label`, as a rule
+/// made in a test with the code `code` and no message reports it.
+pub fn finding(
+  code: String,
+  span: diagnostic.Span,
+  label: String,
+) -> Diagnostic {
+  Diagnostic(
+    code:,
+    severity: diagnostic.Warning,
+    title: "Made in a test",
+    location: Some(diagnostic.Location(
+      path: "src/app.gleam",
+      primary: diagnostic.Label(span, label),
+      secondary: [],
+      fix: None,
+    )),
+    message: [],
+    hint: None,
+  )
+}
+
+// Where the first `needle` in `source` starts and ends, counted by
+// `length`.
+fn locate(
+  source: String,
+  needle: String,
+  length: fn(String) -> Int,
+) -> #(Int, Int) {
+  let assert Ok(#(before, _)) = string.split_once(source, needle)
+  let start = length(before)
+  #(start, start + length(needle))
 }
 
 // Projects on disk
@@ -381,8 +445,14 @@ pub fn write_linked_fixture(
 
 /// Write bytes that aren't UTF-8 at `path`.
 pub fn write_not_utf8(path: String) -> Nil {
+  write_bytes(path, <<255, 254, 255>>)
+}
+
+/// Write `bytes` at `path` as they are, creating parent directories as
+/// needed.
+pub fn write_bytes(path: String, bytes: BitArray) -> Nil {
   create_parent(path)
-  let assert Ok(Nil) = simplifile.write_bits(path, <<255, 254, 255>>)
+  let assert Ok(Nil) = simplifile.write_bits(path, bytes)
     as { "can't write " <> path }
   Nil
 }

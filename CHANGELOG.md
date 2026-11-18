@@ -37,7 +37,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   knows about the module it's looking at: its name, path, source, imports
   and syntax tree, as the module is compiled for the project's target. A
   definition whose `@target` attribute names the other target is left
-  out, and each list of definitions is in source order.
+  out, and each list of definitions is in source order. Spans count what
+  glance counts on the target grice runs on, bytes on Erlang and UTF-16
+  code units on JavaScript, in the syntax tree, the comments and the type
+  queries alike, and grice turns a report's spans into the byte offsets of
+  its diagnostic, so diagnostics are the same on both targets.
 - **Typed rules.** `rule.typed`, applied right after `rule.module` or
   `rule.project`, gives a rule `Typed` facts. Module and project rules now
   start from one `rule.Schema` type, which replaces `ModuleSchema` and
@@ -58,8 +62,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Comments.** `facts.comments` gives a rule the module's comments, which
   glance's syntax tree leaves out, in source order. Each `Comment` has its
   `CommentKind` (`Regular`, `Doc` or `ModuleDoc`, for `//`, `///` and
-  `////`), its span in bytes, slashes included, and its text after the
-  slashes. A comment inside a definition left out for the other target
+  `////`), its span in glance's units, slashes included, and its text
+  after the slashes. A comment inside a definition left out for the other target
   isn't there, as the definition isn't.
 - **girard.** grice depends on girard 4. Typed queries return its `Type`,
   `Resolution` and `Scheme`, so a rule that inspects them depends on

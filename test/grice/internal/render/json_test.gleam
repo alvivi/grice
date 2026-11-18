@@ -39,10 +39,7 @@ pub fn a_fix_test() {
   let source = "pub fn main() {\n  \"café\" <> x\n}\n"
   let project = support.project("", [#("src/app.gleam", source)], [])
   let assert Ok(linted) = runner.run(project, [])
-  let span = fn(needle) {
-    let span = support.glance_span(source, needle)
-    Span(span.start, span.end)
-  }
+  let span = support.span_of(source, _)
   let fixed =
     Diagnostic(
       code: "fixture/concatenation",

@@ -324,6 +324,10 @@ fn unparsed(project: loader.Project) -> a {
 /// them: what the rules reported that no ignore or suppression hid, and
 /// grice's own, such as a note on code girard couldn't type.
 ///
+/// Their spans are byte offsets on every target, while the spans rules see
+/// count glance's units, which are UTF-16 code units on JavaScript. In a
+/// fixture that's all ASCII, the two are the same.
+///
 /// ```gleam
 /// let assert [found] =
 ///   testing.module("pub fn main() {\n  echo 1\n}\n")

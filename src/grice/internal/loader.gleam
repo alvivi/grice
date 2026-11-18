@@ -25,6 +25,7 @@ import glexer
 import glexer/token
 import grice/diagnostic.{type Diagnostic, type Label, Diagnostic, Label, Span}
 import grice/internal/config.{type Config}
+import grice/internal/glance_spans
 import grice/internal/glob
 import grice/internal/line_index.{type LineIndex}
 import simplifile
@@ -414,13 +415,19 @@ fn load_modules(
   }
 }
 
+// The tree is corrected before anything reads it, so the target view,
+// girard, the rules and the suppressions all see the same spans.
 fn parse_module(
   name: String,
   path: String,
   source: String,
   target: config.Target,
 ) -> Module {
-  let parsed = glance.module(source)
+  let index = line_index.new(source)
+  let parsed = case glance.module(source), line_index.units(index) {
+    Ok(syntax), line_index.CodeUnits -> Ok(glance_spans.correct(syntax))
+    parsed, _ -> parsed
+  }
   let imports = case parsed {
     Ok(syntax) ->
       on_target(syntax.imports, target)
@@ -429,7 +436,7 @@ fn parse_module(
     // kept in `parsed`.
     Error(_) -> []
   }
-  Module(name:, path:, source: line_index.new(source), parsed:, imports:)
+  Module(name:, path:, source: index, parsed:, imports:)
 }
 
 // A definition is on the target unless a `@target` attribute names the
@@ -490,35 +497,39 @@ pub fn error_label(source: LineIndex, error: glance.Error) -> Label {
       let end = string.byte_size(line_index.source(source))
       Label(span: Span(end, end), message: "The file ends here unexpectedly")
     }
+    // glexer's offset counts glance's units, which may not be bytes.
     glance.UnexpectedToken(
       token: unexpected,
-      position: glexer.Position(byte_offset:),
+      position: glexer.Position(byte_offset: offset),
     ) ->
       Label(
-        span: token_span(source, token.to_source(unexpected), byte_offset),
+        span: token_span(source, token.to_source(unexpected), offset),
         message: "glance didn't expect this",
       )
   }
 }
 
-// The span of `text` at `offset`, used only if the source really holds that
-// text there. Otherwise it's an empty span at `offset`, or at the end of the
-// source if `offset` isn't a valid position, so the span is always one the
-// renderer accepts.
+// The span of `text` at glance's offset `offset`, used only if the source
+// really holds that text there. Otherwise it's an empty span at `offset`,
+// or at the end of the source if `offset` isn't a valid position, so the
+// span is always one the renderer accepts.
 fn token_span(source: LineIndex, text: String, offset: Int) -> diagnostic.Span {
   let bytes = bit_array.from_string(line_index.source(source))
-  let size = string.byte_size(text)
-  let found = bit_array.slice(bytes, offset, size)
-  use <- bool.guard(
-    when: size > 0 && found == Ok(bit_array.from_string(text)),
-    return: Span(offset, offset + size),
-  )
-  let empty = Span(offset, offset)
-  case line_index.check_span(source, empty) {
-    Ok(Nil) -> empty
-    Error(_problem) -> {
-      let end = bit_array.byte_size(bytes)
-      Span(end, end)
+  let end = Span(bit_array.byte_size(bytes), bit_array.byte_size(bytes))
+  case line_index.to_bytes(source, offset) {
+    Error(_problem) -> end
+    Ok(offset) -> {
+      let size = string.byte_size(text)
+      let found = bit_array.slice(bytes, offset, size)
+      use <- bool.guard(
+        when: size > 0 && found == Ok(bit_array.from_string(text)),
+        return: Span(offset, offset + size),
+      )
+      let empty = Span(offset, offset)
+      case line_index.check_span(source, empty) {
+        Ok(Nil) -> empty
+        Error(_problem) -> end
+      }
     }
   }
 }
@@ -563,7 +574,7 @@ pub fn load_project_with(
     config:,
     paths:,
     read: fn(path) {
-      simplifile.read(join(root, path))
+      read_text(join(root, path))
       |> result.map_error(simplifile.describe_error)
     },
     dependencies:,
@@ -584,7 +595,14 @@ pub fn installed(
 }
 
 fn read_file(root: String, path: String) -> Result(String, LoadError) {
-  simplifile.read(join(root, path)) |> result.map_error(cannot_read(path))
+  read_text(join(root, path)) |> result.map_error(cannot_read(path))
+}
+
+// The text of the file at `location`, every byte kept, a leading byte
+// order mark included, as `simplifile.read` doesn't on JavaScript.
+fn read_text(location: String) -> Result(String, simplifile.FileError) {
+  use bytes <- result.try(simplifile.read_bits(location))
+  line_index.decode(bytes) |> result.replace_error(simplifile.NotUtf8)
 }
 
 // The sources of every package module, by module name, and the packages
@@ -616,7 +634,7 @@ fn read_dependencies(
     case module_name(file) {
       Error(Nil) -> Ok(sources)
       Ok(name) ->
-        simplifile.read(join(location, file))
+        read_text(join(location, file))
         |> result.map(dict.insert(sources, name, _))
         |> result.map_error(cannot_read(join(package.directory, file)))
     }
