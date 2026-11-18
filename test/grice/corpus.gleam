@@ -41,8 +41,9 @@ const pins = "test/corpus"
 /// The Gleam core team's packages in the corpus, by name: the gate and the
 /// benchmark run over them.
 pub const core = [
-  "gleam_crypto", "gleam_erlang", "gleam_http", "gleam_httpc", "gleam_json",
-  "gleam_otp", "gleam_regexp", "gleam_stdlib", "gleam_time", "gleam_yielder",
+  "gleam_crypto", "gleam_erlang", "gleam_fetch", "gleam_http", "gleam_httpc",
+  "gleam_javascript", "gleam_json", "gleam_otp", "gleam_regexp", "gleam_stdlib",
+  "gleam_time", "gleam_yielder",
 ]
 
 /// The community packages in the corpus, by name: only the benchmark runs
