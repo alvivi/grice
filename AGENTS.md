@@ -31,6 +31,8 @@ yet.
 gleam format --check src/ test/   # check formatting
 gleam build --warnings-as-errors  # compile; no warnings allowed
 gleam test                        # run the test suite
+gleam build --warnings-as-errors --target javascript
+gleam test --target javascript    # the suite again, on Node
 gleam run -m birdie stale check   # no unused snapshots, after the tests
 gleam run -m grice/bench          # performance budgets over the corpus
 ```
@@ -39,10 +41,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the local dev loop and the code,
 changelog and commit conventions.
 
 Tests use **gleeunit** and live in `test/`, with **birdie** snapshots of
-the text grice prints in `test/birdie_snapshots/`. The corpus gate runs the
-built-in rules over the packages pinned in `test/corpus/`, and the
-benchmark checks grice's speed over them against budgets; CONTRIBUTING.md
-says how to bump either.
+the text grice prints in `test/birdie_snapshots/`. The suite runs on both
+targets; the few tests of what only Erlang has carry `@target(erlang)`.
+The corpus gate runs the built-in rules over the packages pinned in
+`test/corpus/`, and the benchmark checks grice's speed over them against
+budgets; CONTRIBUTING.md says how to bump either.
 
 ## Architecture
 

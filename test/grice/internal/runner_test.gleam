@@ -13,7 +13,6 @@
 import girard
 import glance
 import gleam/dict.{type Dict}
-import gleam/dynamic.{type Dynamic}
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -75,8 +74,8 @@ pub fn queries_on_a_module_girard_returned_nothing_for_test() {
   let assert [note, ..reports] = linted.diagnostics
   assert support.describe(reports)
     == [
-      "fixture/every-query src/app.gleam: Error(NotInferred) Error(NotInferred) Error(NotInferred)",
-      "fixture/every-query src/other.gleam: Ok(Named(\"gleam\", \"Int\", [])) Error(NotRecorded) Ok(Scheme([], Fn([], Named(\"gleam\", \"Int\", []))))",
+      "fixture/every-query src/app.gleam: NotInferred NotInferred NotInferred",
+      "fixture/every-query src/other.gleam: gleam.Int NotRecorded fn() -> Int",
     ]
   assert note
     == Diagnostic(
@@ -115,9 +114,9 @@ pub fn no_query_answers_in_a_module_with_an_unavailable_import_test() {
   let assert Ok(linted) = runner.run(project, [every_query()])
   assert support.describe(linted.diagnostics)
     == [
-      "fixture/every-query src/app.gleam: Error(Unavailable([\"gone\"])) Error(Unavailable([\"gone\"])) Error(Unavailable([\"gone\"]))",
+      "fixture/every-query src/app.gleam: Unavailable(gone) Unavailable(gone) Unavailable(gone)",
       "grice/unavailable-import src/app.gleam: girard couldn't use this",
-      "fixture/every-query src/other.gleam: Ok(Named(\"gleam\", \"Int\", [])) Error(NotRecorded) Ok(Scheme([], Fn([], Named(\"gleam\", \"Int\", []))))",
+      "fixture/every-query src/other.gleam: gleam.Int NotRecorded fn() -> Int",
     ]
   // It still counts as partial.
   assert linted.coverage
@@ -157,7 +156,7 @@ pub fn a_run_infers_once_for_every_typed_rule_test() {
       ],
       [#("dep/box", support.box)],
     )
-  take_mailbox()
+  let inferences = support.new_counter()
   let assert Ok(_) =
     runner.run_with(
       project,
@@ -174,11 +173,11 @@ pub fn a_run_infers_once_for_every_typed_rule_test() {
           |> rule.final(fn(_summaries) { [] }),
       ],
       infer: fn(project) {
-        send_self(dynamic.string("inferred"))
+        support.increment(inferences)
         typing.infer(project, typing.resolver(project))
       },
     )
-  assert take_mailbox() == [dynamic.string("inferred")]
+  assert support.count(inferences) == 1
 }
 
 // Root
@@ -214,7 +213,7 @@ pub fn typed_runs_dont_depend_on_the_working_directory_test() {
   let assert [relative_run, absolute_run] = runs
   assert support.describe(relative_run.diagnostics)
     == [
-      "fixture/typed-calls src/app.gleam: Ok(Named(\"shapes/square\", \"Square\", []))",
+      "fixture/typed-calls src/app.gleam: shapes/square.Square",
     ]
   assert relative_run.coverage
     == coverage.Coverage(
@@ -507,12 +506,17 @@ pub fn a_syntax_only_run_never_infers_and_reports_only_parse_errors_test() {
 }
 
 // Parallel work
+//
+// On Erlang, rules run in worker processes. Elsewhere the map is
+// sequential, so these tests are Erlang's only.
 
+@target(erlang)
 const two_modules = [
   #("src/one.gleam", "pub fn f() { 1 }\n"),
   #("src/two.gleam", "pub fn g() { 2 }\n"),
 ]
 
+@target(erlang)
 pub fn module_hooks_run_outside_the_calling_process_test() {
   let where_hooks_run =
     support.on_module_end("fixture/where", fn(_facts) {
@@ -523,6 +527,7 @@ pub fn module_hooks_run_outside_the_calling_process_test() {
   assert !list.contains(ran_in, process_label())
 }
 
+@target(erlang)
 pub fn project_summaries_run_outside_the_calling_process_test() {
   let where_summaries_run =
     rule.project("fixture/where", title: "Made in a test")
@@ -1195,12 +1200,20 @@ fn every_query() -> Rule {
       function.definition.name == "main"
     })
   let assert Ok(glance.Expression(last)) = list.last(main.definition.body)
+  let resolution = case facts.resolution_of(module_facts, last.location) {
+    Ok(_resolution) -> "Resolved"
+    Error(unknown) -> support.describe_unknown(unknown)
+  }
+  let signature = case facts.signature(module_facts, "main") {
+    Ok(scheme) -> girard.type_to_string(scheme.type_)
+    Error(unknown) -> support.describe_unknown(unknown)
+  }
   [
     support.at_start(
       [
-        string.inspect(facts.type_of(module_facts, last.location)),
-        string.inspect(facts.resolution_of(module_facts, last.location)),
-        string.inspect(facts.signature(module_facts, "main")),
+        support.describe_type(facts.type_of(module_facts, last.location)),
+        resolution,
+        signature,
       ]
       |> string.join(" "),
     ),
@@ -1226,6 +1239,7 @@ fn panics_if_run() -> Rule {
 }
 
 // The process that calls it, as a label.
+@target(erlang)
 fn process_label() -> String {
   string.inspect(self_pid())
 }
@@ -1282,14 +1296,9 @@ fn is_rejected(code: String) -> Bool {
   result.is_error(check_rules([support.named(code)]))
 }
 
+@target(erlang)
 type Pid
 
+@target(erlang)
 @external(erlang, "grice_test_ffi", "self_pid")
 fn self_pid() -> Pid
-
-@external(erlang, "grice_test_ffi", "send_self")
-fn send_self(message: Dynamic) -> Nil
-
-// Every message in the mailbox, oldest first, removed from it.
-@external(erlang, "grice_test_ffi", "take_mailbox")
-fn take_mailbox() -> List(Dynamic)

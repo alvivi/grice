@@ -8,7 +8,6 @@ import birdie
 import girard
 import gleam/bool
 import gleam/dict
-import gleam/dynamic.{type Dynamic}
 import gleam/list
 import gleam/option.{Some}
 import gleam/string
@@ -214,7 +213,7 @@ pub fn a_syntax_only_run_never_reads_the_installed_dependencies_test() {
 }
 
 pub fn a_typed_run_reads_the_installed_dependencies_once_test() {
-  take_mailbox()
+  let reads = support.new_counter()
   testing.module(quiet_main)
   |> testing.run_with(
     [
@@ -223,12 +222,12 @@ pub fn a_typed_run_reads_the_installed_dependencies_once_test() {
       main_signature(),
     ],
     installed: fn() {
-      send_self(dynamic.string("read"))
+      support.increment(reads)
       Ok(#(dict.new(), []))
     },
   )
   |> testing.expect_codes(["fixture/main-signature"])
-  assert take_mailbox() == [dynamic.string("read")]
+  assert support.count(reads) == 1
 }
 
 // The directory is never created, so it has no `manifest.toml`, as when
@@ -460,33 +459,16 @@ fn main_signature() -> Rule {
     )
     let label = case facts.signature(module_facts, "main") {
       Ok(scheme) -> girard.type_to_string(scheme.type_)
-      Error(unknown) -> string.inspect(unknown)
+      Error(unknown) -> support.describe_unknown(unknown)
     }
     #(context, [rule.report(at: function.definition.location, label:)])
   })
   |> rule.build
 }
 
-type Exception {
-  Exception(class: Dynamic, reason: Dynamic, stack: Dynamic)
-}
-
 // The message of the panic `run` raises.
 fn panic_of(run: fn() -> a) -> String {
-  let assert Error(Exception(reason:, ..)) = rescue(run) as "expected a panic"
-  let assert Ok(message) = panic_message(reason) as "expected a Gleam panic"
+  let assert Ok(message) = support.panic_message(run)
+    as "expected a Gleam panic"
   message
 }
-
-@external(erlang, "grice_test_ffi", "rescue")
-fn rescue(run: fn() -> a) -> Result(a, Exception)
-
-@external(erlang, "grice_test_ffi", "panic_message")
-fn panic_message(reason: Dynamic) -> Result(String, Nil)
-
-@external(erlang, "grice_test_ffi", "send_self")
-fn send_self(message: Dynamic) -> Nil
-
-// Every message in the mailbox, oldest first, removed from it.
-@external(erlang, "grice_test_ffi", "take_mailbox")
-fn take_mailbox() -> List(Dynamic)
