@@ -85,7 +85,7 @@ pub fn download() -> Nil {
       <> root
       <> "/manifest.toml over "
       <> pins
-      <> "/manifest.toml, then review the gate's snapshot and re-measure the budgets."
+      <> "/manifest.toml, then check that the gate passes and re-measure the budgets."
     }
 }
 
