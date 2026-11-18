@@ -12,6 +12,12 @@
 //// of an expression, what a name or field access resolved to, and the type
 //// of a top-level definition. A typed query never guesses: when girard has
 //// no answer, it says why with an `Unknown`.
+////
+//// Spans count what glance counts on the target grice runs on: bytes on
+//// Erlang and UTF-16 code units on JavaScript. The syntax tree, the
+//// comments and the type queries all count the same units, so a rule can
+//// compare their spans and pass them to `rule.report` as they are; grice
+//// turns them into the byte offsets of its diagnostics.
 
 import girard
 import glance
@@ -22,7 +28,6 @@ import gleam/option.{type Option, None, Some}
 import gleam/pair
 import gleam/result
 import gleam/set
-import gleam/string
 import glexer
 import glexer/token.{type Token}
 import grice/internal/config.{type Target}
@@ -65,7 +70,8 @@ pub fn path(facts: ModuleFacts(kind)) -> String {
   facts.path
 }
 
-/// The module's source. Spans in the syntax tree are byte offsets into it.
+/// The module's source. Spans in the syntax tree are offsets into it, in
+/// glance's units: bytes on Erlang and UTF-16 code units on JavaScript.
 pub fn source(facts: ModuleFacts(kind)) -> String {
   line_index.source(facts.source)
 }
@@ -100,7 +106,7 @@ pub fn new(
     source: module.source,
     module: view,
     imports: module.imports,
-    comments: read_comments(line_index.source(module.source), syntax, view),
+    comments: read_comments(module.source, syntax, view),
     types:,
   )
 }
@@ -150,8 +156,8 @@ pub fn definitions(module: glance.Module) -> List(#(String, glance.Span)) {
 pub type Comment {
   Comment(
     kind: CommentKind,
-    /// The comment's bytes in the source: its `//`, `///` or `////`, and
-    /// the rest of its line, without the line ending.
+    /// The comment's span in the source, in glance's units: its `//`,
+    /// `///` or `////`, and the rest of its line, without the line ending.
     span: glance.Span,
     /// What follows the `//`, `///` or `////`, such as `" TODO"` for
     /// `// TODO`.
@@ -179,28 +185,32 @@ pub fn comments(facts: ModuleFacts(kind)) -> List(Comment) {
 // The comments of `source`, except those inside a definition of `module`
 // that `view`, its target view, leaves out.
 fn read_comments(
-  source: String,
+  source: LineIndex,
   module: glance.Module,
   view: glance.Module,
 ) -> List(Comment) {
   let kept = set.from_list(definition_spans(view))
   let dropped =
     list.filter(definition_spans(module), fn(span) { !set.contains(kept, span) })
+  let units = line_index.units(source)
   use #(token, glexer.Position(byte_offset: start)) <- list.filter_map(
-    glexer.new(source) |> glexer.discard_whitespace |> glexer.lex,
+    glexer.new(line_index.source(source))
+    |> glexer.discard_whitespace
+    |> glexer.lex,
   )
   use #(kind, marker, text) <- result.try(comment_token(token))
   use <- bool.guard(
     when: list.any(dropped, fn(span) { span.start <= start && start < span.end }),
     return: Error(Nil),
   )
-  // glexer gives a byte offset and the text after the marker, without the
-  // `\r` of a CRLF line ending, so the end is counted in bytes.
-  let end = start + marker + string.byte_size(text)
+  // glexer gives an offset in glance's units and the text after the
+  // marker, without the `\r` of a CRLF line ending, so the end is counted
+  // in those units too.
+  let end = start + marker + line_index.length(text, in: units)
   Ok(Comment(kind:, span: glance.Span(start, end), text:))
 }
 
-// A comment token's kind, the byte size of its marker and its text.
+// A comment token's kind, the length of its marker and its text.
 fn comment_token(token: Token) -> Result(#(CommentKind, Int, String), Nil) {
   case token {
     token.CommentNormal(text) -> Ok(#(Regular, 2, text))

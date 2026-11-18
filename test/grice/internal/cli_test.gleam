@@ -5,6 +5,8 @@
 
 import birdie
 import glance
+import gleam/bit_array
+import gleam/dict
 import gleam/dynamic/decode
 import gleam/int
 import gleam/json
@@ -17,6 +19,7 @@ import grice/diagnostic.{Diagnostic, Label, Location, Span}
 import grice/fixture_rules
 import grice/internal/cli
 import grice/internal/config
+import grice/internal/line_index
 import grice/internal/loader.{type LoadError, type Project}
 import grice/rule.{type Rule}
 import grice/support
@@ -380,6 +383,64 @@ pub fn a_run_that_cant_render_test() {
     )
   let project = loader.Project(..project_of("x\n"), diagnostics: [broken])
   snap_failure(environment(), Ok(project), echo_rules(), "with a render error")
+}
+
+// Byte order marks
+//
+// A file is read as its bytes, with every leading U+FEFF, on both targets,
+// so a module starting with one doesn't parse, as glance stops at it. The
+// files are written to disk byte by byte and loaded from there, since a
+// project in memory starts after decoding.
+
+pub fn leading_byte_order_marks_are_kept_test() {
+  let directory = support.fixture_directory("byte_order_marks")
+  let root = support.absolute(directory)
+  let mark = <<0xEF, 0xBB, 0xBF>>
+  let module = <<"pub fn main() {\n  1\n}\n":utf8>>
+  let cases = [
+    #("One mark", <<mark:bits, module:bits>>, 1),
+    #("Two marks", <<mark:bits, mark:bits, module:bits>>, 1),
+    #("Only a mark", mark, 1),
+    #("A mark and bytes that aren't UTF-8", <<mark:bits, 0xFF>>, 2),
+  ]
+  let outputs =
+    list.map(cases, fn(entry) {
+      let #(name, bytes, exit_code) = entry
+      support.write_fixture(directory, [
+        #("gleam.toml", "name = \"app\"\n"),
+        #("manifest.toml", "packages = []\n"),
+      ])
+      support.write_bytes(directory <> "/src/app.gleam", bytes)
+      let outcome =
+        cli.execute(
+          [],
+          support.environment(root),
+          loader.load_project,
+          [],
+          support.counting_sample(),
+        )
+      assert outcome.exit_code == exit_code
+      assert outcome.stderr == ""
+      // The source is every byte of the file.
+      case loader.load_project(root) {
+        Ok(project) -> {
+          let assert Ok(loaded) = dict.get(project.modules, "app")
+          assert bit_array.from_string(line_index.source(loaded.source))
+            == bytes
+        }
+        Error(_cannot_read) -> Nil
+      }
+      name
+      <> ", exit code "
+      <> int.to_string(outcome.exit_code)
+      <> ":\n\n"
+      <> outcome.stdout
+    })
+  support.cleanup(directory)
+  birdie.snap(
+    string.join(outputs, "\n"),
+    title: "cli: leading byte order marks",
+  )
 }
 
 // Helpers

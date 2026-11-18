@@ -18,6 +18,7 @@ import gleam/string
 import grice/diagnostic.{Diagnostic, Label}
 import grice/facts.{type ModuleFacts, type Syntax, type Typed}
 import grice/fixture_rules
+import grice/internal/line_index
 import grice/internal/typing
 import grice/rule.{type Report, type Rule}
 import grice/support
@@ -263,7 +264,7 @@ fn findings_on_target(target: String) -> List(String) {
 // Comments
 //
 // The comments `facts.comments` gives, which glance's syntax tree leaves
-// out, with their spans in bytes.
+// out, with their spans in glance's units.
 
 pub fn comments_come_in_source_order_with_kind_span_and_text_test() {
   let source =
@@ -285,12 +286,18 @@ pub fn main() {
     ]
 }
 
-// Spans are bytes: `é` is two and `🙂` four, so the first comment spans
-// 13, and the `\r` of each line ending is in neither the text nor the span.
-pub fn comment_spans_count_bytes_and_skip_carriage_returns_test() {
+// Spans count what the syntax tree counts: on Erlang `é` is two bytes and
+// `🙂` four, so the first comment spans 13, and on JavaScript they're one
+// and two UTF-16 code units, so it spans 10. The `\r` of each line ending
+// is in neither the text nor the span.
+pub fn comment_spans_count_glances_units_and_skip_carriage_returns_test() {
   let source = "// café 🙂\r\npub fn main() {\r\n  1 // one\r\n}\r\n"
+  let first = case line_index.tree_units() {
+    line_index.Bytes -> "// 0-13 \" café 🙂\""
+    line_index.CodeUnits -> "// 0-10 \" café 🙂\""
+  }
   assert comments_of("", source)
-    == ["// 0-13 \" café 🙂\"", expected_comment(source, "//", " one")]
+    == [first, expected_comment(source, "//", " one")]
 }
 
 const target_comments =

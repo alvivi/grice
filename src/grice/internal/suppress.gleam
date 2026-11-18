@@ -97,13 +97,20 @@ fn suppress_module(
 ) -> #(List(Diagnostic), List(Diagnostic)) {
   let path = facts.path(module_facts)
   let index = facts.line_index(module_facts)
-  let definitions = facts.definitions(facts.module(module_facts))
+  let definitions = case
+    list.any(config.ignore, fn(ignore) { ignore.definitions != None })
+  {
+    True -> byte_definitions(module_facts, index)
+    False -> []
+  }
   let #(ignored, left) =
     list.partition(candidates, fn(candidate) {
       list.any(config.ignore, hides(_, candidate, definitions))
     })
   let #(suppressions, problems) =
-    result.partition(read(module_facts, config.suppression_comments))
+    byte_comments(module_facts, index)
+    |> read(index, config.suppression_comments)
+    |> result.partition
   let covered =
     list.map(suppressions, fn(suppression) {
       #(suppression, list.filter(left, covers(suppression, _, index)))
@@ -130,13 +137,28 @@ fn suppress_module(
   #(list.map(hidden, pair.first), warnings)
 }
 
+// The name and byte span of each top-level definition but the imports,
+// for the ignores that name definitions. A definition whose span can't be
+// turned into bytes is left out, so no ignore hides a diagnostic by it.
+fn byte_definitions(
+  module_facts: ModuleFacts(Syntax),
+  index: LineIndex,
+) -> List(#(String, diagnostic.Span)) {
+  use #(name, span) <- list.filter_map(
+    facts.definitions(facts.module(module_facts)),
+  )
+  line_index.span_to_bytes(index, span)
+  |> result.map(pair.new(name, _))
+  |> result.replace_error(Nil)
+}
+
 // An entry hides a diagnostic when one of its globs matches the path, the
 // code is one of its rules, and, when it names definitions, the primary
 // span starts inside a top-level definition whose name matches.
 fn hides(
   ignore: Ignore,
   candidate: #(Diagnostic, Location),
-  definitions: List(#(String, glance.Span)),
+  definitions: List(#(String, diagnostic.Span)),
 ) -> Bool {
   let #(diagnostic, location) = candidate
   let start = location.primary.span.start
@@ -164,9 +186,10 @@ fn hides(
 //
 // A comment is a suppression when it's a regular `//` comment whose text,
 // after leading spaces and tabs, starts with `grice-ignore`. Placement and
-// reach are worked out over the source and the comments the facts keep, so
-// one inside a definition left out for the other target isn't there:
-// skipping whitespace and comments finds the next byte of code.
+// reach are worked out over the source's bytes and the comments the facts
+// keep, their spans turned into bytes, so one inside a definition left out
+// for the other target isn't there: skipping whitespace and comments finds
+// the next byte of code.
 
 // A suppression grice can use: the rule it names and what it covers.
 type Suppression {
@@ -208,14 +231,33 @@ fn covers(
   }
 }
 
-// Every suppression of the module, or its comment with why grice can't use
-// it, in source order.
-fn read(
+// The module's comments, in source order, with byte spans. A comment
+// whose span can't be turned into bytes is left out, so a suppression in
+// it hides nothing.
+fn byte_comments(
   module_facts: ModuleFacts(Syntax),
+  index: LineIndex,
+) -> List(Comment) {
+  let comments = facts.comments(module_facts)
+  use <- bool.guard(
+    when: line_index.units(index) == line_index.Bytes,
+    return: comments,
+  )
+  use comment <- list.filter_map(comments)
+  line_index.span_to_bytes(index, comment.span)
+  |> result.map(fn(span) {
+    facts.Comment(..comment, span: glance.Span(span.start, span.end))
+  })
+  |> result.replace_error(Nil)
+}
+
+// Every suppression among `comments`, those of the module, or its comment
+// with why grice can't use it, in source order.
+fn read(
+  comments: List(Comment),
+  index: LineIndex,
   enabled: Bool,
 ) -> List(Result(Suppression, #(Comment, Problem))) {
-  let comments = facts.comments(module_facts)
-  let index = facts.line_index(module_facts)
   use comment <- list.filter_map(comments)
   case comment.kind, trim_start(comment.text), enabled {
     facts.Regular, "grice-ignore" <> _ as text, True ->

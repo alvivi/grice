@@ -436,12 +436,13 @@ fn row(gutter: String, content: String) -> String {
 }
 
 // Spans have been checked to fall on codepoint boundaries, so the bytes are
-// valid UTF-8.
+// valid UTF-8. They're decoded keeping a leading byte order mark, which
+// the source row shows as the file holds it.
 fn slice(source: LineIndex, start: Int, end: Int) -> String {
   line_index.source(source)
   |> bit_array.from_string
   |> bit_array.slice(start, end - start)
-  |> result.try(bit_array.to_string)
+  |> result.try(line_index.decode)
   |> result.unwrap("")
 }
 

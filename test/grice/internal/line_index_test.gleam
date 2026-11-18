@@ -1,8 +1,12 @@
 //// Tests for the line index: line counts, positions, line ranges and span
-//// checks, in that order. Sources with `\r` are written as string literals
-//// with escapes, because the repository forces LF line endings on committed
+//// checks, in that order, then turning glance's offsets into bytes, and
+//// decoding. Sources with `\r` are written as string literals with
+//// escapes, because the repository forces LF line endings on committed
 //// files.
 
+import glance
+import gleam/list
+import gleam/string
 import grice/diagnostic.{Span}
 import grice/internal/line_index.{
   OutOfBounds, Position, Reversed, SplitsCodepoint, SplitsLineEnding,
@@ -272,4 +276,100 @@ pub fn check_edit_span_checks_label_rules_first_test() {
     == Error(OutOfBounds)
   assert line_index.check_edit_span(line_index.new("ab\r\n"), Span(3, 2))
     == Error(Reversed)
+}
+
+// glance's offsets
+//
+// glance counts bytes on Erlang and UTF-16 code units on JavaScript. An
+// index built for code units turns them into bytes on either target: `é`
+// is one code unit and two bytes, `€` one and three, and `🙂` two and
+// four.
+
+const mixed = "a é b € c 🙂 d"
+
+pub fn to_bytes_is_the_identity_for_bytes_test() {
+  let index = line_index.new_for(mixed, line_index.Bytes)
+  assert line_index.units(index) == line_index.Bytes
+  assert line_index.to_bytes(index, 3) == Ok(3)
+  // Unchecked: `check_span` checks bytes.
+  assert line_index.to_bytes(index, 99) == Ok(99)
+  assert line_index.tree_size(index) == 19
+}
+
+pub fn to_bytes_is_the_identity_for_code_units_in_ascii_test() {
+  let index = line_index.new_for("ab\ncd", line_index.CodeUnits)
+  assert line_index.units(index) == line_index.Bytes
+  assert line_index.to_bytes(index, 4) == Ok(4)
+}
+
+pub fn to_bytes_counts_every_character_before_an_offset_test() {
+  let index = line_index.new_for(mixed, line_index.CodeUnits)
+  assert line_index.units(index) == line_index.CodeUnits
+  assert line_index.tree_size(index) == 14
+  // Each character as code units, then bytes: `a` 0, `é` 2, `b` 4, `€` 6,
+  // `c` 8, `🙂` 10, `d` 13, and the end at 14.
+  assert list.map([0, 2, 3, 4, 6, 7, 8, 10, 12, 13, 14], line_index.to_bytes(
+      index,
+      _,
+    ))
+    == [
+      Ok(0),
+      Ok(2),
+      Ok(4),
+      Ok(5),
+      Ok(7),
+      Ok(10),
+      Ok(11),
+      Ok(13),
+      Ok(17),
+      Ok(18),
+      Ok(19),
+    ]
+}
+
+// Offset 11 falls between the two code units of `🙂`.
+pub fn to_bytes_rejects_offsets_inside_a_character_or_outside_the_source_test() {
+  let index = line_index.new_for(mixed, line_index.CodeUnits)
+  assert line_index.to_bytes(index, 11) == Error(SplitsCodepoint)
+  assert line_index.to_bytes(index, -1) == Error(OutOfBounds)
+  assert line_index.to_bytes(index, 15) == Error(OutOfBounds)
+}
+
+pub fn to_bytes_finds_offsets_among_many_characters_test() {
+  let source = string.repeat("é🙂\n", 50)
+  let index = line_index.new_for(source, line_index.CodeUnits)
+  // Each line is four code units and seven bytes.
+  assert line_index.to_bytes(index, 4 * 37) == Ok(7 * 37)
+  assert line_index.to_bytes(index, 4 * 37 + 1) == Ok(7 * 37 + 2)
+  assert line_index.to_bytes(index, 4 * 37 + 2) == Error(SplitsCodepoint)
+  assert line_index.to_bytes(index, 4 * 37 + 3) == Ok(7 * 37 + 6)
+  assert line_index.to_bytes(index, 200) == Ok(350)
+}
+
+pub fn span_to_bytes_converts_both_ends_test() {
+  let index = line_index.new_for(mixed, line_index.CodeUnits)
+  assert line_index.span_to_bytes(index, glance.Span(2, 14)) == Ok(Span(2, 19))
+  assert line_index.span_to_bytes(index, glance.Span(2, 11))
+    == Error(SplitsCodepoint)
+}
+
+pub fn utf16_length_counts_code_units_on_every_target_test() {
+  assert line_index.utf16_length("") == 0
+  assert line_index.utf16_length(mixed) == 14
+  assert line_index.utf16_length("\u{FEFF}") == 1
+}
+
+pub fn length_counts_the_units_given_test() {
+  assert line_index.length("é🙂", in: line_index.Bytes) == 6
+  assert line_index.length("é🙂", in: line_index.CodeUnits) == 3
+}
+
+// Decoding
+//
+// The leading byte order marks are checked through the loader, on files
+// written to disk, in `cli_test`.
+
+pub fn decode_takes_empty_input_and_rejects_bytes_that_arent_utf8_test() {
+  assert line_index.decode(<<>>) == Ok("")
+  assert line_index.decode(<<0xFF, 0xFE>>) == Error(Nil)
 }

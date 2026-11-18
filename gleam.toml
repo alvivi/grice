@@ -26,8 +26,11 @@ glance = ">= 7.0.0 and < 8.0.0"
 # the same glance syntax trees the rules see, so their spans agree.
 girard = ">= 4.0.1 and < 5.0.0"
 # glance's lexer, used directly for the text of the token a parse error
-# points at. It must be a direct dependency to be imported.
-glexer = ">= 2.5.0 and < 3.0.0"
+# points at, and for comments. It must be a direct dependency to be
+# imported. Its offsets count bytes on Erlang and UTF-16 code units on
+# JavaScript, which grice converts from, and that has changed within 2.x
+# before, so the range holds only the releases grice has been checked on.
+glexer = ">= 2.5.0 and < 2.6.0"
 # File system access: walking the source directories and reading files.
 simplifile = ">= 2.4.0 and < 3.0.0"
 # Display widths and tab stops, to line up the carets under a source line.
