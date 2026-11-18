@@ -38,6 +38,7 @@ gleam format --check src/ test/       # formatting
 gleam build --warnings-as-errors      # no warnings allowed
 gleam test                            # full suite
 gleam run -m birdie stale check       # no snapshot left unused, after the tests
+gleam run -m grice/bench              # performance budgets, after the tests
 ```
 
 `gleam format src/ test/` (no `--check`) fixes formatting in place. When a
@@ -65,7 +66,7 @@ in the same change.
   in `build/fixtures/cli/`. The fixture keeps its build between runs, so
   only its first run resolves its dependencies, which needs the network.
 
-## Corpus
+## Corpus and benchmark
 
 [`corpus/`](corpus/) is a Gleam project with no modules whose dependencies
 are the corpus: Hex packages grice is checked over. Its
@@ -87,9 +88,33 @@ every coverage gap. A built-in rule is on by default only if it runs clean
 on these packages, so review a change to the snapshot like any other: it
 says what grice now reports on idiomatic Gleam.
 
+`gleam run -m grice/bench` runs the benchmark,
+[`test/grice/bench.gleam`](test/grice/bench.gleam), over every package of
+the corpus. It measures four scenarios, each a rule set that never
+reports: no rule, a syntax rule with every hook, a typed rule that asks
+the type of every expression, and a project rule. Each scenario runs a
+warm-up pass and three measured passes, and the benchmark prints the
+medians of loading and linting. Every pass checks that it analysed the
+whole corpus (no diagnostic, every module parsed, every module typed in
+the typed scenario, and the pinned module and line totals), and fails the
+run before any budget is compared if it didn't, since a pass over less
+code would fit any budget.
+
+The budgets are reductions, the runtime's count of work done, which
+barely move between runs and machines; milliseconds are printed but
+never checked. There's one budget for loading and one for each
+scenario's linting, set to a measurement plus 10%, as constants in
+`bench.gleam` with the OTP, Gleam and girard versions they were measured
+on. Move them in the same change that bumps any of those versions or the
+corpus, or that makes grice faster or slower on purpose. The benchmark
+prints the constants its run would set, ready to paste. CI runs it on
+the pinned pair only.
+
 To bump a package, change its version in `corpus/gleam.toml` and run
-`gleam deps download` in `corpus/`, which rewrites the manifest. Review the
-gate's snapshot in the same change, even when nothing in it moved.
+`gleam deps download` in `corpus/`, which rewrites the manifest. In the
+same change, review the gate's snapshot and re-measure the budgets and
+the corpus totals, even when the totals didn't move: the same counts can
+hide different code.
 
 ## Conventions
 

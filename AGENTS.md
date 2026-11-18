@@ -21,8 +21,9 @@ line index, the human renderer, project loading (configuration, discovery,
 the load set and dependency sources), the rule API (`grice/visit`,
 `grice/facts`, `grice/rule`) with its runner, type facts from girard with
 the coverage notes, ignores and suppression comments, the library API, the
-command line, the JSON output, the testing kit and the corpus gate over the
-core packages have landed; there are no built-in rules yet.
+command line, the JSON output, the testing kit, the corpus gate over the
+core packages and the benchmark have landed; there are no built-in rules
+yet.
 
 ## Build and Test
 
@@ -31,6 +32,7 @@ gleam format --check src/ test/   # check formatting
 gleam build --warnings-as-errors  # compile; no warnings allowed
 gleam test                        # run the test suite
 gleam run -m birdie stale check   # no unused snapshots, after the tests
+gleam run -m grice/bench          # performance budgets over the corpus
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the local dev loop and the code,
@@ -38,8 +40,9 @@ changelog and commit conventions.
 
 Tests use **gleeunit** and live in `test/`, with **birdie** snapshots of
 the text grice prints in `test/birdie_snapshots/`. The corpus gate runs the
-built-in rules over the pinned packages in `corpus/`; CONTRIBUTING.md says
-how to bump them.
+built-in rules over the pinned packages in `corpus/`, and the benchmark
+checks grice's speed over them against budgets; CONTRIBUTING.md says how
+to bump either.
 
 ## Architecture
 

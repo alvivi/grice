@@ -1,13 +1,13 @@
 %% What the tests need from Erlang that Gleam can't express: catching an
 %% exception and reading a panic's message, process identity, timing, the
-%% mailbox, a clock that counts and running a program.
+%% mailbox, a clock that counts, running a program and the OTP release.
 -module(grice_test_ffi).
 
 -export([rescue/1, panic_message/1, class/1, raise_sentinel/1, sentinel/1,
          self_pid/0, schedulers_online/0, sleep/1, kill_self/0, block/0,
          worker_exit_killed/0, take_mailbox/0, send_self/1,
          monitor_exit_after/1, caller_death/1, counting_sample/0,
-         run_gleam/3, once/2]).
+         run_gleam/3, once/2, otp_release/0]).
 
 %% `{ok, Result}' when `F' returns, and `{error, {exception, Class, Reason,
 %% Stack}}' when it raises an exception of any class.
@@ -168,3 +168,7 @@ once(Key, F) ->
             persistent_term:put(Flag, true),
             nil
     end.
+
+%% The OTP release the runtime belongs to, such as `<<"28">>'.
+otp_release() ->
+    list_to_binary(erlang:system_info(otp_release)).
