@@ -59,3 +59,10 @@ jobs:
       - name: Check for stale snapshots
         if: matrix.name == 'pinned'
         run: gleam run -m birdie stale check
+
+      # The benchmark's budgets are for the pinned pair, so only its job
+      # runs it, over the corpus the tests downloaded. It fails when a pass
+      # didn't analyse the whole corpus or a phase is over its budget.
+      - name: Benchmark
+        if: matrix.name == 'pinned'
+        run: gleam run -m grice/bench
