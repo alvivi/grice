@@ -99,51 +99,19 @@ Modules in `dev/` can use dev dependencies, and they aren't linted unless
 ### Testing your rules
 
 `grice/testing` runs rules over a small project built in memory, the way
-`grice.run` runs them over yours. It works with any test runner, and a
-snapshot library such as [birdie](https://hexdocs.pm/birdie) shows what a
-rule reports:
-
-```sh
-gleam add --dev birdie
-```
+`grice.run` runs them over yours. It needs no other dependency and works
+with any test runner:
 
 ```gleam
-import birdie
 import grice/testing
 import my_rules/no_echo
 
 pub fn no_echo_reports_each_echo_test() {
-  testing.module("pub fn main() {\n  echo 1\n}\n")
+  testing.module("pub fn main() {\n  echo 1\n  echo 2\n}\n")
   |> testing.run([no_echo.rule()])
-  |> testing.render
-  |> birdie.snap(title: "no_echo reports each echo")
+  |> testing.expect_codes(["my_rules/no-echo", "my_rules/no-echo"])
 }
-```
 
-`testing.module` is a project with one module, `src/app.gleam`. A new
-snapshot fails its test until you review it with `gleam run -m birdie`. It
-shows the fixture, then what grice prints for it:
-
-```text
--- src/app.gleam
-pub fn main() {
-  echo 1
-}
--- output
-warning[my_rules/no-echo]: Echo left in the code
-  ┌─ src/app.gleam:2:3
-  │
-2 │   echo 1
-  │   ^^^^^^ This prints when it runs
-
-1 warning in 1 module.
-```
-
-`testing.expect_none` checks that a run shows no diagnostic, and
-`testing.expect_codes` that it shows exactly the codes given, in order.
-Each panics with the run's output when it doesn't:
-
-```gleam
 pub fn no_echo_is_silent_without_echo_test() {
   testing.module("pub fn main() {\n  1\n}\n")
   |> testing.run([no_echo.rule()])
@@ -151,35 +119,14 @@ pub fn no_echo_is_silent_without_echo_test() {
 }
 ```
 
-`testing.project` takes the files of a project, `gleam.toml` included, for
-a rule that looks at several modules or depends on the configuration:
+`testing.module` is a project with one module, `src/app.gleam`.
+`testing.expect_codes` checks that the run shows exactly the codes given,
+in order, and `testing.expect_none` that it shows none. When they don't
+match, the test fails with the fixture and what grice printed for it.
 
-```gleam
-testing.project([
-  #("gleam.toml", "target = \"javascript\"\n"),
-  #("src/app.gleam", "import app/view\n"),
-  #("src/app/view.gleam", "pub fn main() {\n  echo 1\n}\n"),
-])
-```
-
-A typed rule gets its answers from the dependencies installed for your
-project, so a fixture can import `gleam/list`, or any module your code can.
-grice reads them through `manifest.toml` in the working directory, so run
-`gleam test` from the project root. Where girard can't type the code, a
-typed rule should stay silent, and grice adds a note saying so. A test of
-that silence expects the note:
-
-```gleam
-pub fn discarded_result_is_silent_over_a_gap_test() {
-  testing.module("pub fn main() {\n  let _ = 1 + \"one\"\n}\n")
-  |> testing.run([discarded_result.rule()])
-  |> testing.expect_codes(["grice/untyped-definition"])
-}
-```
-
-A run that couldn't prove anything panics with the reason: an invalid
-`gleam.toml`, a module to lint that doesn't parse, or an invalid rule set.
-The `grice/testing` docs describe each function.
+[Testing rules](https://github.com/alvivi/grice/blob/main/docs/TESTING.md)
+covers projects with several modules, typed rules, and the other ways to
+check a run: reading its diagnostics, and snapshots of what grice prints.
 
 ### JavaScript projects
 
