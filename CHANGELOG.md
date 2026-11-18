@@ -127,5 +127,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rules or a project's own, run it in a JavaScript project and which of
   those can't yet, and lists the options and exit codes. New pages
   document the configuration, every `[tools.grice]` key with its default,
-  the ignores and the suppression comments, and the JSON document with
-  what its stats measure.
+  the ignores and the suppression comments, the JSON document with what
+  its stats measure, and testing rules with `grice/testing`: checking the
+  codes, reading the diagnostics and snapshots.
