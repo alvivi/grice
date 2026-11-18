@@ -1,0 +1,170 @@
+//// The corpus: pinned Hex packages that the corpus gate and the benchmark
+//// run grice over. `corpus/` is a Gleam project with no modules whose
+//// `gleam.toml` pins each package and whose committed `manifest.toml`
+//// pins them with their own dependencies and checksums. `gleam deps
+//// download` in `corpus/` fetches them into `corpus/build/packages/`,
+//// which git ignores.
+////
+//// Each package is loaded from its downloaded directory, with its own
+//// `gleam.toml` and its `src/` as the lint set, and with every module of
+//// the corpus as its dependencies. Those are read once and shared by
+//// every load, as one project with those dependencies would read them.
+//// What can't be loaded or run panics, described as grice describes a
+//// run with no result.
+
+import gleam/dict.{type Dict}
+import gleam/int
+import gleam/list
+import gleam/option.{None, Some}
+import gleam/string
+import grice/coverage.{type Coverage, NotRequested, Requested}
+import grice/diagnostic.{type Diagnostic}
+import grice/internal/cli
+import grice/internal/line_index
+import grice/internal/loader
+import grice/internal/render/human
+import grice/internal/runner
+import grice/rule.{type Rule}
+import grice/support
+import simplifile
+import tom
+
+/// The corpus project's directory, relative to grice's root.
+pub const root = "corpus"
+
+/// The Gleam core team's packages in the corpus, by name: the gate and the
+/// benchmark run over them.
+pub const core = [
+  "gleam_crypto", "gleam_erlang", "gleam_http", "gleam_httpc", "gleam_json",
+  "gleam_otp", "gleam_regexp", "gleam_stdlib", "gleam_time", "gleam_yielder",
+]
+
+/// The community packages in the corpus, by name: only the benchmark runs
+/// over them.
+pub const community = ["girard", "glance", "lustre", "mist", "wisp"]
+
+/// The corpus's installed modules, as `loader.installed` reads them: the
+/// source of every module, by name, and the packages with no `src/`.
+pub type Installed =
+  #(Dict(String, String), List(loader.Package))
+
+/// Download the corpus with `gleam deps download` in `corpus/`, which
+/// checks each package against the manifest, the first time it's called
+/// in this runtime. Once gleam's cache has the packages, it needs no
+/// network. Panics with gleam's output when the download fails.
+pub fn download() -> Nil {
+  use <- support.once("download the corpus")
+  let assert Ok(#(status, stdout, stderr)) =
+    support.run_gleam(
+      support.absolute(root),
+      ["deps", "download"],
+      support.stderr_file("corpus-stderr"),
+    )
+    as "The corpus is downloaded with the gleam on PATH, and there's none."
+  assert status == 0
+    as { "gleam deps download failed in corpus/:\n" <> stdout <> stderr }
+}
+
+/// The directory a downloaded package is in.
+pub fn directory(package: String) -> String {
+  root <> "/build/packages/" <> package
+}
+
+/// The version in the `gleam.toml` of the package in `directory`.
+pub fn version(directory: String) -> String {
+  let path = directory <> "/gleam.toml"
+  let assert Ok(text) = simplifile.read(path) as { "can't read " <> path }
+  let assert Ok(toml) = tom.parse(text) as { path <> " isn't valid TOML" }
+  let assert Ok(version) = tom.get_string(toml, ["version"])
+    as { path <> " has no version" }
+  version
+}
+
+/// Read the corpus's installed modules, once for every package loaded
+/// with them.
+pub fn installed() -> Installed {
+  case loader.installed(root) {
+    Ok(installed) -> installed
+    Error(error) ->
+      fail("Can't read the corpus's installed modules", cli.load_error(error))
+  }
+}
+
+/// Load the downloaded `package` with the corpus's `installed` modules as
+/// its dependencies, less its own modules, so no module has two sources.
+pub fn load(package: String, installed: Installed) -> loader.Project {
+  let loaded =
+    loader.load_project_with(directory(package), installed: fn() {
+      Ok(installed)
+    })
+  case loaded {
+    Ok(project) ->
+      loader.Project(
+        ..project,
+        dependencies: dict.drop(
+          project.dependencies,
+          dict.keys(project.modules),
+        ),
+      )
+    Error(error) ->
+      fail("Can't load the corpus package " <> package, cli.load_error(error))
+  }
+}
+
+/// Run `rules` over a loaded package.
+pub fn lint(project: loader.Project, rules: List(Rule)) -> runner.Linted {
+  case runner.run(project, rules) {
+    Ok(linted) -> linted
+    Error(problems) -> fail("The rule set is invalid", problems)
+  }
+}
+
+/// How much of a package a run analysed: `<modules> modules, <parsed>
+/// parsed, types <full>/<partial>/<none>`.
+pub fn describe_coverage(coverage: Coverage) -> String {
+  let types = case coverage.types {
+    Requested(full:, partial:, none:) ->
+      [full, partial, none] |> list.map(int.to_string) |> string.join("/")
+    NotRequested -> "not requested"
+  }
+  int.to_string(coverage.modules)
+  <> " modules, "
+  <> int.to_string(coverage.parsed)
+  <> " parsed, types "
+  <> types
+}
+
+/// A diagnostic of the run over `package`, loaded as `project`, on one
+/// line: `<package> <path>:<line>:<column> <code>: <primary label>`, or
+/// `<package> <code>: <title>` when it has no location.
+pub fn describe_diagnostic(
+  package: String,
+  project: loader.Project,
+  found: Diagnostic,
+) -> String {
+  case found.location {
+    Some(location) ->
+      package
+      <> " "
+      <> location.path
+      <> position(project, location.path, location.primary.span.start)
+      <> " "
+      <> found.code
+      <> ": "
+      <> location.primary.message
+    None -> package <> " " <> found.code <> ": " <> found.title
+  }
+}
+
+fn fail(context: String, diagnostics: List(Diagnostic)) -> a {
+  panic as { context <> ":\n\n" <> human.failure(diagnostics, colour: False) }
+}
+
+// `:<line>:<column>` of the byte `offset` in the project's source at
+// `path`, which every diagnostic of its run points into.
+fn position(project: loader.Project, path: String, offset: Int) -> String {
+  let assert Ok(source) = dict.get(loader.sources(project), path)
+    as { "the project has no source at " <> path }
+  let line_index.Position(line:, column:) = line_index.position(source, offset)
+  ":" <> int.to_string(line) <> ":" <> int.to_string(column)
+}

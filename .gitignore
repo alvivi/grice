@@ -1,6 +1,7 @@
 *.beam
 *.ez
 /build
+/corpus/build
 erl_crash.dump
 
 # Local agent/session data

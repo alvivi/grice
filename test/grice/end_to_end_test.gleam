@@ -186,7 +186,7 @@ fn run(
     #("src/app.gleam", app_without_the_gap <> gap),
     #("dev/lint.gleam", lint),
   ])
-  once("build the end-to-end fixture", fn() {
+  support.once("build the end-to-end fixture", fn() {
     let #(status, stdout, stderr) = gleam("", ["build", "--target", "erlang"])
     assert status == 0 as { stdout <> stderr }
   })
@@ -219,22 +219,7 @@ fn gleam(directory: String, arguments: List(String)) -> #(Int, String, String) {
     _ -> fixture <> "/" <> directory
   }
   let assert Ok(outcome) =
-    run_gleam(
-      directory,
-      arguments,
-      support.absolute(support.fixture_directory("cli-stderr")),
-    )
+    support.run_gleam(directory, arguments, support.stderr_file("cli-stderr"))
     as "The end-to-end tests run the gleam on PATH, and there's none."
   outcome
 }
-
-@external(erlang, "grice_test_ffi", "run_gleam")
-fn run_gleam(
-  directory: String,
-  arguments: List(String),
-  stderr_file: String,
-) -> Result(#(Int, String, String), String)
-
-// Call `f` the first time `once` is called with `key` in this test run.
-@external(erlang, "grice_test_ffi", "once")
-fn once(key: String, f: fn() -> Nil) -> Nil

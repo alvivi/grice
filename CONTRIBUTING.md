@@ -65,6 +65,32 @@ in the same change.
   in `build/fixtures/cli/`. The fixture keeps its build between runs, so
   only its first run resolves its dependencies, which needs the network.
 
+## Corpus
+
+[`corpus/`](corpus/) is a Gleam project with no modules whose dependencies
+are the corpus: Hex packages grice is checked over. Its
+[`gleam.toml`](corpus/gleam.toml) pins each package with `==`, and the
+committed [`manifest.toml`](corpus/manifest.toml) pins their own
+dependencies too, with Hex checksums, so every run sees the same code
+without it being copied into the repository. `gleam deps download` in
+`corpus/` fetches the packages into `corpus/build/packages/`, which git
+ignores. The first `gleam test` does that itself, so it needs the network;
+after that, gleam's cache serves the packages.
+
+The corpus gate, [`test/grice/corpus_test.gleam`](test/grice/corpus_test.gleam),
+runs the built-in rules over each of the Gleam core team's packages in the
+corpus, with a typed probe that reports nothing, so girard types every
+package even while no built-in rule needs types. Its snapshot,
+`corpus: core packages`, is the gate's manifest: each package's version and
+how many of its modules were parsed and typed, then every finding and
+every coverage gap. A built-in rule is on by default only if it runs clean
+on these packages, so review a change to the snapshot like any other: it
+says what grice now reports on idiomatic Gleam.
+
+To bump a package, change its version in `corpus/gleam.toml` and run
+`gleam deps download` in `corpus/`, which rewrites the manifest. Review the
+gate's snapshot in the same change, even when nothing in it moved.
+
 ## Conventions
 
 - **Gleam idioms.** Follow Gleam's

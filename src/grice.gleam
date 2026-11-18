@@ -63,7 +63,13 @@ import simplifile
 
 /// Run grice's built-in rules from the command line: `gleam run -m grice`.
 pub fn main() -> Nil {
-  run([])
+  run(built_in_rules())
+}
+
+/// The rules `main` runs. There are none yet.
+@internal
+pub fn built_in_rules() -> List(Rule) {
+  []
 }
 
 /// Run `rules` from the command line, as the `main` of an entry module, and

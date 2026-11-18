@@ -1,9 +1,10 @@
 //// What the tests share: fixture projects, the sources and rules more
-//// than one test module runs, and ways to read diagnostics. Most projects
-//// are built in memory with `project`. The tests that read from disk write
-//// the tree they need under `build/fixtures/<test>/`, which git ignores
-//// and the compiler doesn't read, and delete it afterwards, except the
-//// end-to-end fixture, which keeps its build between runs.
+//// than one test module runs, ways to read diagnostics, and running the
+//// `gleam` on `PATH`. Most projects are built in memory with `project`.
+//// The tests that read from disk write the tree they need under
+//// `build/fixtures/<test>/`, which git ignores and the compiler doesn't
+//// read, and delete it afterwards, except the end-to-end fixture, which
+//// keeps its build between runs.
 
 import glance
 import gleam/dict
@@ -426,3 +427,32 @@ fn create_parent(path: String) -> Nil {
     as { "can't create " <> parent }
   Nil
 }
+
+// Running gleam
+//
+// The `gleam` on `PATH`, run as a program, and work done once per runtime,
+// such as building a fixture or downloading the corpus.
+
+/// Run the `gleam` on `PATH` with `arguments` in `directory`, and return
+/// its exit status, standard output and standard error, or `Error` when
+/// there's no `gleam`. Standard error is written to `stderr_file`, an
+/// absolute path, and read back once the program exits.
+@external(erlang, "grice_test_ffi", "run_gleam")
+pub fn run_gleam(
+  directory: String,
+  arguments: List(String),
+  stderr_file: String,
+) -> Result(#(Int, String, String), String)
+
+/// The absolute path of `build/fixtures/<name>`, for `run_gleam`'s
+/// standard error, with its directory created.
+pub fn stderr_file(name: String) -> String {
+  let path = fixture_directory(name)
+  create_parent(path)
+  absolute(path)
+}
+
+/// Call `f` the first time `once` is called with `key` in this runtime, and
+/// do nothing after that.
+@external(erlang, "grice_test_ffi", "once")
+pub fn once(key: String, f: fn() -> Nil) -> Nil
