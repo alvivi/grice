@@ -77,14 +77,11 @@ pub fn built_in_rules() -> List(Rule) {
 /// or an option counts a warning or a coverage gap as one, and 2 when the
 /// run has no result.
 ///
-/// grice runs on the Erlang target for now. An entry module still compiles
-/// for JavaScript, so a JavaScript project's builds keep working, but there
-/// this panics before it reads anything: run it with
-/// `gleam run --target erlang -m <module>`.
+/// It runs on Erlang and on JavaScript, with Node, whichever target
+/// `gleam run` compiles for, and lints the target `gleam.toml` names. On
+/// JavaScript the program ends with the exit code once `main` returns, so
+/// make this the last call of `main`.
 pub fn run(rules: List(Rule)) -> Nil {
-  use <- bool.lazy_guard(when: !platform.is_supported(), return: fn() {
-    panic as "grice runs on the Erlang target for now: run gleam run --target erlang -m <module> -- …"
-  })
   // A working directory that's gone has no project to find, and the
   // diagnostic about that names it as `.`.
   let directory = simplifile.current_directory() |> result.unwrap(".")
@@ -141,7 +138,9 @@ pub type LoadError {
 /// an absolute path, so nothing later depends on where the program runs.
 /// Only `.` segments are dropped from it: a `..` stays, since after a
 /// symbolic link it names the parent of the link's target, which the text
-/// alone can't tell.
+/// alone can't tell. On JavaScript, though, simplifile cancels each `..`
+/// with the segment before it when it reads a path, so a root such as
+/// `link/../app` reads `app` beside `link`, not beside its target.
 pub fn load_project(root: String) -> Result(Project, LoadError) {
   use root <- result.try(absolute_root(root))
   case loader.load_project(root) {

@@ -32,7 +32,9 @@ any rule runs. Every problem is reported at once.
 The compiler's own key: `"erlang"`, the default, or `"javascript"`. grice
 lints the code as it's compiled for this target, so a definition or an
 import whose `@target` attribute names the other target is left out, as the
-compiler leaves it out.
+compiler leaves it out. That doesn't depend on the target grice itself runs
+on: `gleam run` compiles grice for this target unless `--target` names
+another, and either way grice lints this one.
 
 ## `[tools.grice]`
 

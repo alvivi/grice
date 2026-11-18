@@ -1,0 +1,24 @@
+---
+version: 2.0.2
+title: cli: stats without reductions
+file: ./test/grice/internal/cli_test.gleam
+test_name: stats_without_reductions_test
+---
+warning[fixture/no-echo]: Echo left in the code
+  ┌─ src/app.gleam:2:3
+  │
+2 │   echo 1
+  │   ^^^^^^ This prints when it runs
+
+`echo` prints its value each time it runs.
+
+Hint: Remove it once you're done debugging.
+
+1 warning in 1 module.
+
+Stats:
+  load    5 ms
+  lint    7 ms
+  total  15 ms
+  1 project module, 0 dependency modules, 1 rule, types not inferred.
+

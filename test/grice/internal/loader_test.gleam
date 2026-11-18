@@ -7,6 +7,8 @@
 
 import glance
 import gleam/dict
+@target(javascript)
+import gleam/int
 import gleam/list
 import gleam/option.{None}
 import gleam/result
@@ -225,8 +227,46 @@ pub fn load_keeps_the_parse_error_of_an_excluded_module_test() {
     ])
   assert project.diagnostics == []
   let assert Ok(broken) = dict.get(project.modules, "app/broken")
-  assert broken.parsed == Error(glance.UnexpectedEndOfInput)
+  assert broken.parsed == Error(loader.Unexpected(glance.UnexpectedEndOfInput))
   assert broken.imports == []
+}
+
+// On JavaScript, glance runs out of stack on a module of a few thousand
+// functions, and the span correction on a deep chain of field accesses
+// after text outside ASCII, which glance parses: each is a module that
+// doesn't parse, as on Erlang a syntax error is.
+@target(javascript)
+pub fn a_module_too_large_for_the_stack_is_a_parse_error_test() {
+  let functions =
+    int.range(from: 0, to: 4000, with: "", run: fn(source, n) {
+      source <> "pub fn f" <> int.to_string(n) <> "() { 1 }\n"
+    })
+  let chain =
+    "// café\npub fn f(link) { link" <> string.repeat(".next", 30_000) <> " }\n"
+  let assert Ok(project) =
+    load_files("", [#("src/chain.gleam", chain), #("src/many.gleam", functions)])
+  let found =
+    list.map(project.diagnostics, fn(found: Diagnostic) {
+      #(found.code, found.location, found.message)
+    })
+  let expected = fn(path) {
+    #(
+      "grice/parse-error",
+      option.Some(diagnostic.Location(
+        path:,
+        primary: diagnostic.Label(
+          diagnostic.Span(0, 0),
+          "grice ran out of stack reading this",
+        ),
+        secondary: [],
+        fix: None,
+      )),
+      [
+        "grice ran out of stack partway through reading this file on JavaScript, where the stack is much smaller than on Erlang: the file has too many definitions or statements, or code nested too deeply. No rule ran on it, and the modules that import it may lose type information.",
+      ],
+    )
+  }
+  assert found == [expected("src/chain.gleam"), expected("src/many.gleam")]
 }
 
 pub fn parse_error_falls_back_to_an_empty_span_test() {
@@ -238,10 +278,12 @@ pub fn parse_error_falls_back_to_an_empty_span_test() {
       name: "app",
       path: "src/app.gleam",
       source:,
-      parsed: Error(glance.UnexpectedToken(
-        token.Name("wibble"),
-        glexer.Position(position),
-      )),
+      parsed: Error(
+        loader.Unexpected(glance.UnexpectedToken(
+          token.Name("wibble"),
+          glexer.Position(position),
+        )),
+      ),
       imports: [],
     )
   }

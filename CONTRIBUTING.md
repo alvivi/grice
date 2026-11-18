@@ -76,9 +76,12 @@ in the same change.
   which shows each one and accepts or rejects it. Read every snapshot
   before accepting it, and accept only text you'd show a user. Titles must
   be unique.
-- The end-to-end tests run the `gleam` on your `PATH` on a fixture project
-  in `build/fixtures/cli/`. The fixture keeps its build between runs, so
-  only its first run resolves its dependencies, which needs the network.
+- The end-to-end tests run the `gleam` on your `PATH` on two fixture
+  projects, `build/fixtures/cli/` on Erlang and
+  `build/fixtures/cli-javascript/` on Node, so they need Node on either
+  target, and check that both give the same output. Each fixture keeps its
+  build between runs, so only its first run resolves its dependencies,
+  which needs the network.
 
 ## Corpus and benchmark
 
@@ -126,6 +129,11 @@ on. Move them in the same change that bumps any of those versions or the
 corpus, or that makes grice faster or slower on purpose. The benchmark
 prints the constants its run would set, ready to paste. CI runs it on
 the pinned pair only.
+
+`gleam run --target javascript -m grice/bench` runs the same scenarios
+and checks on Node. JavaScript counts no reductions, so it prints
+milliseconds only, checks no budget, and fails only when a pass didn't
+analyse the whole corpus. CI doesn't run it.
 
 To bump a package, change its version in `test/corpus/gleam.toml` and run
 `gleam test`. The download resolves the corpus again and fails, saying

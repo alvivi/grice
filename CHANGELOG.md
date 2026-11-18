@@ -73,7 +73,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   project from disk, or returns a `LoadError` that says what it couldn't
   read; a relative root is made absolute against the working directory,
   keeping any `..` so a path through a symbolic link names what the file
-  system names. `grice.lint` runs a rule set over it, or returns every
+  system names, except on JavaScript, where simplifile cancels each `..`
+  with the segment before it. `grice.lint` runs a rule set over it, or returns every
   problem with the rule set and with the rule codes `gleam.toml` ignores,
   and runs nothing. `grice.diagnostics` and `grice.coverage` give what the
   run found, and `grice.render` writes it as text, with or without colour
@@ -99,10 +100,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and 2 when the run has no result, with the reason as diagnostics:
   `grice/cannot-read`, `grice/invalid-manifest` or `grice/internal-error`
   when it isn't one already. Human output is coloured only on a terminal,
-  and never when `NO_COLOR` is set to a non-empty value. grice runs on the
-  Erlang target: a JavaScript project runs it with
-  `gleam run --target erlang`, and its JavaScript builds still compile the
-  entry module.
+  and never when `NO_COLOR` is set to a non-empty value. grice runs on
+  Erlang and on JavaScript with Node, with the same diagnostics, JSON and
+  exit codes on both, so a JavaScript project runs its own entry module on
+  its own target, whose code may call JavaScript-only functions; the
+  built-in rules, a module of grice's, run on Node with
+  `gleam run --target javascript -m grice`. On JavaScript a run sets the
+  exit code and ends when `main` returns, so piped output is never cut
+  short. Node's stack is much smaller than Erlang's, so there a module with
+  more than about a thousand definitions, a function with thousands of
+  statements, or very deeply nested code can run grice out of stack. When
+  the stack runs out while grice parses or corrects the spans of a project
+  module in the lint set, grice reports `grice/parse-error` at the module's
+  first line, saying grice ran out of stack reading it, and continues. Later
+  steps can still run out of stack and stop the run on Node: type inference
+  and the rule walk over very deeply nested code in a project module, and
+  girard reading a large dependency module.
 - **JSON output.** `--format json` prints one JSON document, schema
   version 1: the absolute root, the counts, the coverage with each gap, and
   every diagnostic with its spans in bytes and as lines and columns. Within
@@ -110,7 +123,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   document with `coverage: null`.
 - **Stats.** `--stats` adds how long loading, linting and the whole run
   took, in milliseconds and in reductions, with the number of modules and
-  rules, after the summary or as the document's `stats`.
+  rules, after the summary or as the document's `stats`. JavaScript counts
+  no reductions, so there the human output has no reductions column and
+  the document's are `null`.
 - **A testing kit for rules.** The new `grice/testing` module runs rules
   over a project built in memory, loaded and linted as grice lints one on
   disk. `testing.module` is a project with one module and
@@ -126,10 +141,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with the problem as grice shows it when it couldn't prove anything: an
   invalid `gleam.toml`, a module to lint that doesn't parse, an invalid
   rule set, or installed dependencies that can't be read. The kit depends
-  on no test runner or snapshot library.
+  on no test runner or snapshot library, and runs on both targets.
 - **Documentation.** The README shows how to add grice, run its built-in
-  rules or a project's own, run it in a JavaScript project and which of
-  those can't yet, and lists the options and exit codes. New pages
+  rules or a project's own, run it in a JavaScript project, and lists the
+  options and exit codes. New pages
   document the configuration, every `[tools.grice]` key with its default,
   the ignores and the suppression comments, the JSON document with what
   its stats measure, and testing rules with `grice/testing`: checking the

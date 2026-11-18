@@ -12,7 +12,7 @@ import glance
 import gleam/dict
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import grice/diagnostic.{type Diagnostic, Diagnostic, Span}
@@ -309,14 +309,25 @@ pub fn environment(root: String) -> cli.Environment {
   )
 }
 
-/// A clock for `cli.execute` whose n-th reading is `Sample(n * n, n * n * n)`,
-/// so loading, linting and the total each cost a different amount, in both
-/// counters.
+/// A clock for `cli.execute` whose n-th reading is
+/// `Sample(n * n, Some(n * n * n))`, so loading, linting and the total each
+/// cost a different amount, in both counters.
 pub fn counting_sample() -> fn() -> stats.Sample {
+  counting(fn(n) { Some(n * n * n) })
+}
+
+/// A clock for `cli.execute` that counts as `counting_sample` does, but
+/// counts no reductions, as on JavaScript.
+pub fn counting_clock() -> fn() -> stats.Sample {
+  counting(fn(_n) { None })
+}
+
+// A clock whose n-th reading is `n * n` milliseconds and `reductions(n)`.
+fn counting(reductions: fn(Int) -> Option(Int)) -> fn() -> stats.Sample {
   let readings = new_counter()
   fn() {
     let n = increment(readings)
-    stats.Sample(milliseconds: n * n, reductions: n * n * n)
+    stats.Sample(milliseconds: n * n, reductions: reductions(n))
   }
 }
 
@@ -559,6 +570,13 @@ pub fn increment(counter: Counter) -> Int
 @external(erlang, "grice_test_ffi", "count")
 @external(javascript, "../grice_test_ffi.mjs", "count")
 pub fn count(counter: Counter) -> Int
+
+/// Whether the tests run on Erlang. Elsewhere, such as on JavaScript, they
+/// don't.
+@external(erlang, "grice_test_ffi", "is_erlang")
+pub fn is_erlang() -> Bool {
+  False
+}
 
 /// The runtime the tests run on, such as `OTP 28` or `Node 24.11.1`.
 @external(erlang, "grice_test_ffi", "runtime")

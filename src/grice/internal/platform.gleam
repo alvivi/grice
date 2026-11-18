@@ -1,11 +1,11 @@
 //// What a run needs from the runtime: the arguments, the environment, the
 //// terminal, a clock and a way to exit.
 ////
-//// Erlang implements each. On other targets each has a Gleam body, so
-//// grice and a client's entry module compile for JavaScript too, and
-//// `is_supported` says that a run can't work there yet.
+//// Each has an Erlang and a JavaScript implementation, for Node. Only
+//// Erlang counts reductions.
 
 import argv
+import gleam/option
 import grice/internal/stats.{type Sample}
 
 /// The arguments after the program name. `gleam run` passes on what comes
@@ -17,33 +17,38 @@ pub fn arguments() -> List(String) {
 /// The value of the environment variable with the given name, or
 /// `Error(Nil)` when it isn't set.
 @external(erlang, "grice_ffi", "variable")
-pub fn variable(_name: String) -> Result(String, Nil) {
-  Error(Nil)
-}
+@external(javascript, "../../grice_ffi.mjs", "variable")
+pub fn variable(name: String) -> Result(String, Nil)
 
 /// Whether standard output is a terminal. When the runtime can't tell, it
 /// isn't.
 @external(erlang, "grice_ffi", "stdout_is_terminal")
-pub fn stdout_is_terminal() -> Bool {
-  False
-}
+@external(javascript, "../../grice_ffi.mjs", "stdout_is_terminal")
+pub fn stdout_is_terminal() -> Bool
 
-/// The monotonic clock and the reductions every process has made.
-@external(erlang, "grice_ffi", "sample")
+/// The monotonic clock, and on Erlang the reductions every process has
+/// made.
 pub fn sample() -> Sample {
-  stats.Sample(milliseconds: 0, reductions: 0)
+  stats.Sample(
+    milliseconds: milliseconds(),
+    reductions: option.from_result(reductions()),
+  )
 }
 
 /// Stop the program with the given exit status, once everything written so
-/// far is out.
+/// far is out. On Erlang it stops right away. On JavaScript it returns,
+/// and the program ends with the status once `main` returns, so call it
+/// last.
 @external(erlang, "grice_ffi", "exit")
-pub fn exit(_code: Int) -> Nil {
-  Nil
-}
+@external(javascript, "../../grice_ffi.mjs", "exit")
+pub fn exit(code: Int) -> Nil
 
-/// Whether a run works on this target. Only Erlang implements the rest of
-/// this module for now.
-@external(erlang, "grice_ffi", "is_supported")
-pub fn is_supported() -> Bool {
-  False
+@external(erlang, "grice_ffi", "milliseconds")
+@external(javascript, "../../grice_ffi.mjs", "milliseconds")
+fn milliseconds() -> Int
+
+// Only Erlang counts reductions.
+@external(erlang, "grice_ffi", "reductions")
+fn reductions() -> Result(Int, Nil) {
+  Error(Nil)
 }

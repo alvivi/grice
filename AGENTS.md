@@ -22,8 +22,8 @@ the load set and dependency sources), the rule API (`grice/visit`,
 `grice/facts`, `grice/rule`) with its runner, type facts from girard with
 the coverage notes, ignores and suppression comments, the library API, the
 command line, the JSON output, the testing kit, the corpus gate over the
-core packages and the benchmark have landed; there are no built-in rules
-yet.
+core packages, the benchmark and the JavaScript target have landed; there
+are no built-in rules yet.
 
 ## Build and Test
 
@@ -70,7 +70,8 @@ notice.
 | `src/grice/internal/glob.gleam` | **Exists:** the glob syntax of `include`, `exclude` and the `paths` of ignores, and path matching; the name patterns of their `definitions` |
 | `src/grice/internal/config.gleam` | **Exists:** `[tools.grice]` and `target` parsing and validation, with the `[[tools.grice.ignore]]` entries and the `suppression_comments` switch |
 | `src/grice/internal/loader.gleam` | **Exists:** discovery, the load set, reading, parsing and dependency sources |
-| `src/grice/internal/line_index.gleam` | **Exists:** byte offset to line and column, line ranges, span checks |
+| `src/grice/internal/glance_spans.gleam` | **Exists:** the workaround for glance's string ends on JavaScript (lpil/glance#47): each parsed module's tree, corrected before anything reads it |
+| `src/grice/internal/line_index.gleam` | **Exists:** byte offset to line and column, line ranges, span checks, glance's offsets to bytes, and UTF-8 decoding that keeps every byte |
 | `src/grice/internal/typing.gleam` | **Exists:** girard integration: the order modules are typed in, the in-memory resolver and each module's type index |
 | `src/grice/internal/runner.gleam` | **Exists:** checking the rule set, planning which facts the rules need, running rules over the lint set, resolving reports, dropping what ignores and suppressions hide, and the coverage record with its notes |
 | `src/grice/internal/suppress.gleam` | **Exists:** applying ignores and suppression comments, and the unused- and invalid-suppression warnings |
@@ -79,8 +80,8 @@ notice.
 | `src/grice/internal/cli.gleam` | **Exists:** the command line as a pure function: arguments, help, root discovery, exit codes and failed runs |
 | `src/grice/internal/stats.gleam` | **Exists:** what `--stats` measures: samples, phases and counts |
 | `src/grice/internal/path.gleam` | **Exists:** paths as text: segments, relative and absolute paths, parents |
-| `src/grice/internal/parallel.gleam` | **Exists:** an order-keeping parallel map, as an Erlang FFI in `src/grice_ffi.erl` |
-| `src/grice/internal/platform.gleam` | **Exists:** arguments, environment, terminal detection, the clock and exit, as an Erlang FFI with Gleam bodies for other targets |
+| `src/grice/internal/parallel.gleam` | **Exists:** an order-keeping parallel map, as an Erlang FFI in `src/grice_ffi.erl`; a sequential map on JavaScript |
+| `src/grice/internal/platform.gleam` | **Exists:** arguments, environment, terminal detection, the clock, reductions on Erlang, and exit, as an Erlang FFI in `src/grice_ffi.erl` and a JavaScript one in `src/grice_ffi.mjs` |
 
 ### Pipeline
 
@@ -163,11 +164,19 @@ These apply to grice's own design and to every rule it ships.
   the run only under `--strict`, and `--warnings-as-errors` doesn't affect it.
 - **Spans are byte offsets.** Diagnostics carry byte spans plus the source, so
   an editor integration can convert them to its own positions at the edge.
+  Rules see glance's units, consistently: bytes on Erlang and UTF-16 code
+  units on JavaScript, in the syntax tree, the comments and girard's
+  answers. grice converts a span to bytes only where it becomes part of a
+  diagnostic.
+- **Both targets, Node first.** grice runs on Erlang and on JavaScript with
+  Node, with the same diagnostics, JSON and exit codes. On JavaScript the
+  map over modules is sequential, `--stats` has no reductions, and exit sets
+  the exit code and returns, so piped output is never cut short.
 
 ## Limitations
 
 - grice assumes code the compiler accepts. It doesn't diagnose type errors.
 - Parsing is bounded by glance's syntax support, and type facts by girard's
   coverage.
-- Only the Erlang target is planned for the first release. Autofixes and graded
-  effects come later.
+- JavaScript runtimes other than Node, such as Deno, Bun and browsers, aren't
+  supported. Autofixes and graded effects come later.

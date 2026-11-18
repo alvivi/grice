@@ -78,9 +78,9 @@ pub fn stats_come_last_test() {
       dependencies: 0,
       rules: 1,
       types: False,
-      load: stats.Phase(milliseconds: 5, reductions: 19),
-      lint: stats.Phase(milliseconds: 7, reductions: 37),
-      total: stats.Phase(milliseconds: 15, reductions: 63),
+      load: stats.Phase(milliseconds: 5, reductions: Some(19)),
+      lint: stats.Phase(milliseconds: 7, reductions: Some(37)),
+      total: stats.Phase(milliseconds: 15, reductions: Some(63)),
     )
   let assert Ok(document) = json.run(project, linted, Some(stats))
   birdie.snap(document, title: "json: stats")

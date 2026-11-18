@@ -21,6 +21,7 @@ import grice/internal/cli
 import grice/internal/config
 import grice/internal/line_index
 import grice/internal/loader.{type LoadError, type Project}
+import grice/internal/stats
 import grice/rule.{type Rule}
 import grice/support
 
@@ -155,9 +156,9 @@ pub fn the_stats_come_after_the_summary_test() {
   birdie.snap(outcome.stdout, title: "cli: stats")
 }
 
-// The counting clock's n-th reading is `Sample(n * n, n * n * n)`: the run
-// starts at the first, loads from the second to the third and lints until
-// the fourth, so each phase differs in both counters.
+// The counting clock's n-th reading is `Sample(n * n, Some(n * n * n))`:
+// the run starts at the first, loads from the second to the third and
+// lints until the fourth, so each phase differs in both counters.
 pub fn stats_measure_loading_linting_and_the_whole_run_test() {
   let outcome = execute(["--stats", "--format", "json"], echo_project())
   let phase = fn(name) {
@@ -165,14 +166,33 @@ pub fn stats_measure_loading_linting_and_the_whole_run_test() {
     use reductions <- decode.subfield([name, "reductions"], decode.int)
     decode.success(#(milliseconds, reductions))
   }
-  let phases = {
-    use load <- decode.field("stats", phase("load"))
-    use lint <- decode.field("stats", phase("lint"))
-    use total <- decode.field("stats", phase("total"))
-    decode.success([load, lint, total])
-  }
-  assert json.parse(outcome.stdout, phases)
+  assert json.parse(outcome.stdout, phases(phase))
     == Ok([#(5, 19), #(7, 37), #(15, 63)])
+}
+
+// On a runtime that counts no reductions, such as JavaScript, the stats
+// have no reductions column, and the document's reductions are `null`.
+pub fn stats_without_reductions_test() {
+  let run = fn(arguments) {
+    execute_with(
+      environment(),
+      arguments,
+      echo_project(),
+      echo_rules(),
+      support.counting_clock(),
+    )
+  }
+  let reductions =
+    phases(fn(name) {
+      decode.subfield(
+        [name, "reductions"],
+        decode.optional(decode.int),
+        decode.success,
+      )
+    })
+  assert json.parse(run(["--stats", "--format", "json"]).stdout, reductions)
+    == Ok([None, None, None])
+  birdie.snap(run(["--stats"]).stdout, title: "cli: stats without reductions")
 }
 
 // `app` imports `helper`, which is excluded but still loaded, and a
@@ -473,10 +493,30 @@ fn execute_in(
   loaded: Result(Project, LoadError),
   rules: List(Rule),
 ) -> cli.Outcome {
+  execute_with(environment, arguments, loaded, rules, support.counting_sample())
+}
+
+// Run as `execute_in` does, with `clock` as the clock.
+fn execute_with(
+  environment: cli.Environment,
+  arguments: List(String),
+  loaded: Result(Project, LoadError),
+  rules: List(Rule),
+  clock: fn() -> stats.Sample,
+) -> cli.Outcome {
   let load = fn(root) {
     result.map(loaded, fn(project) { loader.Project(..project, root:) })
   }
-  cli.execute(arguments, environment, load, rules, support.counting_sample())
+  cli.execute(arguments, environment, load, rules, clock)
+}
+
+// The load, lint and total phases of a document's stats, each read with
+// `phase`.
+fn phases(phase: fn(String) -> decode.Decoder(a)) -> decode.Decoder(List(a)) {
+  use load <- decode.field("stats", phase("load"))
+  use lint <- decode.field("stats", phase("lint"))
+  use total <- decode.field("stats", phase("total"))
+  decode.success([load, lint, total])
 }
 
 // A project whose only module, `src/app.gleam`, holds `source`.

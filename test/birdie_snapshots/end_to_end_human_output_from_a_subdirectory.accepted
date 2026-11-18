@@ -19,22 +19,7 @@ warning[cli_fixture/no-panic]: Panic in the code
 9 │   panic as "This never runs."
   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^ This panics
 
-note[grice/untyped-definition]: Can't infer the types of this definition
-   ┌─ ../src/app.gleam:18:1
-   │
-18 │ pub fn broken() -> Int {
-   │ ^^^^^^^^^^^^^^^^^^^^^^^^ girard couldn't type this definition
-
-girard couldn't type `broken`: type mismatch: String vs Int. Typed rules
-get no answers about the code inside it, so they may miss problems there.
-
-Hint: If `gleam build` accepts this code, it's a gap in girard, the type
-inference grice uses, so please report it at
-https://github.com/alvivi/girard/issues.
-
-2 warnings and 1 note in 1 module, 1 hidden by ignores and suppressions.
-Coverage is incomplete: 1 definition in 1 module couldn't be typed, so
-typed rules didn't see all of the code.
+2 warnings in 1 module, 1 hidden by ignores and suppressions.
 
 
 stderr:
