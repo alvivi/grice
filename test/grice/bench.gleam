@@ -59,21 +59,21 @@ import grice/support
 // the corpus changes, and when a change makes grice faster or slower on
 // purpose.
 
-const corpus_modules = 96
+const corpus_modules = 101
 
 // The newlines in every package's lint-set sources.
-const corpus_lines = 45_643
+const corpus_lines = 46_378
 
 // What every scenario's `load` may take.
-const load_budget = 12_478_000
+const load_budget = 12_660_000
 
-const none_lint_budget = 6_268_000
+const none_lint_budget = 6_459_000
 
-const syntax_lint_budget = 8_014_000
+const syntax_lint_budget = 8_193_000
 
-const typed_lint_budget = 63_694_000
+const typed_lint_budget = 67_061_000
 
-const project_lint_budget = 6_504_000
+const project_lint_budget = 6_652_000
 
 const measured_passes = 3
 
