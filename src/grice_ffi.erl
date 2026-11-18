@@ -1,8 +1,8 @@
 %% Erlang code behind grice's `@external` functions.
 -module(grice_ffi).
 
--export([parallel_map/2, variable/1, stdout_is_terminal/0, sample/0, exit/1,
-         is_supported/0, counts_code_units/0]).
+-export([parallel_map/2, variable/1, stdout_is_terminal/0, milliseconds/0,
+         reductions/0, exit/1, counts_code_units/0]).
 
 %% Parallel map
 %%
@@ -131,19 +131,20 @@ stdout_is_terminal() ->
             false
     end.
 
-%% A `stats.Sample': the monotonic clock in milliseconds, and the total
-%% reductions of every process, `parallel_map''s workers included.
-sample() ->
+%% The monotonic clock, in milliseconds.
+milliseconds() ->
+    erlang:monotonic_time(millisecond).
+
+%% `{ok, Reductions}': the total reductions of every process,
+%% `parallel_map''s workers included.
+reductions() ->
     {Reductions, _} = erlang:statistics(exact_reductions),
-    {sample, erlang:monotonic_time(millisecond), Reductions}.
+    {ok, Reductions}.
 
 %% `halt/1' flushes standard output and standard error before the runtime
 %% stops.
 exit(Code) ->
     erlang:halt(Code).
-
-is_supported() ->
-    true.
 
 %% Syntax trees
 %%

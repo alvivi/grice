@@ -5,7 +5,7 @@
 -module(grice_test_ffi).
 
 -export([panic_message/1, new_counter/0, increment/1, count/1, run_gleam/3,
-         once/2, runtime/0, rescue/1, class/1, raise_sentinel/1, sentinel/1,
+         once/2, is_erlang/0, runtime/0, rescue/1, class/1, raise_sentinel/1, sentinel/1,
          self_pid/0, schedulers_online/0, sleep/1, kill_self/0, block/0,
          worker_exit_killed/0, take_mailbox/0, send_self/1,
          monitor_exit_after/1, caller_death/1]).
@@ -72,6 +72,9 @@ once(Key, F) ->
             persistent_term:put(Flag, true),
             nil
     end.
+
+is_erlang() ->
+    true.
 
 %% The runtime, such as `<<"OTP 28">>'.
 runtime() ->

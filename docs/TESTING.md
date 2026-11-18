@@ -18,8 +18,10 @@ pub fn no_echo_reports_each_echo_test() {
 ```
 
 The kit depends on no test runner and no snapshot library. A check that
-fails panics, which every test runner reports as a failure. The examples
-here test `my_rules/no-echo`, a rule that reports each `echo`.
+fails panics, which every test runner reports as a failure. It works on
+both targets, so `gleam test --target javascript` runs the same tests on
+Node, typed runs included. The examples here test `my_rules/no-echo`, a
+rule that reports each `echo`.
 
 ## Fixtures
 
@@ -108,6 +110,13 @@ pub fn no_echo_points_at_the_echo_test() {
   assert location.primary.message == "This prints when it runs"
 }
 ```
+
+The spans of a diagnostic are bytes on every target. The spans a rule sees
+in the syntax tree, the comments and the type queries count what glance
+counts on the target the tests run on: bytes on Erlang, and UTF-16 code
+units on JavaScript, where `é` is one and `🙂` two. In a fixture that's all
+ASCII they're the same, so a test that compares a rule's input spans with
+numbers works on both targets when its fixture is ASCII.
 
 When one of these assertions fails, the test runner shows that assertion,
 but not the fixture or the rest of the run.

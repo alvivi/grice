@@ -66,12 +66,25 @@ pub type Module {
     /// The syntax tree, or why glance couldn't parse the source. A module
     /// outside the lint set that doesn't parse keeps its error here, with no
     /// diagnostic.
-    parsed: Result(glance.Module, glance.Error),
+    parsed: Result(glance.Module, ParseError),
     /// Every module it imports for the configured target, project and
     /// dependency modules alike, in source order. Empty when it doesn't
     /// parse.
     imports: List(String),
   )
+}
+
+/// Why a module doesn't parse.
+pub type ParseError {
+  /// glance stopped at a token, or at the end of the input.
+  Unexpected(glance.Error)
+  /// grice ran out of stack reading the module. glance's parser recurses
+  /// once for each definition and statement, and the correction of its
+  /// spans into nested expressions, so on JavaScript, whose stack is much
+  /// smaller than an Erlang process's, a module with more than about a
+  /// thousand definitions, a function with thousands of statements, or
+  /// very deeply nested code uses it up.
+  OutOfStack
 }
 
 /// Why a project couldn't be loaded.
@@ -424,10 +437,7 @@ fn parse_module(
   target: config.Target,
 ) -> Module {
   let index = line_index.new(source)
-  let parsed = case glance.module(source), line_index.units(index) {
-    Ok(syntax), line_index.CodeUnits -> Ok(glance_spans.correct(syntax))
-    parsed, _ -> parsed
-  }
+  let parsed = parse(source, line_index.units(index))
   let imports = case parsed {
     Ok(syntax) ->
       on_target(syntax.imports, target)
@@ -437,6 +447,33 @@ fn parse_module(
     Error(_) -> []
   }
   Module(name:, path:, source: index, parsed:, imports:)
+}
+
+// The syntax tree of `source`, corrected where glance's offsets count
+// UTF-16 code units, or why it couldn't be built. Parsing and correcting
+// both recurse, so both run inside one catch for running out of stack.
+fn parse(
+  source: String,
+  units: line_index.Units,
+) -> Result(glance.Module, ParseError) {
+  let read = fn() {
+    use syntax <- result.map(glance.module(source))
+    case units {
+      line_index.CodeUnits -> glance_spans.correct(syntax)
+      line_index.Bytes -> syntax
+    }
+  }
+  case catching_stack_overflow(read) {
+    Ok(parsed) -> result.map_error(parsed, Unexpected)
+    Error(Nil) -> Error(OutOfStack)
+  }
+}
+
+// What `run` returns, or `Error(Nil)` when it runs out of stack, which only
+// happens on JavaScript.
+@external(javascript, "../../grice_ffi.mjs", "catching_stack_overflow")
+fn catching_stack_overflow(run: fn() -> a) -> Result(a, Nil) {
+  Ok(run())
 }
 
 // A definition is on the target unless a `@target` attribute names the
@@ -461,31 +498,65 @@ fn is_on_target(
 // Parse errors
 //
 // A lint-set module glance can't parse is an error that points at the
-// token glance stopped at. The rest of the project still loads, so the other
-// modules can be linted.
+// token glance stopped at, or at the start of the file when grice ran out
+// of stack reading it. The rest of the project still loads, so the other modules can
+// be linted.
 
 /// The `grice/parse-error` diagnostic for a module that doesn't parse.
 pub fn parse_error(module: Module) -> Result(Diagnostic, Nil) {
   case module.parsed {
     Ok(_) -> Error(Nil)
-    Error(error) ->
-      Ok(Diagnostic(
-        code: "grice/parse-error",
-        severity: diagnostic.Error,
-        title: "Can't parse this module",
-        location: Some(diagnostic.Location(
-          path: module.path,
-          primary: error_label(module.source, error),
-          secondary: [],
-          fix: None,
-        )),
-        message: [
-          "grice reads Gleam code with glance, and glance couldn't parse this file. No rule ran on it, and the modules that import it may lose type information.",
-        ],
-        hint: Some(
-          "If `gleam build` accepts this file, glance doesn't support its syntax yet, so please report it to glance.",
-        ),
-      ))
+    Error(error) -> Ok(unparsed(module, error))
+  }
+}
+
+fn unparsed(module: Module, error: ParseError) -> Diagnostic {
+  let #(label, why, hint) =
+    describe_parse_error(module.source, module.path, error)
+  Diagnostic(
+    code: "grice/parse-error",
+    severity: diagnostic.Error,
+    title: "Can't parse this module",
+    location: Some(diagnostic.Location(
+      path: module.path,
+      primary: label,
+      secondary: [],
+      fix: None,
+    )),
+    message: [
+      why
+      <> " No rule ran on it, and the modules that import it may lose type information.",
+    ],
+    hint: Some(hint),
+  )
+}
+
+/// The hint for a project module at `path` that grice ran out of stack
+/// reading.
+pub fn out_of_stack_hint(path: String) -> String {
+  "Split `"
+  <> path
+  <> "` into smaller modules, or run grice on Erlang, with `gleam run --target erlang -m <module>`, if the project compiles for Erlang."
+}
+
+// The label, the opening sentence and the hint of a parse error of the
+// module at `path`.
+fn describe_parse_error(
+  source: LineIndex,
+  path: String,
+  error: ParseError,
+) -> #(Label, String, String) {
+  case error {
+    Unexpected(error) -> #(
+      error_label(source, error),
+      "grice reads Gleam code with glance, and glance couldn't parse this file.",
+      "If `gleam build` accepts this file, glance doesn't support its syntax yet, so please report it to glance.",
+    )
+    OutOfStack -> #(
+      Label(span: Span(0, 0), message: "grice ran out of stack reading this"),
+      "grice ran out of stack partway through reading this file on JavaScript, where the stack is much smaller than on Erlang: the file has too many definitions or statements, or code nested too deeply.",
+      out_of_stack_hint(path),
+    )
   }
 }
 

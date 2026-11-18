@@ -264,7 +264,7 @@ fn stats_value(stats: Stats) -> Value {
 fn phase_value(phase: Phase) -> Value {
   Object([
     #("milliseconds", Number(phase.milliseconds)),
-    #("reductions", Number(phase.reductions)),
+    #("reductions", nullable(phase.reductions, Number)),
   ])
 }
 

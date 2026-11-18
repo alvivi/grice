@@ -1,8 +1,9 @@
 //// The benchmark: grice over every package of the corpus, in four
 //// scenarios that each isolate one cost, checked against budgets in
-//// reductions. Run it from grice's root with `gleam run -m grice/bench`.
-//// It downloads the corpus first if needed, and has no `_test` function,
-//// so `gleam test` never runs it.
+//// reductions. Run it from grice's root with `gleam run -m grice/bench`,
+//// or with `gleam run --target javascript -m grice/bench` to measure it on
+//// Node. It downloads the corpus first if needed, and has no `_test`
+//// function, so `gleam test` never runs it.
 ////
 //// A scenario is a rule set whose rules never report. `none` costs
 //// loading, the facts and the suppression pass; `syntax` adds a walk with
@@ -25,12 +26,19 @@
 //// reported but never checked. The benchmark prints the constants this
 //// run would set, its medians plus 10% rounded up to the thousand, to
 //// paste when a budget moves on purpose.
+////
+//// Only Erlang counts reductions, so the budgets apply on Erlang only, and
+//// on JavaScript the benchmark reports milliseconds and exits 1 only when a
+//// pass fails its check. Whether budgets apply is decided by the runtime,
+//// not by whether a sample has reductions: on Erlang, a phase without them
+//// fails the run, so a lost count can't turn the budgets off.
 
 import gleam/bool
 import gleam/dict
 import gleam/int
 import gleam/io
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import grice/corpus
@@ -137,7 +145,7 @@ fn run_pass(
   let start = platform.sample()
   let installed = corpus.installed()
   let read = stats.phase(start, platform.sample())
-  let empty = Pass(load: read, lint: Phase(0, 0), modules: 0, lines: 0)
+  let empty = Pass(load: read, lint: Phase(0, Some(0)), modules: 0, lines: 0)
   use pass <- result.try(
     list.try_fold(packages, empty, fn(pass, package) {
       run_package(scenario, installed, pass, package)
@@ -226,18 +234,23 @@ fn lines(project: loader.Project) -> Int {
   }
 }
 
+// Reductions add up only while both phases count them.
 fn add(left: Phase, right: Phase) -> Phase {
   Phase(
     milliseconds: left.milliseconds + right.milliseconds,
-    reductions: left.reductions + right.reductions,
+    reductions: option.all([left.reductions, right.reductions])
+      |> option.map(int.sum),
   )
 }
 
-// The median of each counter, over an odd number of phases.
+// The median of each counter, over an odd number of phases. Reductions
+// have a median only when every phase counts them.
 fn median(phases: List(Phase)) -> Phase {
   Phase(
     milliseconds: middle(list.map(phases, fn(phase) { phase.milliseconds })),
-    reductions: middle(list.map(phases, fn(phase) { phase.reductions })),
+    reductions: list.map(phases, fn(phase) { phase.reductions })
+      |> option.all
+      |> option.map(middle),
   )
 }
 
@@ -328,18 +341,35 @@ fn functions_per_module() -> Rule {
 
 // Output
 //
-// What was measured and on what, a row per scenario, the constants this
-// run would set, and what's over budget, which makes the exit code 1.
+// What was measured and on what, a row per scenario, and on Erlang the
+// constants this run would set and what's over budget, which makes the
+// exit code 1.
 
 fn report(packages: List(String), results: List(Measured)) -> Nil {
+  let #(sections, exit_code) = case support.is_erlang() {
+    True -> check_budgets(results)
+    False -> #(
+      [
+        table(results, reductions: False),
+        "Budgets are reductions, which only Erlang counts, so none was checked.",
+      ],
+      0,
+    )
+  }
+  [header(packages), ..sections]
+  |> string.join("\n\n")
+  |> io.println
+  platform.exit(exit_code)
+}
+
+// The table with the reductions, the constants and the verdict, and the
+// exit code.
+fn check_budgets(results: List(Measured)) -> #(List(String), Int) {
   let #(verdict, exit_code) = case list.flat_map(results, over_budget) {
     [] -> #("Every phase is within its budget.", 0)
     over -> #(string.join(over, "\n"), 1)
   }
-  [header(packages), table(results), constants(results), verdict]
-  |> string.join("\n\n")
-  |> io.println
-  platform.exit(exit_code)
+  #([table(results, reductions: True), constants(results), verdict], exit_code)
 }
 
 fn header(packages: List(String)) -> String {
@@ -360,23 +390,37 @@ fn header(packages: List(String)) -> String {
 }
 
 // The scenario's name padded to one width and each number right-aligned,
-// with a budget's status after its reductions.
-fn table(results: List(Measured)) -> String {
+// with, when `reductions` is set, a budget's status after its reductions.
+fn table(results: List(Measured), reductions reductions: Bool) -> String {
+  let kred_headers = case reductions {
+    True -> ["load kred", "lint kred"]
+    False -> []
+  }
   let header =
     row("scenario", [
-      "load ms", "lint ms", "total ms", "modules/s", "lines/s", "load kred",
-      "lint kred",
+      "load ms",
+      "lint ms",
+      "total ms",
+      "modules/s",
+      "lines/s",
+      ..kred_headers
     ])
   let rows =
     list.map(results, fn(result) {
+      let kred_cells = case reductions {
+        True -> [
+          kred(result.load.reductions, load_budget),
+          kred(result.lint.reductions, result.scenario.lint_budget),
+        ]
+        False -> []
+      }
       row(result.scenario.name, [
         int.to_string(result.load.milliseconds),
         int.to_string(result.lint.milliseconds),
         int.to_string(result.total),
         int.to_string(corpus_modules * 1000 / result.total),
         int.to_string(corpus_lines * 1000 / result.total),
-        kred(result.load.reductions, load_budget),
-        kred(result.lint.reductions, result.scenario.lint_budget),
+        ..kred_cells
       ])
     })
   string.join([header, ..rows], "\n")
@@ -388,14 +432,17 @@ fn row(name: String, cells: List(String)) -> String {
 }
 
 // Thousands of reductions, and whether they're within `budget`.
-fn kred(reductions: Int, budget: Int) -> String {
-  int.to_string(reductions / 1000)
-  <> case reductions > budget {
-    True -> " over"
-    False -> "   ok"
+fn kred(reductions: Option(Int), budget: Int) -> String {
+  case reductions {
+    Some(reductions) if reductions > budget ->
+      int.to_string(reductions / 1000) <> " over"
+    Some(reductions) -> int.to_string(reductions / 1000) <> "   ok"
+    None -> "none"
   }
 }
 
+// A phase is over budget when it made more reductions than its budget, or
+// counted none.
 fn over_budget(result: Measured) -> List(String) {
   [
     #("load", result.load.reductions, load_budget),
@@ -403,30 +450,40 @@ fn over_budget(result: Measured) -> List(String) {
   ]
   |> list.filter_map(fn(phase) {
     let #(name, reductions, budget) = phase
-    use <- bool.guard(when: reductions <= budget, return: Error(Nil))
-    Ok(
-      "Over budget: "
-      <> result.scenario.name
-      <> "'s "
-      <> name
-      <> " made "
-      <> underscored(reductions)
-      <> " reductions; its budget is "
-      <> underscored(budget)
-      <> ".",
-    )
+    let subject = result.scenario.name <> "'s " <> name
+    case reductions {
+      Some(reductions) if reductions <= budget -> Error(Nil)
+      Some(reductions) ->
+        Ok(
+          "Over budget: "
+          <> subject
+          <> " made "
+          <> underscored(reductions)
+          <> " reductions; its budget is "
+          <> underscored(budget)
+          <> ".",
+        )
+      None ->
+        Ok(
+          "No reductions: "
+          <> subject
+          <> " counted none, so its budget couldn't be compared.",
+        )
+    }
   })
 }
 
 // The constants as Gleam source, from this run's medians and the totals.
+// A phase that counted no reductions, which fails the run, counts as 0.
 fn constants(results: List(Measured)) -> String {
+  let counted = fn(phase: Phase) { option.unwrap(phase.reductions, 0) }
   let load =
     list.fold(results, 0, fn(largest, result) {
-      int.max(largest, result.load.reductions)
+      int.max(largest, counted(result.load))
     })
   let lint =
     list.map(results, fn(result) {
-      #(result.scenario.name <> "_lint_budget", budget(result.lint.reductions))
+      #(result.scenario.name <> "_lint_budget", budget(counted(result.lint)))
     })
   [
     #("corpus_modules", corpus_modules),

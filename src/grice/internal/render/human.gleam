@@ -599,7 +599,8 @@ fn enumerate(items: List(String)) -> String {
 // Stats
 //
 // The block `--stats` adds after the summary: one row per phase, then the
-// counts.
+// counts. A runtime that counts no reductions, such as JavaScript, gets no
+// reductions column.
 
 /// The `--stats` block, for after the summary: what loading, linting and
 /// the whole run cost, and how much there was to load and lint.
@@ -607,15 +608,25 @@ pub fn stats(stats: Stats) -> String {
   // `total` spans `load` and `lint`, on a monotonic clock and a growing
   // reduction count, so its numbers are the widest.
   let milliseconds = string.length(int.to_string(stats.total.milliseconds))
-  let reductions = string.length(int.to_string(stats.total.reductions))
+  let reductions =
+    option.map(stats.total.reductions, fn(total) {
+      string.length(int.to_string(total))
+    })
   let row = fn(name: String, phase: Phase) {
+    let counted = case reductions, phase.reductions {
+      Some(width), Some(count) ->
+        "  "
+        <> string.pad_start(int.to_string(count), width, " ")
+        <> " reductions"
+      Some(_), None | None, _ -> ""
+    }
     "  "
     <> string.pad_end(name, to: 5, with: " ")
     <> "  "
     <> string.pad_start(int.to_string(phase.milliseconds), milliseconds, " ")
-    <> " ms  "
-    <> string.pad_start(int.to_string(phase.reductions), reductions, " ")
-    <> " reductions\n"
+    <> " ms"
+    <> counted
+    <> "\n"
   }
   let types = case stats.types {
     True -> "types inferred"

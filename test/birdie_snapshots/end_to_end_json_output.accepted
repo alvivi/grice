@@ -13,26 +13,20 @@ stdout:
   "summary": {
     "errors": 0,
     "warnings": 2,
-    "notes": 1,
+    "notes": 0,
     "hidden": 1
   },
   "coverage": {
-    "complete": false,
+    "complete": true,
     "modules": 1,
     "parsed": 1,
     "types": {
       "requested": true,
-      "full": 0,
-      "partial": 1,
+      "full": 1,
+      "partial": 0,
       "none": 0
     },
-    "gaps": [
-      {
-        "kind": "untyped-definition",
-        "path": "src/app.gleam",
-        "definition": "broken"
-      }
-    ]
+    "gaps": []
   },
   "diagnostics": [
     {
@@ -92,37 +86,6 @@ stdout:
       },
       "message": [],
       "hint": null
-    },
-    {
-      "code": "grice/untyped-definition",
-      "severity": "note",
-      "title": "Can't infer the types of this definition",
-      "location": {
-        "path": "src/app.gleam",
-        "primary": {
-          "span": {
-            "start": 291,
-            "end": 332
-          },
-          "range": {
-            "start": {
-              "line": 18,
-              "column": 1
-            },
-            "end": {
-              "line": 20,
-              "column": 2
-            }
-          },
-          "message": "girard couldn't type this definition"
-        },
-        "secondary": [],
-        "fix": null
-      },
-      "message": [
-        "girard couldn't type `broken`: type mismatch: String vs Int. Typed rules get no answers about the code inside it, so they may miss problems there."
-      ],
-      "hint": "If `gleam build` accepts this code, it's a gap in girard, the type inference grice uses, so please report it at https://github.com/alvivi/girard/issues."
     }
   ]
 }

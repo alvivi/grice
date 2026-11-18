@@ -44,8 +44,10 @@ type annotation for Gleam) and [graded](https://github.com/alvivi/graded)
 
 ## Usage
 
-grice runs on the Erlang target, so it needs Erlang/OTP installed, even for
-a project that targets JavaScript.
+grice runs on Erlang or on JavaScript, with Node. `gleam run` compiles a
+module for the target of the package it belongs to, unless `--target`
+names another: a project's own entry module runs on the project's target,
+and `grice`, a module of grice's, which sets no target, runs on Erlang.
 
 ### Adding grice
 
@@ -71,6 +73,13 @@ after `--`, which ends `gleam`'s own options:
 
 ```sh
 gleam run -m grice -- --format json
+```
+
+This runs grice on Erlang, whatever the project's target. To run the
+built-in rules on Node, name the target:
+
+```sh
+gleam run --target javascript -m grice
 ```
 
 ### Running your own rules
@@ -130,19 +139,32 @@ check a run: reading its diagnostics, and snapshots of what grice prints.
 
 ### JavaScript projects
 
-A project whose target is JavaScript runs grice on Erlang:
+A project whose target is JavaScript runs grice as any other, on its own
+target:
 
 ```sh
-gleam run --target erlang -m lint -- --strict
+gleam run -m lint -- --strict
 ```
 
-Its JavaScript builds still compile `dev/lint.gleam`, so nothing else
-changes. This works only when the project's own code, in `src/`, `test/`
-and `dev/`, calls no JavaScript-only function, whether its own `.mjs` code
-or a dependency's: `gleam run` compiles all three for Erlang, and stops
-with "Unsupported target" before grice starts. A JavaScript-only dependency
-that the code never calls is fine. Projects that call one can't run grice
-until it runs on JavaScript.
+grice then runs on Node, and gives the same diagnostics, JSON and exit
+codes as on Erlang. Its code may call JavaScript-only functions, its own
+`.mjs` code or a dependency's, since `gleam run` compiles it for
+JavaScript. Which code grice lints doesn't depend on where it runs: it
+always lints the target `gleam.toml` names, so
+`gleam run --target erlang -m lint` lints the same JavaScript code, when
+the project also compiles for Erlang. The built-in rules run on Node with
+`gleam run --target javascript -m grice`.
+
+Node's stack is much smaller than an Erlang process's, and reading, typing
+and linting code all recurse into it, so on Node a module with more than
+about a thousand definitions, a function with thousands of statements, or
+very deeply nested code can run grice out of stack. When the stack runs out
+while grice parses or corrects the spans of a project module in the lint
+set, grice reports `grice/parse-error` at the module's first line and
+continues. Later steps can still run out of stack and stop the run on Node:
+type inference and the rule walk over very deeply nested code in a project
+module, and girard, the type inference grice uses, reading a large
+dependency module.
 
 ### Options
 
@@ -153,7 +175,7 @@ until it runs on JavaScript.
 | `--warnings-as-errors` | Fail the run when it shows a warning. Severities print unchanged. |
 | `--strict` | Fail the run when its coverage has a gap: code grice couldn't parse or type. |
 | `--no-color` | Don't colour the output. It's coloured only on a terminal, and never when `NO_COLOR` is set to a non-empty value. |
-| `--stats` | Show how long loading and linting took, in milliseconds and reductions. |
+| `--stats` | Show how long loading and linting took, in milliseconds, and on Erlang in reductions. |
 | `-h`, `--help` | Show the help. |
 
 Each option may be given once, and in any order. grice takes no paths:

@@ -156,5 +156,5 @@ rendered.
 Reductions count the work every process of the runtime did, grice's
 parallel workers included. They compare runs more steadily than wall time,
 but only on the same versions of Erlang/OTP and Gleam, and other processes
-add a little noise. On a runtime that doesn't count reductions, such as
-JavaScript once grice runs there, `reductions` is `null`.
+add a little noise. JavaScript doesn't count reductions, so when grice
+runs there, `reductions` is `null` in every phase.

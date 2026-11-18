@@ -412,17 +412,14 @@ fn find_cause(
       )
     }
     girard.NotFound, Ok(loader.Module(path:, source:, parsed: Error(error), ..))
-    -> #(
-      ProjectModuleUnparsable,
-      "It's the project module at `"
-        <> path
-        <> "`, which glance can't parse: it stopped at "
-        <> stop(source, error)
-        <> ".",
-      "If `gleam build` accepts `"
-        <> path
-        <> "`, glance doesn't support its syntax yet, so please report it to glance.",
-    )
+    -> {
+      let #(why, hint) = unparsable(path, source, error)
+      #(
+        ProjectModuleUnparsable,
+        "It's the project module at `" <> path <> "`, " <> why,
+        hint,
+      )
+    }
     girard.NotFound, Ok(loader.Module(path:, parsed: Ok(_), ..)) -> #(
       ProjectModuleUnusable,
       "It's the project module at `"
@@ -434,6 +431,27 @@ fn find_cause(
       NoSuchModule,
       "No module of the project or of its dependencies has that name.",
       "Check the import. If the module belongs to a dependency, `gleam deps download` fetches its sources.",
+    )
+  }
+}
+
+// Why a project module at `path` didn't parse, the rest of a sentence
+// about it, and the hint.
+fn unparsable(
+  path: String,
+  source: LineIndex,
+  error: loader.ParseError,
+) -> #(String, String) {
+  case error {
+    loader.Unexpected(error) -> #(
+      "which glance can't parse: it stopped at " <> stop(source, error) <> ".",
+      "If `gleam build` accepts `"
+        <> path
+        <> "`, glance doesn't support its syntax yet, so please report it to glance.",
+    )
+    loader.OutOfStack -> #(
+      "which grice ran out of stack reading on JavaScript.",
+      loader.out_of_stack_hint(path),
     )
   }
 }
