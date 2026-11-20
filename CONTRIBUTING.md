@@ -195,7 +195,9 @@ move: the same counts can hide different code.
   [Keep a Changelog](https://keepachangelog.com/) and the project follows
   [SemVer](https://semver.org/). Entries lead with a concise summary of the
   observable change, then explain it.
-- Version bumps and `Release vX.Y.Z` commits are cut by the maintainer.
+- Version bumps and `Release vX.Y.Z` commits are cut by the maintainer, and
+  each release is tagged `vX.Y.Z` on GitHub. grice isn't published on Hex
+  until 1.0.
 - Branch off `main` with a short, descriptive kebab-case name
   (`suppression-directives`). This project does not use git-flow: no
   `feature/`, `fix/`, `release/`, or similar prefixes.

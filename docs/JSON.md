@@ -18,8 +18,7 @@ time or on the working directory, unless `--stats` adds its `stats`.
 
 This is version 1 of the schema, in the document's `version`. Within
 version 1, fields are only ever added, so a consumer should ignore fields
-it doesn't know. Removing or changing a field means a new version. Until
-grice's first release, version 1 may still change.
+it doesn't know. Removing or changing a field means a new version.
 
 ## The document
 
@@ -59,7 +58,7 @@ The top-level keys come in this order:
 | `complete` | `true` when the run has no gaps. |
 | `modules` | The number of modules in the lint set. |
 | `parsed` | How many of them parse. |
-| `types` | `{"requested": false}` when no rule of the run needs types. Otherwise `{"requested": true, "full", "partial", "none"}`: how many parsed modules girard typed completely, with gaps, or not at all. |
+| `types` | `{"requested": false}` when no rule of the run needs types. Otherwise `{"requested": true, "full", "partial", "none"}`: how many parsed modules [girard](https://hexdocs.pm/girard) typed completely, with gaps, or not at all. |
 | `gaps` | Everything the run couldn't analyse, each matching one diagnostic. |
 
 Each gap has a `kind` and the fields of that kind:
@@ -145,13 +144,13 @@ goes to standard error as text, since the format may be what's wrong.
 }
 ```
 
-`modules.loaded` counts the project modules read, which is the lint set
-and every project module it imports, and `modules.dependencies` the
-dependency modules. `types` says whether girard inferred types. `load` runs
-from before reading the project to after it, `lint` from there to after
-the rules ran, and `total` from the start of the run to after linting.
-Rendering isn't measured, which is what lets the stats be part of what's
-rendered.
+`modules.loaded` counts the project modules read, which is the lint set and
+every project module it imports, and `modules.dependencies` the dependency
+modules. `types` says whether [girard](https://hexdocs.pm/girard) inferred
+types. `load` runs from before reading the project to after it, `lint` from
+there to after the rules ran, and `total` from the start of the run to after
+linting. Rendering isn't measured, which is what lets the stats be part of
+what's rendered.
 
 Reductions count the work every process of the runtime did, grice's
 parallel workers included. They compare runs more steadily than wall time,

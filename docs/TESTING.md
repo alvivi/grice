@@ -66,7 +66,7 @@ them.
 `testing.expect_codes` that it shows exactly the codes given, as many times
 as given and in order. Diagnostics without a location come first, then the
 rest by path and position. Both count grice's own diagnostics, such as a
-note on code girard couldn't type.
+note on code [girard](https://hexdocs.pm/girard) couldn't type.
 
 When the codes don't match, the check panics with the codes it found, the
 fixture and what grice printed for it:
@@ -112,11 +112,12 @@ pub fn no_echo_points_at_the_echo_test() {
 ```
 
 The spans of a diagnostic are bytes on every target. The spans a rule sees
-in the syntax tree, the comments and the type queries count what glance
-counts on the target the tests run on: bytes on Erlang, and UTF-16 code
-units on JavaScript, where `é` is one and `🙂` two. In a fixture that's all
-ASCII they're the same, so a test that compares a rule's input spans with
-numbers works on both targets when its fixture is ASCII.
+in the syntax tree, the comments and the type queries count what
+[glance](https://hexdocs.pm/glance) counts on the target the tests run on:
+bytes on Erlang, and UTF-16 code units on JavaScript, where `é` is one and
+`🙂` two. In a fixture that's all ASCII they're the same, so a test that
+compares a rule's input spans with numbers works on both targets when its
+fixture is ASCII.
 
 When one of these assertions fails, the test runner shows that assertion,
 but not the fixture or the rest of the run.
@@ -178,13 +179,14 @@ because they show the text a user reads.
 
 ## Typed rules
 
-A typed rule asks girard for the types of the code, and girard answers from
-the same sources as in a real run. A run with a typed rule reads the
-dependencies installed for the project, through `manifest.toml` in the
-working directory, so a fixture can import `gleam/list`, or any module the
-project's own code can. `gleam test` runs in the directory it's started
-from, so start it from the project root. Without a manifest there, the run
-panics and says so. A run with no typed rule reads nothing from disk.
+A typed rule asks [girard](https://hexdocs.pm/girard) for the types of the
+code, and [girard](https://hexdocs.pm/girard) answers from the same sources
+as in a real run. A run with a typed rule reads the dependencies installed
+for the project, through `manifest.toml` in the working directory, so a
+fixture can import `gleam/list`, or any module the project's own code can.
+`gleam test` runs in the directory it's started from, so start it from the
+project root. Without a manifest there, the run panics and says so. A run
+with no typed rule reads nothing from disk.
 
 `testing.with_dependency` adds a dependency module with a source of its
 own. It takes the place of an installed module of the same name, so a test
@@ -201,10 +203,11 @@ testing.module("import shapes/square\n\npub fn main() {\n  square.new(2)\n}\n")
 |> testing.expect_none
 ```
 
-Where girard has no answer, a typed rule should stay silent, and grice adds
-a `grice/untyped-definition` note on the code girard couldn't type. A test
-of that silence expects exactly that note, which shows both that the rule
-stayed silent and why:
+Where [girard](https://hexdocs.pm/girard) has no answer, a typed rule should
+stay silent, and grice adds a `grice/untyped-definition` note on the code
+[girard](https://hexdocs.pm/girard) couldn't type. A test of that silence
+expects exactly that note, which shows both that the rule stayed silent and
+why:
 
 ```gleam
 pub fn discarded_result_is_silent_over_a_gap_test() {
@@ -226,4 +229,4 @@ shows it:
 - installed dependencies that can't be read, for a typed rule.
 
 A module that isn't linted may still fail to parse, which is how a test
-gives girard an import it can't use.
+gives [girard](https://hexdocs.pm/girard) an import it can't use.

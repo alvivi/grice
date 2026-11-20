@@ -16,14 +16,12 @@ What sets it apart from a syntactic linter is that rules can ask
 expression and for which definition any name or field access resolved to, and
 that its diagnostics follow the Gleam compiler's layout.
 
-**Status:** early development. The diagnostic model (`grice/diagnostic`), the
-line index, the human renderer, project loading (configuration, discovery,
-the load set and dependency sources), the rule API (`grice/visit`,
-`grice/facts`, `grice/rule`) with its runner, type facts from girard with
-the coverage notes, ignores and suppression comments, the library API, the
-command line, the JSON output, the testing kit, the corpus gate over the
-core packages, the benchmark and the JavaScript target have landed; there
-are no built-in rules yet.
+**Status:** 0.1.0, the first release. grice won't be on Hex until 1.0, so
+each 0.x release is a tag on GitHub only. Everything the table below marks
+**Exists** has landed, with the corpus gate over the core packages, the
+benchmark and the JavaScript target. The type predicates (`grice/types`)
+and the diagnostic builders are still to come, and there are no built-in
+rules yet.
 
 ## Build and Test
 
@@ -49,8 +47,8 @@ budgets; CONTRIBUTING.md says how to bump either.
 
 ## Architecture
 
-Most of the table below is the planned shape, so new code has a place to go.
-Rows marked **Exists** have landed.
+Rows marked **Exists** have landed. The others are the planned shape, so new
+code has a place to go.
 
 The supported API will be the `grice` module plus a few documented modules (the
 rule API, diagnostics builders and the testing kit). Everything under
