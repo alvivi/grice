@@ -123,16 +123,21 @@ pub fn hidden() -> Nil {
 }
 "
 
-// The app the default rule set runs on, with a finding for its rules.
+// The app the default rule set runs on, with a finding for a syntax rule
+// and one for a typed rule.
 const built_in_app =
   "import gleam/io
+import gleam/string
 
 pub fn main() -> Nil {
   io.println(greeting(\"Lucy\"))
 }
 
 pub fn greeting(name: String) -> String {
-  echo \"Hello, \" <> name
+  case string.length(name) == 0 {
+    True -> \"Hello!\"
+    False -> echo \"Hello, \" <> name
+  }
 }
 "
 

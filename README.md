@@ -61,6 +61,8 @@ warning:
 - `grice_rules/ineffective-double-comparison`: a comparison that the ones
   before it in a chain of `&&` or `||` already decide, such as a range
   written the wrong way round.
+- `grice_rules/no-length-for-emptiness`: `string.length` or `list.length`
+  compared with 0 or 1, or matched on 0, to check for emptiness.
 
 [Built-in rules](https://github.com/alvivi/grice/blob/main/docs/RULES.md)
 describes each rule, what it leaves alone and why, and how to change its

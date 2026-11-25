@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `||`, a comparison of a variable with an Int literal that the
     comparisons before it already decide, such as the second half of
     `48 >= char && char <= 57`, a range written the wrong way round.
+  - `grice_rules/no-length-for-emptiness`: `string.length` or
+    `list.length` compared with 0 or 1, or matched on 0 in a `case`, to
+    check whether a string or a list is empty, found by what girard
+    resolved, and leaving alone the `list.length` forms the compiler
+    already warns on. With it, `gleam run -m grice` runs girard.
 
 ### Changed
 

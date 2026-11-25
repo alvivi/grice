@@ -37,12 +37,13 @@
 
 import grice/internal/rules/ineffective_double_comparison
 import grice/internal/rules/no_echo
+import grice/internal/rules/no_length_for_emptiness
 import grice/rule.{type Rule}
 
 /// The default set, which `gleam run -m grice` runs: every rule below, in
 /// the order they're listed.
 pub fn default() -> List(Rule) {
-  [no_echo(), ineffective_double_comparison()]
+  [no_echo(), ineffective_double_comparison(), no_length_for_emptiness()]
 }
 
 /// `grice_rules/no-echo`: an `echo` left in a module outside `test/` and
@@ -98,4 +99,39 @@ pub fn no_echo() -> Rule {
 /// in the rule reference.
 pub fn ineffective_double_comparison() -> Rule {
   ineffective_double_comparison.rule()
+}
+
+/// `grice_rules/no-length-for-emptiness`: `string.length` or `list.length`
+/// compared with 0 or 1, or matched on 0 in a `case`, to check whether a
+/// string or a list is empty. Both walk the whole value to count it, and
+/// `string.length`'s docs say to avoid it in a loop. It finds the
+/// functions by what girard resolved, however they're imported or piped,
+/// and leaves alone the `list.length` forms the compiler already warns on.
+///
+/// Flagged:
+///
+/// ```gleam
+/// pub fn greeting(name: String) -> String {
+///   case string.length(name) > 0 {
+///     True -> "Hello, " <> name
+///     False -> "Hello"
+///   }
+/// }
+/// ```
+///
+/// Fixed:
+///
+/// ```gleam
+/// pub fn greeting(name: String) -> String {
+///   case name != "" {
+///     True -> "Hello, " <> name
+///     False -> "Hello"
+///   }
+/// }
+/// ```
+///
+/// [no-length-for-emptiness](https://github.com/alvivi/grice/blob/main/docs/RULES.md#no-length-for-emptiness)
+/// in the rule reference.
+pub fn no_length_for_emptiness() -> Rule {
+  no_length_for_emptiness.rule()
 }
