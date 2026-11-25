@@ -118,6 +118,8 @@ problems. A rule `<name>`, with the code `grice_rules/<name>`, comes with:
 - **The corpus gate,** which must pass: a finding on a core package is
   either a false positive to fix, or a real defect to add to the gate's
   `allowed` list with its reason (see below).
+- **The benchmark's `built-in` budget,** measured again, since the rule
+  adds to what the default set costs (see below).
 - **Its section in [`docs/RULES.md`](docs/RULES.md):** its code, what it
   flags, why, with its source linked, a flagged and a fixed example, what
   it leaves alone, and how to suppress it; and a line in the table there
@@ -156,13 +158,15 @@ and each package not fully typed.
 
 `gleam run -m grice/bench` runs the benchmark,
 [`test/grice/bench.gleam`](test/grice/bench.gleam), over every package of
-the corpus. It measures four scenarios, each a rule set that never
-reports: no rule, a syntax rule with every hook, a typed rule that asks
-the type of every expression, and a project rule. Each scenario runs a
-warm-up pass and three measured passes, and the benchmark prints the
-medians of loading and linting. Every pass checks that it analysed the
-whole corpus (no diagnostic, every module parsed, every module typed in
-the typed scenario, and the pinned module and line totals), and fails the
+the corpus. It measures five scenarios: four rule sets that never
+report, which are no rule, a syntax rule with every hook, a typed rule
+that asks the type of every expression, and a project rule; and the
+built-in rules, the default set `gleam run -m grice` runs. Each scenario
+runs a warm-up pass and three measured passes, and the benchmark prints
+the medians of loading and linting. Every pass checks that it analysed
+the whole corpus (no diagnostic but the built-in rules' findings, so
+none of grice's own, every module parsed, every module typed in the
+typed scenarios, and the pinned module and line totals), and fails the
 run before any budget is compared if it didn't, since a pass over less
 code would fit any budget.
 
