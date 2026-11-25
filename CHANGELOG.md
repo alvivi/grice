@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     check whether a string or a list is empty, found by what girard
     resolved, and leaving alone the `list.length` forms the compiler
     already warns on. With it, `gleam run -m grice` runs girard.
+  - `grice_rules/check-then-assert`: a `Result` or an `Option` checked
+    with `result.is_ok`, `result.is_error`, `option.is_some` or
+    `option.is_none`, then `let assert`-ed on a path where the check
+    already proved the variant, through a `case`, `bool.guard` or
+    `bool.lazy_guard`, which the conventions page says should never be
+    done.
 
 ### Changed
 

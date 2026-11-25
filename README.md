@@ -63,6 +63,8 @@ warning:
   written the wrong way round.
 - `grice_rules/no-length-for-emptiness`: `string.length` or `list.length`
   compared with 0 or 1, or matched on 0, to check for emptiness.
+- `grice_rules/check-then-assert`: a `Result` or an `Option` checked with a
+  predicate, then `let assert`-ed where the check already proved it.
 
 [Built-in rules](https://github.com/alvivi/grice/blob/main/docs/RULES.md)
 describes each rule, what it leaves alone and why, and how to change its
