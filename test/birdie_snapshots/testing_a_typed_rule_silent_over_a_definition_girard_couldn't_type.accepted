@@ -15,7 +15,7 @@ note[grice/untyped-definition]: Can't infer the types of this definition
 1 │ pub fn main() {
   │ ^^^^^^^^^^^^^^^ girard couldn't type this definition
 
-girard couldn't type `main`: type mismatch: String vs Int. Typed rules get
+girard couldn't type `main`: type mismatch: Int vs String. Typed rules get
 no answers about the code inside it, so they may miss problems there.
 
 Hint: If `gleam build` accepts this code, it's a gap in girard, the type

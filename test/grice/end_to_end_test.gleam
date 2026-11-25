@@ -98,7 +98,7 @@ gleam_stdlib = \">= 0.44.0 and < 2.0.0\"
 [dev_dependencies]
 grice = { path = \"../../..\" }
 glance = \">= 7.0.0 and < 8.0.0\"
-girard = \">= 4.0.1 and < 5.0.0\"
+girard = \">= 4.0.2 and < 5.0.0\"
 "
 
 const app =

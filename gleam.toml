@@ -24,7 +24,7 @@ gleam_stdlib = ">= 0.44.0 and < 2.0.0"
 glance = ">= 7.0.0 and < 8.0.0"
 # Type inference for typed rules. It types the load set once per run, over
 # the same glance syntax trees the rules see, so their spans agree.
-girard = ">= 4.0.1 and < 5.0.0"
+girard = ">= 4.0.2 and < 5.0.0"
 # glance's lexer, used directly for the text of the token a parse error
 # points at, and for comments. It must be a direct dependency to be
 # imported. Its offsets count bytes on Erlang and UTF-16 code units on
