@@ -13,15 +13,37 @@ import grice/testing
 pub fn default_has_each_built_in_rule_once_as_a_warning_test() {
   let codes = list.map(rules.default(), rule.code)
   assert codes
-    == ["grice_rules/no-echo", "grice_rules/ineffective-double-comparison"]
+    == [
+      "grice_rules/no-echo",
+      "grice_rules/ineffective-double-comparison",
+      "grice_rules/no-length-for-emptiness",
+    ]
   assert list.unique(codes) == codes
   let found =
-    support.sample("no_echo_flagged")
+    one_finding_each
     |> support.on_both_targets(rules.default())
     |> testing.diagnostics
-  assert found != []
+  assert list.map(found, fn(found) { found.code }) == codes
   assert list.all(found, fn(found) { found.severity == diagnostic.Warning })
 }
+
+// A module with one finding for each rule of the default set, in the
+// order of the set.
+const one_finding_each =
+  "import gleam/string
+
+pub fn printed(count: Int) -> Int {
+  echo count
+}
+
+pub fn decided(count: Int) -> Bool {
+  count > 5 && count > 0
+}
+
+pub fn counted(name: String) -> Bool {
+  string.length(name) == 0
+}
+"
 
 // Hiding
 

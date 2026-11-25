@@ -7,11 +7,23 @@ test_name: the_built_in_rules_run_with_gleam_run_m_grice_test
 exit: 0
 
 stdout:
-warning[grice_rules/no-echo]: Leftover `echo`
-  ┌─ src/app.gleam:8:3
+warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
+  ┌─ src/app.gleam:9:8
   │
-8 │   echo "Hello, " <> name
-  │   ^^^^^^^^^^^^^^^^^^^^^^ This prints debug output when it runs
+9 │   case string.length(name) == 0 {
+  │        ^^^^^^^^^^^^^^^^^^^^^^^^ This counts every grapheme of the string
+
+`string.length` walks the whole string to count its graphemes, and its docs
+say to avoid it in a loop. Comparing with `""` answers the same question at
+once.
+
+Hint: Compare with `""` instead: `== ""`.
+
+warning[grice_rules/no-echo]: Leftover `echo`
+   ┌─ src/app.gleam:11:14
+   │
+11 │     False -> echo "Hello, " <> name
+   │              ^^^^^^^^^^^^^^^^^^^^^^ This prints debug output when it runs
 
 `echo` is for debugging. `gleam build` accepts it, but `gleam publish`
 refuses a package that still has one, and an application prints it whenever
@@ -21,7 +33,7 @@ Hint: Remove the `echo` and keep its value: write `x` for `echo x`, and
 drop an `echo` step from a pipeline. If this module prints on purpose, use
 `gleam/io` instead.
 
-1 warning in 1 module.
+2 warnings in 1 module.
 
 
 stderr:

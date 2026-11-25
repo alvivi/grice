@@ -1,0 +1,419 @@
+---
+version: 2.0.2
+title: built-in no-length-for-emptiness: flagged samples
+file: ./test/grice/rules/no_length_for_emptiness_test.gleam
+test_name: no_length_for_emptiness_flagged_samples_test
+---
+-- gleam.toml
+target = "erlang"
+-- src/app.gleam
+//// Each form no-length-for-emptiness reports, one per function. These
+//// functions never run: the module is here to be linted, and compiled by
+//// every build with `--warnings-as-errors`, which shows the compiler is
+//// silent on it. `string.length` is imported under an alias and
+//// `list.length` unqualified, and the rule finds both by what they
+//// resolve to.
+
+import gleam/list.{length}
+import gleam/string as text
+
+pub fn string_equal_to_zero(name: String) -> Bool {
+  text.length(name) == 0
+}
+
+pub fn string_not_equal_to_zero(name: String) -> Bool {
+  text.length(name) != 0
+}
+
+pub fn string_greater_than_zero(name: String) -> Bool {
+  text.length(name) > 0
+}
+
+pub fn string_at_least_one(name: String) -> Bool {
+  text.length(name) >= 1
+}
+
+pub fn string_less_than_one(name: String) -> Bool {
+  text.length(name) < 1
+}
+
+pub fn string_at_most_zero(name: String) -> Bool {
+  text.length(name) <= 0
+}
+
+pub fn zero_equal_to_string(name: String) -> Bool {
+  0 == text.length(name)
+}
+
+pub fn zero_not_equal_to_string(name: String) -> Bool {
+  0 != text.length(name)
+}
+
+pub fn zero_less_than_string(name: String) -> Bool {
+  0 < text.length(name)
+}
+
+pub fn one_at_most_string(name: String) -> Bool {
+  1 <= text.length(name)
+}
+
+pub fn one_greater_than_string(name: String) -> Bool {
+  1 > text.length(name)
+}
+
+pub fn zero_at_least_string(name: String) -> Bool {
+  0 >= text.length(name)
+}
+
+pub fn string_piped(name: String) -> Bool {
+  name |> text.length == 0
+}
+
+pub fn string_piped_with_parentheses(name: String) -> Bool {
+  name |> text.length() > 0
+}
+
+pub fn string_other_spellings(name: String) -> Bool {
+  text.length(name) == 0x0 || text.length(name) >= 0b1
+}
+
+pub fn string_case(name: String) -> String {
+  case text.length(name) {
+    0 -> "Hello"
+    _ -> "Hello, " <> name
+  }
+}
+
+pub fn list_unqualified(items: List(Int)) -> Bool {
+  length(items) == 0
+}
+
+pub fn list_at_least_one(items: List(Int)) -> Bool {
+  list.length(items) >= 1
+}
+
+pub fn one_at_most_list(items: List(Int)) -> Bool {
+  1 <= list.length(items)
+}
+
+pub fn list_piped(items: List(Int)) -> Bool {
+  items |> list.length == 0
+}
+
+pub fn list_piped_with_parentheses(items: List(Int)) -> Bool {
+  items |> list.length() != 0
+}
+
+pub fn list_other_spellings(items: List(Int)) -> Bool {
+  list.length(items) == 00 || list.length(items) > 0o0
+}
+
+pub fn list_case(items: List(Int)) -> String {
+  case list.length(items) {
+    0x0 -> "none"
+    _count -> "some"
+  }
+}
+-- output
+warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
+   ┌─ src/app.gleam:12:3
+   │
+12 │   text.length(name) == 0
+   │   ^^^^^^^^^^^^^^^^^^^^^^ This counts every grapheme of the string
+
+`string.length` walks the whole string to count its graphemes, and its docs
+say to avoid it in a loop. Comparing with `""` answers the same question at
+once.
+
+Hint: Compare with `""` instead: `== ""`.
+
+warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
+   ┌─ src/app.gleam:16:3
+   │
+16 │   text.length(name) != 0
+   │   ^^^^^^^^^^^^^^^^^^^^^^ This counts every grapheme of the string
+
+`string.length` walks the whole string to count its graphemes, and its docs
+say to avoid it in a loop. Comparing with `""` answers the same question at
+once.
+
+Hint: Compare with `""` instead: `!= ""`.
+
+warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
+   ┌─ src/app.gleam:20:3
+   │
+20 │   text.length(name) > 0
+   │   ^^^^^^^^^^^^^^^^^^^^^ This counts every grapheme of the string
+
+`string.length` walks the whole string to count its graphemes, and its docs
+say to avoid it in a loop. Comparing with `""` answers the same question at
+once.
+
+Hint: Compare with `""` instead: `!= ""`.
+
+warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
+   ┌─ src/app.gleam:24:3
+   │
+24 │   text.length(name) >= 1
+   │   ^^^^^^^^^^^^^^^^^^^^^^ This counts every grapheme of the string
+
+`string.length` walks the whole string to count its graphemes, and its docs
+say to avoid it in a loop. Comparing with `""` answers the same question at
+once.
+
+Hint: Compare with `""` instead: `!= ""`.
+
+warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
+   ┌─ src/app.gleam:28:3
+   │
+28 │   text.length(name) < 1
+   │   ^^^^^^^^^^^^^^^^^^^^^ This counts every grapheme of the string
+
+`string.length` walks the whole string to count its graphemes, and its docs
+say to avoid it in a loop. Comparing with `""` answers the same question at
+once.
+
+Hint: Compare with `""` instead: `== ""`.
+
+warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
+   ┌─ src/app.gleam:32:3
+   │
+32 │   text.length(name) <= 0
+   │   ^^^^^^^^^^^^^^^^^^^^^^ This counts every grapheme of the string
+
+`string.length` walks the whole string to count its graphemes, and its docs
+say to avoid it in a loop. Comparing with `""` answers the same question at
+once.
+
+Hint: Compare with `""` instead: `== ""`.
+
+warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
+   ┌─ src/app.gleam:36:3
+   │
+36 │   0 == text.length(name)
+   │   ^^^^^^^^^^^^^^^^^^^^^^ This counts every grapheme of the string
+
+`string.length` walks the whole string to count its graphemes, and its docs
+say to avoid it in a loop. Comparing with `""` answers the same question at
+once.
+
+Hint: Compare with `""` instead: `== ""`.
+
+warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
+   ┌─ src/app.gleam:40:3
+   │
+40 │   0 != text.length(name)
+   │   ^^^^^^^^^^^^^^^^^^^^^^ This counts every grapheme of the string
+
+`string.length` walks the whole string to count its graphemes, and its docs
+say to avoid it in a loop. Comparing with `""` answers the same question at
+once.
+
+Hint: Compare with `""` instead: `!= ""`.
+
+warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
+   ┌─ src/app.gleam:44:3
+   │
+44 │   0 < text.length(name)
+   │   ^^^^^^^^^^^^^^^^^^^^^ This counts every grapheme of the string
+
+`string.length` walks the whole string to count its graphemes, and its docs
+say to avoid it in a loop. Comparing with `""` answers the same question at
+once.
+
+Hint: Compare with `""` instead: `!= ""`.
+
+warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
+   ┌─ src/app.gleam:48:3
+   │
+48 │   1 <= text.length(name)
+   │   ^^^^^^^^^^^^^^^^^^^^^^ This counts every grapheme of the string
+
+`string.length` walks the whole string to count its graphemes, and its docs
+say to avoid it in a loop. Comparing with `""` answers the same question at
+once.
+
+Hint: Compare with `""` instead: `!= ""`.
+
+warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
+   ┌─ src/app.gleam:52:3
+   │
+52 │   1 > text.length(name)
+   │   ^^^^^^^^^^^^^^^^^^^^^ This counts every grapheme of the string
+
+`string.length` walks the whole string to count its graphemes, and its docs
+say to avoid it in a loop. Comparing with `""` answers the same question at
+once.
+
+Hint: Compare with `""` instead: `== ""`.
+
+warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
+   ┌─ src/app.gleam:56:3
+   │
+56 │   0 >= text.length(name)
+   │   ^^^^^^^^^^^^^^^^^^^^^^ This counts every grapheme of the string
+
+`string.length` walks the whole string to count its graphemes, and its docs
+say to avoid it in a loop. Comparing with `""` answers the same question at
+once.
+
+Hint: Compare with `""` instead: `== ""`.
+
+warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
+   ┌─ src/app.gleam:60:3
+   │
+60 │   name |> text.length == 0
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^ This counts every grapheme of the string
+
+`string.length` walks the whole string to count its graphemes, and its docs
+say to avoid it in a loop. Comparing with `""` answers the same question at
+once.
+
+Hint: Compare with `""` instead: `== ""`.
+
+warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
+   ┌─ src/app.gleam:64:3
+   │
+64 │   name |> text.length() > 0
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^ This counts every grapheme of the string
+
+`string.length` walks the whole string to count its graphemes, and its docs
+say to avoid it in a loop. Comparing with `""` answers the same question at
+once.
+
+Hint: Compare with `""` instead: `!= ""`.
+
+warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
+   ┌─ src/app.gleam:68:3
+   │
+68 │   text.length(name) == 0x0 || text.length(name) >= 0b1
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^ This counts every grapheme of the string
+
+`string.length` walks the whole string to count its graphemes, and its docs
+say to avoid it in a loop. Comparing with `""` answers the same question at
+once.
+
+Hint: Compare with `""` instead: `== ""`.
+
+warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
+   ┌─ src/app.gleam:68:31
+   │
+68 │   text.length(name) == 0x0 || text.length(name) >= 0b1
+   │                               ^^^^^^^^^^^^^^^^^^^^^^^^ This counts every grapheme of the string
+
+`string.length` walks the whole string to count its graphemes, and its docs
+say to avoid it in a loop. Comparing with `""` answers the same question at
+once.
+
+Hint: Compare with `""` instead: `!= ""`.
+
+warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
+   ┌─ src/app.gleam:72:8
+   │
+72 │   case text.length(name) {
+   │        ^^^^^^^^^^^^^^^^^ This counts every grapheme of the string
+
+`string.length` walks the whole string to count its graphemes, and its docs
+say to avoid it in a loop. Matching on `""` answers the same question at
+once.
+
+Hint: Match on the string itself: `case text { "" -> ... _ -> ... }`.
+
+warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
+   ┌─ src/app.gleam:79:3
+   │
+79 │   length(items) == 0
+   │   ^^^^^^^^^^^^^^^^^^ This counts every element of the list
+
+`list.length` walks the whole list to count its elements, as the compiler
+says when it warns on `list.length(items) == 0`. Comparing with `[]`
+answers the same question at once.
+
+Hint: Compare with `[]` instead: `== []`.
+
+warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
+   ┌─ src/app.gleam:83:3
+   │
+83 │   list.length(items) >= 1
+   │   ^^^^^^^^^^^^^^^^^^^^^^^ This counts every element of the list
+
+`list.length` walks the whole list to count its elements, as the compiler
+says when it warns on `list.length(items) == 0`. Comparing with `[]`
+answers the same question at once.
+
+Hint: Compare with `[]` instead: `!= []`.
+
+warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
+   ┌─ src/app.gleam:87:3
+   │
+87 │   1 <= list.length(items)
+   │   ^^^^^^^^^^^^^^^^^^^^^^^ This counts every element of the list
+
+`list.length` walks the whole list to count its elements, as the compiler
+says when it warns on `list.length(items) == 0`. Comparing with `[]`
+answers the same question at once.
+
+Hint: Compare with `[]` instead: `!= []`.
+
+warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
+   ┌─ src/app.gleam:91:3
+   │
+91 │   items |> list.length == 0
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^ This counts every element of the list
+
+`list.length` walks the whole list to count its elements, as the compiler
+says when it warns on `list.length(items) == 0`. Comparing with `[]`
+answers the same question at once.
+
+Hint: Compare with `[]` instead: `== []`.
+
+warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
+   ┌─ src/app.gleam:95:3
+   │
+95 │   items |> list.length() != 0
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^ This counts every element of the list
+
+`list.length` walks the whole list to count its elements, as the compiler
+says when it warns on `list.length(items) == 0`. Comparing with `[]`
+answers the same question at once.
+
+Hint: Compare with `[]` instead: `!= []`.
+
+warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
+   ┌─ src/app.gleam:99:3
+   │
+99 │   list.length(items) == 00 || list.length(items) > 0o0
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^ This counts every element of the list
+
+`list.length` walks the whole list to count its elements, as the compiler
+says when it warns on `list.length(items) == 0`. Comparing with `[]`
+answers the same question at once.
+
+Hint: Compare with `[]` instead: `== []`.
+
+warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
+   ┌─ src/app.gleam:99:31
+   │
+99 │   list.length(items) == 00 || list.length(items) > 0o0
+   │                               ^^^^^^^^^^^^^^^^^^^^^^^^ This counts every element of the list
+
+`list.length` walks the whole list to count its elements, as the compiler
+says when it warns on `list.length(items) == 0`. Comparing with `[]`
+answers the same question at once.
+
+Hint: Compare with `[]` instead: `!= []`.
+
+warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
+    ┌─ src/app.gleam:103:8
+    │
+103 │   case list.length(items) {
+    │        ^^^^^^^^^^^^^^^^^^ This counts every element of the list
+
+`list.length` walks the whole list to count its elements, as the compiler
+says when it warns on `list.length(items) == 0`. Matching on `[]` answers
+the same question at once.
+
+Hint: Match on the list itself: `case items { [] -> ... _ -> ... }`.
+
+25 warnings in 1 module.
+

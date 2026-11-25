@@ -83,6 +83,7 @@ echo step
 |---|---|
 | [`grice_rules/no-echo`](#no-echo) | An `echo` left outside `test/` and `dev/`. |
 | [`grice_rules/ineffective-double-comparison`](#ineffective-double-comparison) | A comparison that the comparisons before it in its chain already decide. |
+| [`grice_rules/no-length-for-emptiness`](#no-length-for-emptiness) | `string.length` or `list.length` compared with 0 or 1 to check for emptiness. |
 
 ## no-echo
 
@@ -123,11 +124,13 @@ tools may print as they like.
 **A known gap.** In `x |> echo as "label" |> f`, the compiler pipes the
 `echo`'s result into `f`, but the parser grice uses,
 [glance](https://hexdocs.pm/glance), reads `"label" |> f` as the message.
-grice reports the `echo` with that span, which runs to the end of `f`, and
-since girard can't type such a definition, a run with typed rules also adds
-a `grice/untyped-definition` note on it, which `--strict` counts as a gap
-even when the warning is suppressed. Braces around the `echo` step,
-`{ x |> echo as "label" } |> f`, avoid both.
+grice reports the `echo` with that span, which runs to the end of `f`.
+girard can't type such a definition either, so a run with typed rules,
+the default set's among them, also adds a `grice/untyped-definition` note
+on it, which `--strict` counts as a gap even when the warning is
+suppressed. Braces around the `echo` step,
+`{ x |> echo as "label" } |> f`, give the warning its short span, on
+`echo as "label"`, and avoid the coverage note.
 
 **Suppressing it.** A module under `src/` that prints with `echo` on
 purpose, such as a script, takes an ignore in `gleam.toml` or a
@@ -189,6 +192,73 @@ pub fn is_digit(char: Int) -> Bool {
 - A decision that takes more than two comparisons to show, such as
   `count >= 3 || count == 0 || count == 1 || count == 2 || count >= 0`.
 
-**Suppressing it.** The rule doesn't guess, so a finding is a real mistake
-to fix. If a chain is generated and meant to stay as it is, ignore the rule
-for that file in `gleam.toml`.
+**Suppressing it.** The rule doesn't guess, so a finding is a mistake to
+fix. To keep one, as in generated code, put
+`// grice-ignore grice_rules/ineffective-double-comparison: <reason>` on
+the line above it, or ignore the rule for the file in `gleam.toml`.
+
+## no-length-for-emptiness
+
+`grice_rules/no-length-for-emptiness` reports `string.length` or
+`list.length` used to check whether a string or a list is empty: compared
+with 0 or 1 as `== 0`, `!= 0`, `> 0`, `>= 1`, `< 1` or `<= 0`, with the
+literal on either side and in any spelling, or matched in a `case` with a
+lone `0` pattern followed by a discard.
+
+It finds the two functions by what [girard](https://hexdocs.pm/girard)
+resolved the call to, so it sees them under any alias, imported
+unqualified, or as the function after a pipe, with or without empty
+parentheses: `name |> string.length == 0`. Where girard has no answer, it
+stays silent.
+
+**Why.** Both functions walk the whole value to count it, to answer a
+question comparing with `""` or `[]` answers at once.
+[`string.length`](https://hexdocs.pm/gleam_stdlib/gleam/string.html#length)'s
+docs say so: "This function has to iterate across the whole string to
+count the number of graphemes, so it runs in linear time. Avoid using this
+in a loop." The compiler says the same of `list.length` when it warns on
+`list.length(items) == 0`.
+
+Flagged:
+
+```gleam
+pub fn greeting(name: String) -> String {
+  case string.length(name) > 0 {
+    True -> "Hello, " <> name
+    False -> "Hello"
+  }
+}
+```
+
+Fixed:
+
+```gleam
+pub fn greeting(name: String) -> String {
+  case name != "" {
+    True -> "Hello, " <> name
+    False -> "Hello"
+  }
+}
+```
+
+A `case string.length(name) { 0 -> ... _ -> ... }` becomes
+`case name { "" -> ... _ -> ... }`.
+
+**What it leaves alone.**
+
+- The `list.length` forms the compiler already warns on: a direct call
+  through a module access, as in `list.length(items)` under any alias,
+  compared with a literal written exactly `0` or `-0` as `== 0`, `!= 0`,
+  `> 0` or `<= 0`, or exactly `1` as `< 1`, with the literal on either
+  side. The compiler's boundary is the spelling, so the rule reports the
+  rest: `>= 1`, `== 0x0`, pipes, unqualified calls and the `case` form.
+- A `case` that counts rather than checks for emptiness: one that matches
+  another number, binds the length, guards the `0` clause or gives it an
+  alternative.
+- A comparison with any other number, with a named constant, or with
+  another length.
+
+**Suppressing it.** Comparing with `""` or `[]` is never slower, so a
+finding is worth fixing. To keep one, put
+`// grice-ignore grice_rules/no-length-for-emptiness: <reason>` on the
+line above it.

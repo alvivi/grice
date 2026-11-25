@@ -6,11 +6,10 @@
 //// which covers every other finding and every coverage gap, and so does
 //// a module girard didn't type. A failure lists each problem.
 ////
-//// A typed probe that reports nothing runs with the built-in rules, so
-//// girard types every package even while no built-in rule needs types,
-//// and a module it couldn't type shows up as a coverage note. The gate
-//// checks that the types were requested, so a probe that stopped being
-//// typed fails it instead of passing over untyped packages.
+//// The default set has typed rules, so girard types every package, and a
+//// module it couldn't type shows up as a coverage note. The gate checks
+//// that every module was typed, so a default set that lost its typed
+//// rules fails it instead of passing over untyped packages.
 ////
 //// Each allowed finding is matched one to one: a diagnostic takes at most
 //// one entry with its package, path, line, column and code, so a second
@@ -27,7 +26,7 @@ import gleam/string
 import grice/corpus
 import grice/coverage.{Requested}
 import grice/internal/parallel
-import grice/rule.{type Rule}
+import grice/rule
 import grice/rules
 
 // Allowed findings
@@ -84,12 +83,11 @@ const allowed = [
 pub fn core_packages_are_clean_test() {
   corpus.download()
   let installed = corpus.installed()
-  let rule_set = [probe(), ..rules.default()]
   let #(untyped, findings) =
     corpus.core
     |> parallel.map(fn(package) {
       let project = corpus.load(package, installed)
-      let linted = corpus.lint(project, rule_set)
+      let linted = corpus.lint(project, rules.default())
       let coverage = linted.coverage
       let typed = Requested(full: coverage.modules, partial: 0, none: 0)
       let untyped = case coverage.types == typed {
@@ -123,14 +121,6 @@ pub fn core_packages_are_clean_test() {
     ])
   assert problems == []
     as { "The core packages aren't clean:\n" <> string.join(problems, "\n") }
-}
-
-// A typed module rule that reports nothing.
-fn probe() -> Rule {
-  rule.module("corpus/probe", title: "Types every module")
-  |> rule.typed
-  |> rule.with_context(initial: Nil)
-  |> rule.build
 }
 
 // Matching

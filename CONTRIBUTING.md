@@ -141,9 +141,9 @@ as grice's tests.
 
 The corpus gate, [`test/grice/corpus_test.gleam`](test/grice/corpus_test.gleam),
 runs the built-in rules over each of the Gleam core team's packages in the
-corpus, with a typed probe that reports nothing, so girard types every
-package even while no built-in rule needs types. It asserts that every
-package is clean: no finding but those it allows, no coverage gap, every
+corpus. Their typed rules make girard type every package, and the gate
+fails a package not fully typed, so a default set that lost its typed
+rules fails it too. It asserts that every package is clean: no finding but those it allows, no coverage gap, every
 module typed. A built-in rule is on by default only if it runs clean on
 these packages, or each finding it keeps there is a real defect. Those
 are the `allowed` list in the gate, each with its package, path, line,
