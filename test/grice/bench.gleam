@@ -1,23 +1,26 @@
-//// The benchmark: grice over every package of the corpus, in four
+//// The benchmark: grice over every package of the corpus, in five
 //// scenarios that each isolate one cost, checked against budgets in
 //// reductions. Run it from grice's root with `gleam run -m grice/bench`,
 //// or with `gleam run --target javascript -m grice/bench` to measure it on
 //// Node. It downloads the corpus first if needed, and has no `_test`
 //// function, so `gleam test` never runs it.
 ////
-//// A scenario is a rule set whose rules never report. `none` costs
-//// loading, the facts and the suppression pass; `syntax` adds a walk with
-//// every hook; `typed` adds girard and a type query at every expression;
-//// `project` adds a project rule's parallel per-module pass and its
-//// evaluation. Each scenario runs one warm-up pass and then
+//// A scenario is a rule set. In the first four, the rules never report:
+//// `none` costs loading, the facts and the suppression pass; `syntax`
+//// adds a walk with every hook; `typed` adds girard and a type query at
+//// every expression; `project` adds a project rule's parallel per-module
+//// pass and its evaluation. `built-in` is the default set that
+//// `gleam run -m grice` runs, typed, whose rules report what they find in
+//// the corpus. Each scenario runs one warm-up pass and then
 //// `measured_passes` passes, and reports the median of each phase: `load`
 //// reads the corpus's installed modules once and loads every package, and
 //// `lint` runs the rules over every package.
 ////
 //// Every pass, the warm-up included, checks that it analysed the whole
-//// corpus: no diagnostic in any package's run, every module parsed, every
-//// module fully typed in `typed` and girard not run in the others, and
-//// the module and line totals pinned below. A pass over less code would
+//// corpus: no diagnostic in any package's run but the findings of
+//// `built-in`, so none of grice's own, every module parsed, every module
+//// fully typed in the typed scenarios and girard not run in the others,
+//// and the module and line totals pinned below. A pass over less code would
 //// fit any budget, so a pass that fails the check exits 1 before any
 //// budget is compared.
 ////
@@ -50,6 +53,7 @@ import grice/internal/platform
 import grice/internal/runner
 import grice/internal/stats.{type Phase, Phase}
 import grice/rule.{type Rule}
+import grice/rules
 import grice/support
 
 // Budgets
@@ -75,6 +79,8 @@ const typed_lint_budget = 68_787_000
 
 const project_lint_budget = 6_647_000
 
+const built_in_lint_budget = 72_034_000
+
 const measured_passes = 3
 
 // Running
@@ -95,9 +101,16 @@ pub fn main() -> Nil {
 }
 
 // A rule set whose cost is measured over the corpus, whether girard must
-// type every module for it, and what its `lint` may take.
+// type every module for it, whether its rules report findings, and what
+// its `lint` may take.
 type Scenario {
-  Scenario(name: String, rules: List(Rule), typed: Bool, lint_budget: Int)
+  Scenario(
+    name: String,
+    rules: List(Rule),
+    typed: Bool,
+    reports: Bool,
+    lint_budget: Int,
+  )
 }
 
 // What one pass over the corpus cost, and how much it covered.
@@ -192,9 +205,10 @@ fn run_package(
   )
 }
 
-// The rules never report, so any diagnostic is grice's own: a parse error
-// or a coverage note. Whether girard ran is checked against the scenario,
-// not its rules, so a typed scenario that lost its typed rule fails.
+// A diagnostic of grice's own, such as a parse error or a coverage note,
+// fails the check, and so does a finding of a scenario whose rules never
+// report. Whether girard ran is checked against the scenario, not its
+// rules, so a typed scenario that lost its typed rule fails.
 fn check(
   scenario: Scenario,
   package: String,
@@ -206,8 +220,12 @@ fn check(
     True -> Requested(full: coverage.modules, partial: 0, none: 0)
     False -> NotRequested
   }
+  let unexpected =
+    list.filter(linted.diagnostics, fn(found) {
+      !scenario.reports || string.starts_with(found.code, rule.reserved_prefix)
+    })
   use <- bool.guard(
-    when: linted.diagnostics == []
+    when: unexpected == []
       && coverage.parsed == coverage.modules
       && coverage.types == types,
     return: Ok(Nil),
@@ -221,7 +239,7 @@ fn check(
     <> " ("
     <> corpus.describe_coverage(coverage)
     <> "), so no budget was compared."
-  [summary, ..list.map(linted.diagnostics, describe)]
+  [summary, ..list.map(unexpected, describe)]
   |> string.join("\n")
   |> Error
 }
@@ -264,29 +282,46 @@ fn middle(values: List(Int)) -> Int {
 
 // Scenarios
 //
-// The rules never report, so resolving and rendering reports, whose cost
-// grows with the findings, isn't measured.
+// In the first four, the rules never report, so resolving reports, whose
+// cost grows with the findings, isn't measured. `built-in` resolves the
+// few its rules make. Rendering isn't measured.
 
 fn scenarios() -> List(Scenario) {
   [
-    Scenario("none", [], typed: False, lint_budget: none_lint_budget),
+    Scenario(
+      "none",
+      [],
+      typed: False,
+      reports: False,
+      lint_budget: none_lint_budget,
+    ),
     Scenario(
       "syntax",
       [every_hook()],
       typed: False,
+      reports: False,
       lint_budget: syntax_lint_budget,
     ),
     Scenario(
       "typed",
       [type_of_every_expression()],
       typed: True,
+      reports: False,
       lint_budget: typed_lint_budget,
     ),
     Scenario(
       "project",
       [functions_per_module()],
       typed: False,
+      reports: False,
       lint_budget: project_lint_budget,
+    ),
+    Scenario(
+      "built-in",
+      rules.default(),
+      typed: True,
+      reports: True,
+      lint_budget: built_in_lint_budget,
     ),
   ]
 }
@@ -386,7 +421,7 @@ fn header(packages: List(String)) -> String {
   <> ", girard "
   // grice's own girard, which gleam installs as its manifest pins it.
   <> corpus.version("build/packages/girard")
-  <> "\nEvery pass analysed the whole corpus: all modules parsed, typed fully in `typed`."
+  <> "\nEvery pass analysed the whole corpus: all modules parsed, typed fully in `typed` and `built-in`."
 }
 
 // The scenario's name padded to one width and each number right-aligned,
@@ -483,7 +518,10 @@ fn constants(results: List(Measured)) -> String {
     })
   let lint =
     list.map(results, fn(result) {
-      #(result.scenario.name <> "_lint_budget", budget(counted(result.lint)))
+      #(
+        string.replace(result.scenario.name, "-", "_") <> "_lint_budget",
+        budget(counted(result.lint)),
+      )
     })
   [
     #("corpus_modules", corpus_modules),
