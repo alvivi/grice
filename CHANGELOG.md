@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   describes each one:
   - `grice_rules/no-echo`: an `echo` left in a module outside `test/` and
     `dev/`, which `gleam publish` refuses and an application prints.
+  - `grice_rules/ineffective-double-comparison`: in a chain of `&&` or
+    `||`, a comparison of a variable with an Int literal that the
+    comparisons before it already decide, such as the second half of
+    `48 >= char && char <= 57`, a range written the wrong way round.
 
 ### Changed
 

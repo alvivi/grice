@@ -116,8 +116,8 @@ problems. A rule `<name>`, with the code `grice_rules/<name>`, comes with:
   `testing.expect_codes`; the clean sample and the compiler's own forms
   give `testing.expect_none`.
 - **The corpus gate,** which must pass: a finding on a core package is
-  either a false positive to fix, or a real defect to allow with its
-  reason (see below).
+  either a false positive to fix, or a real defect to add to the gate's
+  `allowed` list with its reason (see below).
 - **Its section in [`docs/RULES.md`](docs/RULES.md):** its code, what it
   flags, why, with its source linked, a flagged and a fixed example, what
   it leaves alone, and how to suppress it; and a line in the table there
@@ -143,11 +143,16 @@ The corpus gate, [`test/grice/corpus_test.gleam`](test/grice/corpus_test.gleam),
 runs the built-in rules over each of the Gleam core team's packages in the
 corpus, with a typed probe that reports nothing, so girard types every
 package even while no built-in rule needs types. It asserts that every
-package is clean: no finding, no coverage gap, every module typed. A
-failure lists each package that isn't, with its findings. A built-in rule
-is on by default only if it runs clean on these packages, or keeps a
-finding there with a written reason; when the first one does, the gate
-gains a committed list of the findings it allows, each with its reason.
+package is clean: no finding but those it allows, no coverage gap, every
+module typed. A built-in rule is on by default only if it runs clean on
+these packages, or each finding it keeps there is a real defect. Those
+are the `allowed` list in the gate, each with its package, path, line,
+column, code and the reason it's allowed. Each entry allows exactly one
+diagnostic: a second one at the same place is a new finding. An entry
+that no diagnostic matches is stale, and fails the gate too, so the bump
+that picks up a fix removes it. An entry can't allow one of grice's own
+diagnostics. A failure lists each finding not allowed, each stale entry
+and each package not fully typed.
 
 `gleam run -m grice/bench` runs the benchmark,
 [`test/grice/bench.gleam`](test/grice/bench.gleam), over every package of

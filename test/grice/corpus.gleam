@@ -166,18 +166,41 @@ pub fn describe_diagnostic(
   project: loader.Project,
   found: Diagnostic,
 ) -> String {
-  case found.location {
-    Some(location) ->
+  case found.location, position(project, found) {
+    Some(location), Ok(#(path, line, column)) ->
       package
       <> " "
-      <> location.path
-      <> position(project, location.path, location.primary.span.start)
+      <> describe_position(path, line, column)
       <> " "
       <> found.code
       <> ": "
       <> location.primary.message
-    None -> package <> " " <> found.code <> ": " <> found.title
+    _, _ -> package <> " " <> found.code <> ": " <> found.title
   }
+}
+
+/// Where a diagnostic of the run over `project` is: its path, and the
+/// line and column, counted from 1, where its primary label starts, or
+/// `Error` when it has no location.
+pub fn position(
+  project: loader.Project,
+  found: Diagnostic,
+) -> Result(#(String, Int, Int), Nil) {
+  case found.location {
+    Some(location) -> {
+      let assert Ok(source) = dict.get(loader.sources(project), location.path)
+        as { "the project has no source at " <> location.path }
+      let line_index.Position(line:, column:) =
+        line_index.position(source, location.primary.span.start)
+      Ok(#(location.path, line, column))
+    }
+    None -> Error(Nil)
+  }
+}
+
+/// A position as `<path>:<line>:<column>`.
+pub fn describe_position(path: String, line: Int, column: Int) -> String {
+  path <> ":" <> int.to_string(line) <> ":" <> int.to_string(column)
 }
 
 fn fail(context: String, diagnostics: List(Diagnostic)) -> a {
@@ -187,13 +210,4 @@ fn fail(context: String, diagnostics: List(Diagnostic)) -> a {
 fn read(path: String) -> String {
   let assert Ok(text) = simplifile.read(path) as { "can't read " <> path }
   text
-}
-
-// `:<line>:<column>` of the byte `offset` in the project's source at
-// `path`, which every diagnostic of its run points into.
-fn position(project: loader.Project, path: String, offset: Int) -> String {
-  let assert Ok(source) = dict.get(loader.sources(project), path)
-    as { "the project has no source at " <> path }
-  let line_index.Position(line:, column:) = line_index.position(source, offset)
-  ":" <> int.to_string(line) <> ":" <> int.to_string(column)
 }
