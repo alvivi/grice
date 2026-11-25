@@ -93,8 +93,10 @@ Each code in `rules` must name a rule of the run, so a typo or a rule that
 was removed stops the run instead of silently hiding nothing. That's also
 why a project with rules of its own runs grice through its entry module
 rather than with `gleam run -m grice`, whose built-in rules don't include
-them. grice's own diagnostics, those whose codes start with `grice/`,
-report on the run itself and can't be ignored.
+them. The built-in rules' codes start with `grice_rules/`, such as
+`grice_rules/no-echo`, and are ignored like any rule's. grice's own
+diagnostics, those whose codes start with `grice/`, report on the run
+itself and can't be ignored.
 
 **`[tools.grice]` must come before every `[[tools.grice.ignore]]` entry.**
 The TOML parser grice uses rejects the other order as setting
@@ -128,7 +130,9 @@ never suppressions.
   covers the whole module.
 
 Ignores in `gleam.toml` apply first, and each suppression is matched
-against what they left. grice's own diagnostics are never hidden.
+against what they left. The built-in rules, whose codes start with
+`grice_rules/`, are suppressed like any rule; only grice's own
+diagnostics, whose codes start with `grice/`, are never hidden.
 
 A suppression that can't do its job is a warning, so it never goes stale
 unnoticed:

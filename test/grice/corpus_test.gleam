@@ -17,21 +17,21 @@
 
 import gleam/list
 import gleam/string
-import grice
 import grice/corpus
 import grice/coverage.{Requested}
 import grice/internal/parallel
 import grice/rule.{type Rule}
+import grice/rules
 
 pub fn core_packages_are_clean_test() {
   corpus.download()
   let installed = corpus.installed()
-  let rules = [probe(), ..grice.built_in_rules()]
+  let rule_set = [probe(), ..rules.default()]
   let problems =
     corpus.core
     |> parallel.map(fn(package) {
       let project = corpus.load(package, installed)
-      let linted = corpus.lint(project, rules)
+      let linted = corpus.lint(project, rule_set)
       let coverage = linted.coverage
       let typed = Requested(full: coverage.modules, partial: 0, none: 0)
       let describe = corpus.describe_diagnostic(package, project, _)

@@ -9,6 +9,7 @@ gleam = ">= 1.15.4"
 
 [documentation]
 pages = [
+  { title = "Built-in rules", path = "rules.html", source = "docs/RULES.md" },
   { title = "Configuration", path = "configuration.html", source = "docs/CONFIGURATION.md" },
   { title = "Testing rules", path = "testing.html", source = "docs/TESTING.md" },
   { title = "JSON output", path = "json.html", source = "docs/JSON.md" },

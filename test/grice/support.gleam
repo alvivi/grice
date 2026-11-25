@@ -26,6 +26,7 @@ import grice/internal/runner.{type Linted}
 import grice/internal/stats
 import grice/internal/typing
 import grice/rule.{type Report, type Rule}
+import grice/testing
 import simplifile
 
 // Projects in memory
@@ -205,6 +206,58 @@ const showcase_dependencies = [
   #("dep/outer", "import dep/inner\n\npub fn value() {\n  3\n}\n"),
   #("dep/inner", "pub const x = 1\npub fn ("),
 ]
+
+// Built-in rules
+//
+// A built-in rule is tested on its samples, ordinary modules under
+// `test/grice/rules/samples/` that every build compiles, and on in-memory
+// sources of forms the compiler warns on. Each is linted as a project
+// whose target is Erlang and as one whose target is JavaScript, and both
+// runs must show the same diagnostics.
+
+/// The source of the sample `name`, such as `no_echo_flagged`, read from
+/// `test/grice/rules/samples/`.
+pub fn sample(name: String) -> String {
+  let path = "test/grice/rules/samples/" <> name <> ".gleam"
+  let assert Ok(source) = simplifile.read(path) as { "can't read " <> path }
+  source
+}
+
+/// Run `rules` over `source` as the project's `src/app.gleam`, on both
+/// targets, as `project_on_both_targets` does.
+pub fn on_both_targets(source: String, rules: List(Rule)) -> testing.Run {
+  project_on_both_targets("", [#("src/app.gleam", source)], rules)
+}
+
+/// Run `rules` over the project of `files`, `#(path, source)`, once with a
+/// `gleam.toml` that sets `target` to `erlang` and once to `javascript`,
+/// each followed by the `gleam.toml` text `toml`. Check that both runs show
+/// the same diagnostics, byte spans included, and return the Erlang run,
+/// whose render is the one to snapshot: a render shows each fixture's
+/// files, so the two runs' renders differ.
+pub fn project_on_both_targets(
+  toml: String,
+  files: List(#(String, String)),
+  rules: List(Rule),
+) -> testing.Run {
+  let run = fn(target) {
+    testing.project([
+      #("gleam.toml", "target = \"" <> target <> "\"\n" <> toml),
+      ..files
+    ])
+    |> testing.run(rules)
+  }
+  let erlang = run("erlang")
+  let javascript = run("javascript")
+  assert testing.diagnostics(erlang) == testing.diagnostics(javascript)
+    as {
+      "The two targets' diagnostics differ.\n\nOn Erlang:\n\n"
+      <> testing.render(erlang)
+      <> "\nOn JavaScript:\n\n"
+      <> testing.render(javascript)
+    }
+  erlang
+}
 
 // Rules
 //

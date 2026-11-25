@@ -49,12 +49,19 @@ on GitHub, which you add to `[dev_dependencies]` in your `gleam.toml`:
 grice = { git = "https://github.com/alvivi/grice.git", ref = "v0.1.0" }
 ```
 
+The default rule set and `grice/rules`, below, aren't released yet: until
+the next release, a project that wants them depends on `ref = "main"`.
+
 ### Running the built-in rules
 
-grice has no built-in rules yet, so for now `gleam run -m grice` runs an
-empty rule set. To lint with rules, write your own, as
-[Running your own rules](#running-your-own-rules) shows; what follows
-applies to them too.
+`gleam run -m grice` runs grice's default rule set. Each rule reports a
+warning:
+
+- `grice_rules/no-echo`: an `echo` left outside `test/` and `dev/`.
+
+[Built-in rules](https://github.com/alvivi/grice/blob/main/docs/RULES.md)
+describes each rule, what it leaves alone and why, and how to change its
+severity or turn it off.
 
 ```sh
 gleam run -m grice
@@ -78,14 +85,16 @@ gleam run --target javascript -m grice
 ### Running your own rules
 
 Rules are Gleam code. Write them with `grice/rule`, and run them from an
-entry module of your own, such as `dev/lint.gleam`:
+entry module of your own, such as `dev/lint.gleam`, with the built-in rules
+of `grice/rules` you want beside them:
 
 ```gleam
 import grice
-import lint/no_echo
+import grice/rules
+import lint/no_io_in_view
 
 pub fn main() -> Nil {
-  grice.run([no_echo.rule()])
+  grice.run([no_io_in_view.rule(), ..rules.default()])
 }
 ```
 

@@ -8,8 +8,8 @@ repository.
 **grice** is a type-aware linter for Gleam, written in Gleam. It is the
 infrastructure for linting a Gleam project: a runner, a rule API, a type layer,
 suppression comments and a diagnostics renderer. Rules are ordinary Gleam
-values. grice ships a built-in set (empty for now), and clients write their own
-rules with the same API the built-ins use.
+values. grice ships a default rule set, offered by `grice/rules`, and clients
+write their own rules with the same API the built-ins use.
 
 What sets it apart from a syntactic linter is that rules can ask
 [girard](https://github.com/alvivi/girard) for the inferred type of any
@@ -19,9 +19,9 @@ that its diagnostics follow the Gleam compiler's layout.
 **Status:** 0.1.0, the first release. grice won't be on Hex until 1.0, so
 each 0.x release is a tag on GitHub only. Everything the table below marks
 **Exists** has landed, with the corpus gate over the core packages, the
-benchmark and the JavaScript target. The type predicates (`grice/types`)
-and the diagnostic builders are still to come, and there are no built-in
-rules yet.
+benchmark and the JavaScript target. The default rule set has its first
+rules, under the `grice_rules/` prefix. The type predicates
+(`grice/types`) and the diagnostic builders are still to come.
 
 ## Build and Test
 
@@ -41,9 +41,13 @@ changelog and commit conventions.
 Tests use **gleeunit** and live in `test/`, with **birdie** snapshots of
 the text grice prints in `test/birdie_snapshots/`. The suite runs on both
 targets; the few tests of what only Erlang has carry `@target(erlang)`.
-The corpus gate runs the built-in rules over the packages pinned in
-`test/corpus/`, and the benchmark checks grice's speed over them against
-budgets; CONTRIBUTING.md says how to bump either.
+Each built-in rule is tested on its samples, ordinary modules in
+`test/grice/rules/samples/` that every build compiles with
+`--warnings-as-errors`, which shows the compiler is silent on the code the
+rule flags. The corpus gate runs the built-in rules over the packages
+pinned in `test/corpus/`, and the benchmark checks grice's speed over them
+against budgets; CONTRIBUTING.md says how to bump either, and how to add a
+built-in rule.
 
 ## Architecture
 
@@ -51,15 +55,16 @@ Rows marked **Exists** have landed. The others are the planned shape, so new
 code has a place to go.
 
 The supported API will be the `grice` module plus a few documented modules (the
-rule API, diagnostics builders and the testing kit). Everything under
+rule API, the built-in rules, diagnostics builders and the testing kit). Everything under
 `src/grice/internal/` is an implementation detail and can change without
 notice.
 
 | File | Responsibility |
 |---|---|
-| `src/grice.gleam` | **Exists:** entry points: `main()` for the built-in rule set, `run(rules)` for a client's own set, and the library API: `load_project`, `lint`, `diagnostics`, `coverage` and `render` |
+| `src/grice.gleam` | **Exists:** entry points: `main()`, which runs `rules.default()`, `run(rules)` for a client's own set, and the library API: `load_project`, `lint`, `diagnostics`, `coverage` and `render` |
 | `src/grice/coverage.gleam` | **Exists:** the coverage of a run and its gaps, public so tools can pattern-match on them |
 | `src/grice/rule.gleam` | **Exists:** module and project rule builders, reports and severities |
+| `src/grice/rules.gleam` | **Exists:** the built-in rules: `default()`, the set `main()` runs, and one function per rule |
 | `src/grice/facts.gleam` | **Exists:** per-module facts: name, path, source, imports, comments and the syntax tree as compiled for the target, and for typed rules the type queries and the `Unknown` type |
 | `src/grice/types.gleam` | Type predicates over girard's `Type` |
 | `src/grice/visit.gleam` | **Exists:** the glance syntax tree walk, in source order, with a hook per kind of node |
@@ -72,6 +77,7 @@ notice.
 | `src/grice/internal/line_index.gleam` | **Exists:** byte offset to line and column, line ranges, span checks, glance's offsets to bytes, and UTF-8 decoding that keeps every byte |
 | `src/grice/internal/typing.gleam` | **Exists:** girard integration: the order modules are typed in, the in-memory resolver and each module's type index |
 | `src/grice/internal/runner.gleam` | **Exists:** checking the rule set, planning which facts the rules need, running rules over the lint set, resolving reports, dropping what ignores and suppressions hide, and the coverage record with its notes |
+| `src/grice/internal/rules/` | **Exists:** one module per built-in rule, with its matching and its diagnostic text |
 | `src/grice/internal/suppress.gleam` | **Exists:** applying ignores and suppression comments, and the unused- and invalid-suppression warnings |
 | `src/grice/internal/render/human.gleam` | **Exists:** human output in a layout modelled on the compiler's, and a run's summary and stats |
 | `src/grice/internal/render/json.gleam` | **Exists:** the JSON document, schema version 1, pretty-printed |

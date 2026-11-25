@@ -1,15 +1,18 @@
 //// grice, a type-aware linter for Gleam.
 ////
-//// `gleam run -m grice` runs grice's built-in rules over the project, with
-//// `main`. A project with rules of its own gives grice a module of its own,
-//// such as `dev/lint.gleam`, whose `main` calls `run` with them:
+//// `gleam run -m grice` runs grice's default rule set over the project,
+//// with `main`: the built-in rules of `grice/rules`. A project with rules
+//// of its own gives grice a module of its own, such as `dev/lint.gleam`,
+//// whose `main` calls `run` with them, and with the built-in rules it
+//// wants:
 ////
 //// ```gleam
 //// import grice
+//// import grice/rules
 //// import my_app/lint/no_io_in_view
 ////
 //// pub fn main() -> Nil {
-////   grice.run([no_io_in_view.rule()])
+////   grice.run([no_io_in_view.rule(), ..rules.default()])
 //// }
 //// ```
 ////
@@ -53,6 +56,7 @@ import grice/internal/render/human
 import grice/internal/render/json
 import grice/internal/runner
 import grice/rule.{type Rule}
+import grice/rules
 import simplifile
 
 // Running
@@ -61,15 +65,10 @@ import simplifile
 // read here, everything else is `cli.execute`, and the process exits with
 // its code.
 
-/// Run grice's built-in rules from the command line: `gleam run -m grice`.
+/// Run grice's default rule set, `rules.default()`, from the command line:
+/// `gleam run -m grice`.
 pub fn main() -> Nil {
-  run(built_in_rules())
-}
-
-/// The rules `main` runs. There are none yet.
-@internal
-pub fn built_in_rules() -> List(Rule) {
-  []
+  run(rules.default())
 }
 
 /// Run `rules` from the command line, as the `main` of an entry module, and

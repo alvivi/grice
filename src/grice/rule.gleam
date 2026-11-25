@@ -1,4 +1,5 @@
-//// Rules, and the reports they make.
+//// The API that writes rules, and the reports they make. For the rules
+//// grice ships, see `grice/rules`.
 ////
 //// A rule has a code, such as `my_app/no-echo`, by which ignores in
 //// `gleam.toml` name it, and a title, the one-line summary printed with
