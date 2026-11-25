@@ -1,0 +1,49 @@
+---
+version: 2.0.2
+title: built-in no-echo: pipes with the default set
+file: ./test/grice/rules/no_echo_test.gleam
+test_name: no_echo_pipes_with_the_default_set_test
+---
+-- gleam.toml
+target = "erlang"
+-- src/app.gleam
+import gleam/int
+
+pub fn piped(count: Int) -> Int {
+  count |> echo
+}
+
+pub fn piped_on_with_a_message(count: Int) -> String {
+  count |> echo as "count" |> int.to_string
+}
+-- output
+warning[grice_rules/no-echo]: Leftover `echo`
+  ┌─ src/app.gleam:4:12
+  │
+4 │   count |> echo
+  │            ^^^^ This prints debug output when it runs
+
+`echo` is for debugging. `gleam build` accepts it, but `gleam publish`
+refuses a package that still has one, and an application prints it whenever
+this code runs.
+
+Hint: Remove the `echo` and keep its value: write `x` for `echo x`, and
+drop an `echo` step from a pipeline. If this module prints on purpose, use
+`gleam/io` instead.
+
+warning[grice_rules/no-echo]: Leftover `echo`
+  ┌─ src/app.gleam:8:12
+  │
+8 │   count |> echo as "count" |> int.to_string
+  │            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This prints debug output when it runs
+
+`echo` is for debugging. `gleam build` accepts it, but `gleam publish`
+refuses a package that still has one, and an application prints it whenever
+this code runs.
+
+Hint: Remove the `echo` and keep its value: write `x` for `echo x`, and
+drop an `echo` step from a pipeline. If this module prints on purpose, use
+`gleam/io` instead.
+
+2 warnings in 1 module.
+

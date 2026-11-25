@@ -83,6 +83,47 @@ in the same change.
   build between runs, so only its first run resolves its dependencies,
   which needs the network.
 
+## Adding a built-in rule
+
+A built-in rule ships in the default set only if it passes the gate in
+[`docs/RULES.md`](docs/RULES.md): the compiler is silent on what it flags,
+it's exact, it's cited, it's clean on the core packages, and it finds real
+problems. A rule `<name>`, with the code `grice_rules/<name>`, comes with:
+
+- **Its module,** `src/grice/internal/rules/<name>.gleam`, with
+  `pub fn rule() -> Rule`, its code as a private constant, and its
+  diagnostic text: a title, a primary label on the code, a message that
+  says why it matters and names its source, and a hint that says how to
+  fix it. Every built-in rule reports a warning.
+- **Its function in [`src/grice/rules.gleam`](src/grice/rules.gleam),**
+  with a doc comment: what it flags, a flagged and a fixed example, and a
+  link to its section of `docs/RULES.md`. Add it to `default()`.
+- **Its samples,** `test/grice/rules/samples/<name>_flagged.gleam` and
+  `<name>_clean.gleam`: ordinary modules of public functions, importing
+  only the standard library, with no warning. Every build compiles them
+  with `--warnings-as-errors`, on every compiler and target CI runs, which
+  shows the compiler is silent on them. `_flagged` holds each form the
+  rule reports, one finding per function where it can; `_clean` holds the
+  near misses it must leave alone. No sample function's name may end in
+  `_test`, or gleeunit runs it. A form the compiler warns on, or that
+  `gleam format` rewrites, can't be a sample: it's an in-memory source in
+  the tests, with a comment saying why.
+- **Its tests,** `test/grice/rules/<name>_test.gleam`. `support.sample`
+  reads a sample, and `support.on_both_targets` lints it as a project whose
+  target is Erlang and as one whose target is JavaScript, checks that both
+  show the same diagnostics, and returns the Erlang run. The flagged
+  sample's render is a snapshot, beside a check of its codes with
+  `testing.expect_codes`; the clean sample and the compiler's own forms
+  give `testing.expect_none`.
+- **The corpus gate,** which must pass: a finding on a core package is
+  either a false positive to fix, or a real defect to allow with its
+  reason (see below).
+- **Its section in [`docs/RULES.md`](docs/RULES.md):** its code, what it
+  flags, why, with its source linked, a flagged and a fixed example, what
+  it leaves alone, and how to suppress it; and a line in the table there
+  and in the README.
+- **A changelog entry,** under the default rule set's.
+
 ## Corpus and benchmark
 
 The corpus is the Hex packages grice is checked over, pinned in

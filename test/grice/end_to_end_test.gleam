@@ -1,6 +1,8 @@
 //// grice run the way a client runs it: through `gleam run`, on fixture
 //// projects whose target is JavaScript, with an entry module in `dev/`
-//// that runs two rules of their own, one syntactic and one typed.
+//// that runs two rules of their own, one syntactic and one typed, and
+//// with `gleam run -m grice`, which runs the default rule set over an app
+//// of its own.
 ////
 //// There are two clients, written from the same constants, with the same
 //// `gleam.toml` and `src/`. `build/fixtures/cli/` runs grice on Erlang,
@@ -43,22 +45,23 @@ import grice/support
 // snapshotted.
 
 pub fn human_output_from_a_subdirectory_test() {
-  on_both(toml, in: "dev", module: "lint", flags: [])
+  on_both(app, toml, in: "dev", module: "lint", flags: [])
   |> birdie.snap(title: "end to end: human output from a subdirectory")
 }
 
 pub fn json_output_test() {
-  on_both(toml, in: "", module: "lint", flags: ["--format", "json"])
+  on_both(app, toml, in: "", module: "lint", flags: ["--format", "json"])
   |> birdie.snap(title: "end to end: json output")
 }
 
 pub fn warnings_as_errors_fails_over_a_warning_test() {
-  on_both(toml, in: "", module: "lint", flags: ["--warnings-as-errors"])
+  on_both(app, toml, in: "", module: "lint", flags: ["--warnings-as-errors"])
   |> birdie.snap(title: "end to end: warnings as errors fails over a warning")
 }
 
 pub fn an_invalid_configuration_has_no_result_test() {
   on_both(
+    app,
     toml <> "\n[tools.grice]\nnope = 1\n",
     in: "",
     module: "lint",
@@ -68,13 +71,14 @@ pub fn an_invalid_configuration_has_no_result_test() {
 }
 
 pub fn an_unknown_option_is_a_usage_error_test() {
-  on_both(toml, in: "", module: "lint", flags: ["--nope"])
+  on_both(app, toml, in: "", module: "lint", flags: ["--nope"])
   |> birdie.snap(title: "end to end: an unknown option is a usage error")
 }
 
-// The built-in rule set is empty, so the suppression has nothing to hide.
+// The default rule set runs on an app of its own, whose findings it
+// reports.
 pub fn the_built_in_rules_run_with_gleam_run_m_grice_test() {
-  on_both(toml, in: "", module: "grice", flags: [])
+  on_both(built_in_app, toml, in: "", module: "grice", flags: [])
   |> birdie.snap(title: "end to end: the built-in rules")
 }
 
@@ -116,6 +120,19 @@ pub fn unreachable() -> Nil {
 pub fn hidden() -> Nil {
   // grice-ignore cli_fixture/no-panic: The tests show a hidden finding.
   panic as \"Neither does this.\"
+}
+"
+
+// The app the default rule set runs on, with a finding for its rules.
+const built_in_app =
+  "import gleam/io
+
+pub fn main() -> Nil {
+  io.println(greeting(\"Lucy\"))
+}
+
+pub fn greeting(name: String) -> String {
+  echo \"Hello, \" <> name
 }
 "
 
@@ -230,6 +247,7 @@ pub fn greeting() -> String
 // Run a scenario on both clients, with `src/app.gleam` holding `app`,
 // check that they agree, and describe the outcome.
 fn on_both(
+  app: String,
   gleam_toml: String,
   in directory: String,
   module module: String,
