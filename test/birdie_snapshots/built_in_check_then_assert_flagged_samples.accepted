@@ -1,0 +1,821 @@
+---
+version: 2.0.2
+title: built-in check-then-assert: flagged samples
+file: ./test/grice/rules/check_then_assert_test.gleam
+test_name: check_then_assert_flagged_samples_test
+---
+-- gleam.toml
+target = "erlang"
+-- src/app.gleam
+//// Each form check-then-assert reports, one per function. These functions
+//// never run: the module is here to be linted, and compiled by every build
+//// with `--warnings-as-errors`, which shows the compiler is silent on it.
+
+import gleam/bool
+import gleam/int
+import gleam/list
+
+// The constructors are imported under aliases, which the rule resolves
+// through the import: `Present` is `option.Some`, and `Some` here is
+// `option.None`.
+import gleam/option.{type Option, None as Some, Some as Present}
+import gleam/result
+
+pub fn case_true(parsed: Result(Int, Nil)) -> Int {
+  case result.is_ok(parsed) {
+    True -> {
+      let assert Ok(value) = parsed
+      value
+    }
+    False -> 0
+  }
+}
+
+pub fn case_false(parsed: Result(Int, Nil)) -> Nil {
+  case result.is_ok(parsed) {
+    True -> Nil
+    False -> {
+      let assert Error(reason) = parsed
+      reason
+    }
+  }
+}
+
+pub fn is_error(parsed: Result(Int, Nil)) -> Nil {
+  case result.is_error(parsed) {
+    True -> {
+      let assert Error(reason) = parsed
+      reason
+    }
+    False -> Nil
+  }
+}
+
+pub fn is_some(found: Option(Int)) -> Int {
+  case option.is_some(found) {
+    True -> {
+      let assert Present(value) = found
+      value
+    }
+    False -> 0
+  }
+}
+
+pub fn is_none(found: Option(Int)) -> Int {
+  case option.is_none(found) {
+    True -> {
+      let assert Some = found
+      0
+    }
+    False -> 1
+  }
+}
+
+// The fallback can only see what the unguarded `True` clause didn't match.
+pub fn fallback(found: Option(Int)) -> Int {
+  case option.is_none(found) {
+    True -> 0
+    _ -> {
+      let assert Present(value) = found
+      value
+    }
+  }
+}
+
+pub fn negated(parsed: Result(Int, Nil)) -> Nil {
+  case !result.is_ok(parsed) {
+    True -> {
+      let assert Error(reason) = parsed
+      reason
+    }
+    False -> Nil
+  }
+}
+
+pub fn piped(parsed: Result(Int, Nil)) -> Int {
+  case parsed |> result.is_ok {
+    True -> {
+      let assert Ok(value) = parsed
+      value
+    }
+    False -> 0
+  }
+}
+
+pub fn piped_with_parentheses(parsed: Result(Int, Nil)) -> Int {
+  case parsed |> result.is_ok() {
+    True -> {
+      let assert Ok(value) = parsed
+      value
+    }
+    False -> 0
+  }
+}
+
+// A guard only narrows the clause further.
+pub fn guarded_clause(parsed: Result(Int, Nil), allowed: Bool) -> Int {
+  case result.is_ok(parsed) {
+    True if allowed -> {
+      let assert Ok(value) = parsed
+      value
+    }
+    _ -> 0
+  }
+}
+
+// The conventions page's own example.
+pub fn guard(parsed: Result(Int, Nil)) -> Int {
+  use <- bool.guard(when: result.is_error(parsed), return: 0)
+  let assert Ok(value) = parsed
+  value
+}
+
+pub fn guard_labels_in_another_order(parsed: Result(Int, Nil)) -> Int {
+  use <- bool.guard(return: 0, when: result.is_error(parsed))
+  let assert Ok(value) = parsed
+  value
+}
+
+// With `otherwise` given, the continuation is `return`, which runs when the
+// check is true.
+pub fn lazy_guard_otherwise_given(parsed: Result(Int, Nil)) -> Int {
+  use <- bool.lazy_guard(when: result.is_ok(parsed), otherwise: fn() { 0 })
+  let assert Ok(value) = parsed
+  value
+}
+
+// With `return` given, the continuation is `otherwise`, which runs when the
+// check is false.
+pub fn lazy_guard_return_given(parsed: Result(Int, Nil)) -> Nil {
+  use <- bool.lazy_guard(when: result.is_ok(parsed), return: fn() { Nil })
+  let assert Error(reason) = parsed
+  reason
+}
+
+pub fn lazy_guard_return_callback(parsed: Result(Int, Nil)) -> Int {
+  bool.lazy_guard(
+    when: result.is_ok(parsed),
+    return: fn() {
+      let assert Ok(value) = parsed
+      value
+    },
+    otherwise: fn() { 0 },
+  )
+}
+
+pub fn guard_otherwise_callback(parsed: Result(Int, Nil)) -> Nil {
+  bool.guard(when: result.is_ok(parsed), return: Nil, otherwise: fn() {
+    let assert Error(reason) = parsed
+    reason
+  })
+}
+
+// Labelled arguments take their slots first, then the unlabelled ones and
+// the continuation fill the slots left, in order: here the function is
+// `return` and the continuation `otherwise`, which runs when the check is
+// false.
+pub fn lazy_guard_unlabelled_return(parsed: Result(Int, Nil)) -> Nil {
+  use <- bool.lazy_guard(fn() { Nil }, when: result.is_ok(parsed))
+  let assert Error(reason) = parsed
+  reason
+}
+
+pub fn guard_unlabelled_return(parsed: Result(Int, Nil)) -> Int {
+  use <- bool.guard(0, when: result.is_error(parsed))
+  let assert Ok(value) = parsed
+  value
+}
+
+// The unlabelled function fills `otherwise`, the slot the labels leave.
+pub fn lazy_guard_unlabelled_otherwise(parsed: Result(Int, Nil)) -> Nil {
+  bool.lazy_guard(
+    fn() {
+      let assert Error(reason) = parsed
+      reason
+    },
+    when: result.is_ok(parsed),
+    return: fn() { Nil },
+  )
+}
+
+// A shorthand argument takes the slot of its label too.
+pub fn guard_shorthand_return(parsed: Result(Int, Nil)) -> Int {
+  let return = 0
+  use <- bool.guard(when: result.is_error(parsed), return:)
+  let assert Ok(value) = parsed
+  value
+}
+
+pub fn lazy_guard_shorthand_otherwise(parsed: Result(Int, Nil)) -> Int {
+  let otherwise = fn() { 0 }
+  use <- bool.lazy_guard(when: result.is_ok(parsed), otherwise:)
+  let assert Ok(value) = parsed
+  value
+}
+
+pub fn lazy_guard_by_position(parsed: Result(Int, Nil)) -> Int {
+  bool.lazy_guard(
+    result.is_ok(parsed),
+    fn() {
+      let assert Ok(value) = parsed
+      value
+    },
+    fn() { 0 },
+  )
+}
+
+pub fn let_of_a_call(text: String) -> Int {
+  let parsed = int.parse(text)
+  case result.is_ok(parsed) {
+    True -> {
+      let assert Ok(value) = parsed
+      value
+    }
+    False -> 0
+  }
+}
+
+pub fn let_of_a_pipe(text: String) -> Int {
+  let parsed = text |> int.parse
+  case result.is_ok(parsed) {
+    True -> {
+      let assert Ok(value) = parsed
+      value
+    }
+    False -> 0
+  }
+}
+
+pub fn anonymous_function_parameter(all: List(Result(Int, Nil))) -> List(Int) {
+  list.map(all, fn(parsed) {
+    case result.is_ok(parsed) {
+      True -> {
+        let assert Ok(value) = parsed
+        value
+      }
+      False -> 0
+    }
+  })
+}
+
+pub fn use_callback_parameter(all: List(Result(Int, Nil))) -> List(Int) {
+  use parsed <- list.map(all)
+  case result.is_ok(parsed) {
+    True -> {
+      let assert Ok(value) = parsed
+      value
+    }
+    False -> 0
+  }
+}
+
+pub fn qualified_constructor(found: Option(Int)) -> Int {
+  case option.is_some(found) {
+    True -> {
+      let assert option.Some(value) = found
+      value
+    }
+    False -> 0
+  }
+}
+
+pub fn with_a_message_and_a_discard(parsed: Result(Int, Nil)) -> Int {
+  case result.is_ok(parsed) {
+    True -> {
+      let assert Ok(_) = parsed as "checked above"
+      1
+    }
+    False -> 0
+  }
+}
+
+pub fn inside_a_closure(parsed: Result(Int, Nil)) -> fn() -> Int {
+  case result.is_ok(parsed) {
+    True -> fn() {
+      let assert Ok(value) = parsed
+      value
+    }
+    False -> fn() { 0 }
+  }
+}
+
+// The compiler doesn't infer the variant after a block, so the assert in
+// it narrows nothing after it.
+pub fn after_an_assert_in_a_block(parsed: Result(Int, Nil)) -> Int {
+  let _ = {
+    let assert Ok(_) = parsed
+    Nil
+  }
+  case result.is_ok(parsed) {
+    True -> {
+      let assert Ok(value) = parsed
+      value
+    }
+    False -> 0
+  }
+}
+
+// Nor after a `case` that matched it.
+pub fn after_a_case_that_matched(parsed: Result(Int, Nil)) -> Int {
+  let _ = case parsed {
+    Ok(_) -> 1
+    Error(_) -> 2
+  }
+  case result.is_ok(parsed) {
+    True -> {
+      let assert Ok(value) = parsed
+      value
+    }
+    False -> 0
+  }
+}
+-- output
+warning[grice_rules/check-then-assert]: Check then assert
+   ┌─ src/app.gleam:18:7
+   │
+16 │   case result.is_ok(parsed) {
+   │        -------------------- `parsed` is checked here
+   ·
+18 │       let assert Ok(value) = parsed
+   │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+   ┌─ src/app.gleam:29:7
+   │
+26 │   case result.is_ok(parsed) {
+   │        -------------------- `parsed` is checked here
+   ·
+29 │       let assert Error(reason) = parsed
+   │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+   ┌─ src/app.gleam:38:7
+   │
+36 │   case result.is_error(parsed) {
+   │        ----------------------- `parsed` is checked here
+   ·
+38 │       let assert Error(reason) = parsed
+   │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+   ┌─ src/app.gleam:48:7
+   │
+46 │   case option.is_some(found) {
+   │        --------------------- `found` is checked here
+   ·
+48 │       let assert Present(value) = found
+   │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `found` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `found` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+   ┌─ src/app.gleam:58:7
+   │
+56 │   case option.is_none(found) {
+   │        --------------------- `found` is checked here
+   ·
+58 │       let assert Some = found
+   │       ^^^^^^^^^^^^^^^^^^^^^^^ `found` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `found` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+   ┌─ src/app.gleam:70:7
+   │
+67 │   case option.is_none(found) {
+   │        --------------------- `found` is checked here
+   ·
+70 │       let assert Present(value) = found
+   │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `found` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `found` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+   ┌─ src/app.gleam:79:7
+   │
+77 │   case !result.is_ok(parsed) {
+   │        --------------------- `parsed` is checked here
+   ·
+79 │       let assert Error(reason) = parsed
+   │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+   ┌─ src/app.gleam:89:7
+   │
+87 │   case parsed |> result.is_ok {
+   │        ---------------------- `parsed` is checked here
+   ·
+89 │       let assert Ok(value) = parsed
+   │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+   ┌─ src/app.gleam:99:7
+   │
+97 │   case parsed |> result.is_ok() {
+   │        ------------------------ `parsed` is checked here
+   ·
+99 │       let assert Ok(value) = parsed
+   │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+    ┌─ src/app.gleam:110:7
+    │
+108 │   case result.is_ok(parsed) {
+    │        -------------------- `parsed` is checked here
+    ·
+110 │       let assert Ok(value) = parsed
+    │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+    ┌─ src/app.gleam:120:3
+    │
+119 │   use <- bool.guard(when: result.is_error(parsed), return: 0)
+    │                           ----------------------- `parsed` is checked here
+120 │   let assert Ok(value) = parsed
+    │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+    ┌─ src/app.gleam:126:3
+    │
+125 │   use <- bool.guard(return: 0, when: result.is_error(parsed))
+    │                                      ----------------------- `parsed` is checked here
+126 │   let assert Ok(value) = parsed
+    │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+    ┌─ src/app.gleam:134:3
+    │
+133 │   use <- bool.lazy_guard(when: result.is_ok(parsed), otherwise: fn() { 0 })
+    │                                -------------------- `parsed` is checked here
+134 │   let assert Ok(value) = parsed
+    │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+    ┌─ src/app.gleam:142:3
+    │
+141 │   use <- bool.lazy_guard(when: result.is_ok(parsed), return: fn() { Nil })
+    │                                -------------------- `parsed` is checked here
+142 │   let assert Error(reason) = parsed
+    │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+    ┌─ src/app.gleam:150:7
+    │
+148 │     when: result.is_ok(parsed),
+    │           -------------------- `parsed` is checked here
+    ·
+150 │       let assert Ok(value) = parsed
+    │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+    ┌─ src/app.gleam:159:5
+    │
+158 │   bool.guard(when: result.is_ok(parsed), return: Nil, otherwise: fn() {
+    │                    -------------------- `parsed` is checked here
+159 │     let assert Error(reason) = parsed
+    │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+    ┌─ src/app.gleam:170:3
+    │
+169 │   use <- bool.lazy_guard(fn() { Nil }, when: result.is_ok(parsed))
+    │                                              -------------------- `parsed` is checked here
+170 │   let assert Error(reason) = parsed
+    │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+    ┌─ src/app.gleam:176:3
+    │
+175 │   use <- bool.guard(0, when: result.is_error(parsed))
+    │                              ----------------------- `parsed` is checked here
+176 │   let assert Ok(value) = parsed
+    │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+    ┌─ src/app.gleam:184:7
+    │
+184 │       let assert Error(reason) = parsed
+    │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+    ·
+187 │     when: result.is_ok(parsed),
+    │           -------------------- `parsed` is checked here
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+    ┌─ src/app.gleam:196:3
+    │
+195 │   use <- bool.guard(when: result.is_error(parsed), return:)
+    │                           ----------------------- `parsed` is checked here
+196 │   let assert Ok(value) = parsed
+    │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+    ┌─ src/app.gleam:203:3
+    │
+202 │   use <- bool.lazy_guard(when: result.is_ok(parsed), otherwise:)
+    │                                -------------------- `parsed` is checked here
+203 │   let assert Ok(value) = parsed
+    │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+    ┌─ src/app.gleam:211:7
+    │
+209 │     result.is_ok(parsed),
+    │     -------------------- `parsed` is checked here
+    ·
+211 │       let assert Ok(value) = parsed
+    │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+    ┌─ src/app.gleam:222:7
+    │
+220 │   case result.is_ok(parsed) {
+    │        -------------------- `parsed` is checked here
+    ·
+222 │       let assert Ok(value) = parsed
+    │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+    ┌─ src/app.gleam:233:7
+    │
+231 │   case result.is_ok(parsed) {
+    │        -------------------- `parsed` is checked here
+    ·
+233 │       let assert Ok(value) = parsed
+    │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+    ┌─ src/app.gleam:244:9
+    │
+242 │     case result.is_ok(parsed) {
+    │          -------------------- `parsed` is checked here
+    ·
+244 │         let assert Ok(value) = parsed
+    │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+    ┌─ src/app.gleam:256:7
+    │
+254 │   case result.is_ok(parsed) {
+    │        -------------------- `parsed` is checked here
+    ·
+256 │       let assert Ok(value) = parsed
+    │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+    ┌─ src/app.gleam:266:7
+    │
+264 │   case option.is_some(found) {
+    │        --------------------- `found` is checked here
+    ·
+266 │       let assert option.Some(value) = found
+    │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `found` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `found` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+    ┌─ src/app.gleam:276:7
+    │
+274 │   case result.is_ok(parsed) {
+    │        -------------------- `parsed` is checked here
+    ·
+276 │       let assert Ok(_) = parsed as "checked above"
+    │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+    ┌─ src/app.gleam:286:7
+    │
+284 │   case result.is_ok(parsed) {
+    │        -------------------- `parsed` is checked here
+    ·
+286 │       let assert Ok(value) = parsed
+    │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+    ┌─ src/app.gleam:302:7
+    │
+300 │   case result.is_ok(parsed) {
+    │        -------------------- `parsed` is checked here
+    ·
+302 │       let assert Ok(value) = parsed
+    │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+warning[grice_rules/check-then-assert]: Check then assert
+    ┌─ src/app.gleam:317:7
+    │
+315 │   case result.is_ok(parsed) {
+    │        -------------------- `parsed` is checked here
+    ·
+317 │       let assert Ok(value) = parsed
+    │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `parsed` was already checked, so this assert can't fail
+
+Gleam's conventions call checking a value and then asserting its shape an
+anti-pattern that "should never be done". The check and the assert can
+drift apart as the code changes.
+
+Hint: Match on `parsed` with `case` and use the value the pattern binds,
+instead of checking it first.
+
+31 warnings in 1 module.
+

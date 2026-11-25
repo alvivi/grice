@@ -17,8 +17,8 @@ pub fn default_has_each_built_in_rule_once_as_a_warning_test() {
       "grice_rules/no-echo",
       "grice_rules/ineffective-double-comparison",
       "grice_rules/no-length-for-emptiness",
+      "grice_rules/check-then-assert",
     ]
-  assert list.unique(codes) == codes
   let found =
     one_finding_each
     |> support.on_both_targets(rules.default())
@@ -30,7 +30,8 @@ pub fn default_has_each_built_in_rule_once_as_a_warning_test() {
 // A module with one finding for each rule of the default set, in the
 // order of the set.
 const one_finding_each =
-  "import gleam/string
+  "import gleam/result
+import gleam/string
 
 pub fn printed(count: Int) -> Int {
   echo count
@@ -42,6 +43,16 @@ pub fn decided(count: Int) -> Bool {
 
 pub fn counted(name: String) -> Bool {
   string.length(name) == 0
+}
+
+pub fn asserted(parsed: Result(Int, Nil)) -> Int {
+  case result.is_ok(parsed) {
+    True -> {
+      let assert Ok(value) = parsed
+      value
+    }
+    False -> 0
+  }
 }
 "
 

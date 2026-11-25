@@ -230,6 +230,17 @@ pub fn expression(
   walk_expression(acc, expression, visitor)
 }
 
+/// Walk a pattern and the patterns inside it and return the final
+/// accumulator.
+@internal
+pub fn pattern(
+  pattern: Pattern,
+  from acc: acc,
+  with visitor: Visitor(acc),
+) -> acc {
+  walk_pattern(acc, pattern, visitor)
+}
+
 // A top-level definition of any kind.
 type TopLevel {
   ImportDefinition(Definition(Import))
@@ -422,9 +433,10 @@ fn walk_clause(acc: acc, clause: glance.Clause, visitor: Visitor(acc)) -> acc {
   |> walk_expression(clause.body, visitor)
 }
 
-// The expression of a segment's `size` option. The other options hold no
-// expression.
-fn size_value(
+/// The expression of a segment's `size` option. The other options hold no
+/// expression.
+@internal
+pub fn size_value(
   option: glance.BitStringSegmentOption(Expression),
 ) -> Result(Expression, Nil) {
   case option {
@@ -493,8 +505,9 @@ fn walk_type(acc: acc, type_: Type, visitor: Visitor(acc)) -> acc {
   }
 }
 
-// The items of the fields that hold one. A shorthand field holds none.
-fn field_items(fields: List(glance.Field(item))) -> List(item) {
+/// The items of the fields that hold one. A shorthand field holds none.
+@internal
+pub fn field_items(fields: List(glance.Field(item))) -> List(item) {
   list.filter_map(fields, fn(field) {
     case field {
       glance.LabelledField(item:, ..) | glance.UnlabelledField(item:) ->

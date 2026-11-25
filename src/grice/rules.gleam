@@ -35,6 +35,7 @@
 //// rule's. [Built-in rules](https://github.com/alvivi/grice/blob/main/docs/RULES.md)
 //// describes each rule.
 
+import grice/internal/rules/check_then_assert
 import grice/internal/rules/ineffective_double_comparison
 import grice/internal/rules/no_echo
 import grice/internal/rules/no_length_for_emptiness
@@ -43,7 +44,12 @@ import grice/rule.{type Rule}
 /// The default set, which `gleam run -m grice` runs: every rule below, in
 /// the order they're listed.
 pub fn default() -> List(Rule) {
-  [no_echo(), ineffective_double_comparison(), no_length_for_emptiness()]
+  [
+    no_echo(),
+    ineffective_double_comparison(),
+    no_length_for_emptiness(),
+    check_then_assert(),
+  ]
 }
 
 /// `grice_rules/no-echo`: an `echo` left in a module outside `test/` and
@@ -134,4 +140,40 @@ pub fn ineffective_double_comparison() -> Rule {
 /// in the rule reference.
 pub fn no_length_for_emptiness() -> Rule {
   no_length_for_emptiness.rule()
+}
+
+/// `grice_rules/check-then-assert`: a `Result` or an `Option` tested with
+/// `result.is_ok`, `result.is_error`, `option.is_some` or
+/// `option.is_none`, and then `let assert`-ed on a path where the test
+/// already proved the asserted variant. Gleam's conventions page calls
+/// checking then asserting an anti-pattern that "should never be done".
+/// It follows `case` clauses, `bool.guard` and `bool.lazy_guard`, and
+/// stays silent wherever the compiler already knows the variant.
+///
+/// Flagged:
+///
+/// ```gleam
+/// pub fn port(text: String) -> Int {
+///   let parsed = int.parse(text)
+///   use <- bool.guard(when: result.is_error(parsed), return: 80)
+///   let assert Ok(port) = parsed
+///   port
+/// }
+/// ```
+///
+/// Fixed:
+///
+/// ```gleam
+/// pub fn port(text: String) -> Int {
+///   case int.parse(text) {
+///     Ok(port) -> port
+///     Error(Nil) -> 80
+///   }
+/// }
+/// ```
+///
+/// [check-then-assert](https://github.com/alvivi/grice/blob/main/docs/RULES.md#check-then-assert)
+/// in the rule reference.
+pub fn check_then_assert() -> Rule {
+  check_then_assert.rule()
 }

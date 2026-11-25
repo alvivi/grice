@@ -84,6 +84,7 @@ echo step
 | [`grice_rules/no-echo`](#no-echo) | An `echo` left outside `test/` and `dev/`. |
 | [`grice_rules/ineffective-double-comparison`](#ineffective-double-comparison) | A comparison that the comparisons before it in its chain already decide. |
 | [`grice_rules/no-length-for-emptiness`](#no-length-for-emptiness) | `string.length` or `list.length` compared with 0 or 1 to check for emptiness. |
+| [`grice_rules/check-then-assert`](#check-then-assert) | A `Result` or an `Option` checked with a predicate, then `let assert`-ed where the check already proved its variant. |
 
 ## no-echo
 
@@ -262,3 +263,83 @@ A `case string.length(name) { 0 -> ... _ -> ... }` becomes
 finding is worth fixing. To keep one, put
 `// grice-ignore grice_rules/no-length-for-emptiness: <reason>` on the
 line above it.
+
+## check-then-assert
+
+`grice_rules/check-then-assert` reports a `let assert` on a `Result` or an
+`Option` that a check has already proved: `result.is_ok`,
+`result.is_error`, `option.is_some` or `option.is_none` on the same
+variable, called directly or after a pipe, negated with `!` or not. It
+follows the check along the paths where it holds:
+
+- a `case` on the check: a `True` or `False` clause, guarded or not, and a
+  fallback after an unguarded `True` or `False` clause;
+- `bool.guard` and `bool.lazy_guard`, with their arguments placed as the
+  compiler places them: labelled ones in the slots of their labels, then
+  unlabelled ones and the `use` continuation in the slots left, in order.
+  The paths are the `use` continuation, and an anonymous function passed
+  as `lazy_guard`'s `return` or as either guard's `otherwise`.
+
+The assert's pattern must ask for no more than the variant, with only
+discards and variables inside it, such as `Ok(value)` or `None`. The rule
+finds the predicates and the guards by what girard resolved, and reads the
+pattern's constructor through the module's imports, so
+`import gleam/option.{Some as Present}` makes `Present(value)` the same as
+`Some(value)`.
+
+**Why.** Gleam's
+[conventions page](https://gleam.run/documentation/conventions-patterns-and-anti-patterns/),
+in its "Check-then-assert" section, calls checking a value and then
+asserting its shape "an anti-pattern in functional languages like Gleam,
+and it should never be done". The check and the assert can drift apart as
+the code changes, and a `case` says the same thing once.
+
+Flagged:
+
+```gleam
+pub fn port(text: String) -> Int {
+  let parsed = int.parse(text)
+  use <- bool.guard(when: result.is_error(parsed), return: 80)
+  let assert Ok(port) = parsed
+  port
+}
+```
+
+Fixed:
+
+```gleam
+pub fn port(text: String) -> Int {
+  case int.parse(text) {
+    Ok(port) -> port
+    Error(Nil) -> 80
+  }
+}
+```
+
+**What it leaves alone.**
+
+- What the compiler already reports. When the compiler knows a variable's
+  variant, it warns on a redundant assertion itself, so the rule only
+  looks at a function's parameters, the parameters of an anonymous
+  function or a `use` callback, and a `let` of a call or a pipe into a
+  module function. It's silent on a variable bound to a constructor or to
+  another variable, and on one an earlier `let assert` or an enclosing
+  `case` clause has matched against a constructor, directly or through
+  `echo`.
+- An assert the check disproves, such as `let assert Error(e) = x` where
+  `result.is_ok(x)` is true: it always fails, a sharper problem than this
+  rule's.
+- An assert that asks for more than the variant, such as `Ok(0)`, and one
+  with `as` on its pattern or a spread, such as `Ok(v) as result` or
+  `Ok(..)`.
+- A fallback that can still see either value, as after a guarded
+  `True if allowed ->` clause, a clause with alternatives, a `case` on
+  several subjects, a check stored in a variable, and a guard's callback
+  passed by name. `bool.guard`'s `return` is computed before the check, so
+  it's on no path.
+- A variable rebound since the check, by a `let`, a pattern or a
+  parameter.
+
+**Suppressing it.** Rewrite the check and the assert as one `case`. To keep
+one, put `// grice-ignore grice_rules/check-then-assert: <reason>` on the
+line above the assert.
