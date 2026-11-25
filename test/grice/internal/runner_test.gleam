@@ -263,7 +263,7 @@ pub fn untyped_definition_notes_each_skipped_definition_of_the_lint_set_test() {
           fix: None,
         )),
         message: [
-          "girard couldn't type `skipped`: type mismatch: String vs Int. Typed rules get no answers about the code inside it, so they may miss problems there.",
+          "girard couldn't type `skipped`: type mismatch: Int vs String. Typed rules get no answers about the code inside it, so they may miss problems there.",
         ],
         hint: Some(girard_hint),
       ),

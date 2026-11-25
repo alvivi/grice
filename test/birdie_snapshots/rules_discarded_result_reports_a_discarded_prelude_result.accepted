@@ -50,7 +50,7 @@ note[grice/untyped-definition]: Can't infer the types of this definition
 13 │ pub fn skipped() {
    │ ^^^^^^^^^^^^^^^^^^ girard couldn't type this definition
 
-girard couldn't type `skipped`: type mismatch: String vs Int. Typed rules
+girard couldn't type `skipped`: type mismatch: Int vs String. Typed rules
 get no answers about the code inside it, so they may miss problems there.
 
 Hint: If `gleam build` accepts this code, it's a gap in girard, the type

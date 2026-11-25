@@ -54,7 +54,7 @@ import grice/support
 
 // Budgets
 //
-// Measured on OTP 28.4.2, Gleam 1.19.2 and girard 4.0.1, over the corpus
+// Measured on OTP 28.4.2, Gleam 1.19.2 and girard 4.0.2, over the corpus
 // totals beside them. Re-measure them all when any of those versions or
 // the corpus changes, and when a change makes grice faster or slower on
 // purpose.
@@ -65,15 +65,15 @@ const corpus_modules = 101
 const corpus_lines = 46_378
 
 // What every scenario's `load` may take.
-const load_budget = 12_660_000
+const load_budget = 12_627_000
 
-const none_lint_budget = 6_459_000
+const none_lint_budget = 6_445_000
 
-const syntax_lint_budget = 8_193_000
+const syntax_lint_budget = 8_199_000
 
-const typed_lint_budget = 67_061_000
+const typed_lint_budget = 68_787_000
 
-const project_lint_budget = 6_652_000
+const project_lint_budget = 6_647_000
 
 const measured_passes = 3
 

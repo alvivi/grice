@@ -206,7 +206,7 @@ test_name: a_run_with_every_kind_of_gap_test
         "fix": null
       },
       "message": [
-        "girard couldn't type `skipped`: type mismatch: String vs Int. Typed rules get no answers about the code inside it, so they may miss problems there."
+        "girard couldn't type `skipped`: type mismatch: Int vs String. Typed rules get no answers about the code inside it, so they may miss problems there."
       ],
       "hint": "If `gleam build` accepts this code, it's a gap in girard, the type inference grice uses, so please report it at https://github.com/alvivi/girard/issues."
     },
