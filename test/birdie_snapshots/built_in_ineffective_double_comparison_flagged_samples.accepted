@@ -1,0 +1,322 @@
+---
+version: 2.0.2
+title: built-in ineffective-double-comparison: flagged samples
+file: ./test/grice/rules/ineffective_double_comparison_test.gleam
+test_name: ineffective_double_comparison_flagged_samples_test
+---
+-- gleam.toml
+target = "erlang"
+-- src/app.gleam
+//// Each form ineffective-double-comparison reports, one per function.
+//// These functions never run: the module is here to be linted, and
+//// compiled by every build with `--warnings-as-errors`, which shows the
+//// compiler is silent on it.
+
+pub type Point {
+  Point(x: Int, y: Int)
+}
+
+pub type Size {
+  Size(width: Int, height: Int)
+}
+
+pub type Box {
+  Box(size: Size)
+}
+
+pub fn implied(count: Int) -> Bool {
+  count > 5 && count > 0
+}
+
+pub fn contradicted(count: Int) -> Bool {
+  count > 5 && count < 3
+}
+
+pub fn ruled_out(count: Int) -> Bool {
+  count > 5 || count > 7
+}
+
+pub fn equality_excluded(count: Int) -> Bool {
+  count == 1 || count == 2 || count == 1
+}
+
+// Each range is written the wrong way round, as gleam_stdlib's `uri.gleam`
+// had it (gleam-lang/stdlib#881): `48 >= char` is `char <= 48`.
+pub fn is_hex_digit(char: Int) -> Bool {
+  { 48 >= char && char <= 57 } || { 97 >= char && char <= 102 }
+}
+
+pub fn literal_first(count: Int) -> Bool {
+  5 < count && 0 < count
+}
+
+pub fn field_access(point: Point) -> Bool {
+  point.x > 0 && point.x >= 1
+}
+
+pub fn nested_field_access(box: Box) -> Bool {
+  box.size.width >= 10 && box.size.width > 9
+}
+
+pub fn hexadecimal_and_binary(count: Int) -> Bool {
+  count >= 0x10 && count > 0b1111
+}
+
+pub fn octal_and_separators(count: Int) -> Bool {
+  count < 0o17 && count <= 10_000
+}
+
+pub fn negative(count: Int) -> Bool {
+  count < -16 && count < -1
+}
+
+pub fn across_an_opaque_operand(count: Int, ready: Bool) -> Bool {
+  count > 5 && ready && count > 0
+}
+
+pub fn equality_implied(count: Int) -> Bool {
+  count >= 3 && count <= 3 && count == 3
+}
+
+pub fn equality_contradicted(count: Int) -> Bool {
+  count == 3 && count == 4
+}
+
+// `count > 3` holds wherever it runs, but isn't reported, since NaN fails
+// it. Only NaN gets past it, and fails `count >= 2` too.
+pub fn ruled_out_by_both_bounds(count: Int) -> Bool {
+  count <= 5 || count > 3 || count >= 2
+}
+
+pub fn in_a_guard(count: Int) -> Int {
+  case count {
+    _ if count > 5 && count > 0 -> 1
+    _ -> 0
+  }
+}
+-- output
+warning[grice_rules/ineffective-double-comparison]: Comparison decided by an earlier one
+   ┌─ src/app.gleam:19:16
+   │
+19 │   count > 5 && count > 0
+   │   --------- This comparison already decides it
+   │                ^^^^^^^^^ This is always true here
+
+The comparison has no effect: the comparisons before it already make it
+true whenever it runs.
+
+Hint: A range check is written `low <= x && x <= high`. Check both
+comparisons against it.
+
+warning[grice_rules/ineffective-double-comparison]: Comparison decided by an earlier one
+   ┌─ src/app.gleam:23:16
+   │
+23 │   count > 5 && count < 3
+   │   --------- This comparison already decides it
+   │                ^^^^^^^^^ This can never be true together with the comparisons before it
+
+It contradicts a comparison before it, so the whole `&&` chain is always
+`False`.
+
+Hint: A range check is written `low <= x && x <= high`. Check both
+comparisons against it.
+
+warning[grice_rules/ineffective-double-comparison]: Comparison decided by an earlier one
+   ┌─ src/app.gleam:27:16
+   │
+27 │   count > 5 || count > 7
+   │   --------- This comparison already decides it
+   │                ^^^^^^^^^ This is never true here
+
+It can only be true where a comparison before it already was, so it never
+changes the result.
+
+Hint: A range check is written `low <= x && x <= high`. Check both
+comparisons against it.
+
+warning[grice_rules/ineffective-double-comparison]: Comparison decided by an earlier one
+   ┌─ src/app.gleam:31:31
+   │
+31 │   count == 1 || count == 2 || count == 1
+   │   ---------- This comparison already decides it
+   │                               ^^^^^^^^^^ This is never true here
+
+It can only be true where a comparison before it already was, so it never
+changes the result.
+
+Hint: A range check is written `low <= x && x <= high`. Check both
+comparisons against it.
+
+warning[grice_rules/ineffective-double-comparison]: Comparison decided by an earlier one
+   ┌─ src/app.gleam:37:19
+   │
+37 │   { 48 >= char && char <= 57 } || { 97 >= char && char <= 102 }
+   │     ---------- This comparison already decides it
+   │                   ^^^^^^^^^^ This is always true here
+
+The comparison has no effect: the comparisons before it already make it
+true whenever it runs.
+
+Hint: A range check is written `low <= x && x <= high`. Check both
+comparisons against it.
+
+warning[grice_rules/ineffective-double-comparison]: Comparison decided by an earlier one
+   ┌─ src/app.gleam:37:51
+   │
+37 │   { 48 >= char && char <= 57 } || { 97 >= char && char <= 102 }
+   │                                     ---------- This comparison already decides it
+   │                                                   ^^^^^^^^^^^ This is always true here
+
+The comparison has no effect: the comparisons before it already make it
+true whenever it runs.
+
+Hint: A range check is written `low <= x && x <= high`. Check both
+comparisons against it.
+
+warning[grice_rules/ineffective-double-comparison]: Comparison decided by an earlier one
+   ┌─ src/app.gleam:41:16
+   │
+41 │   5 < count && 0 < count
+   │   --------- This comparison already decides it
+   │                ^^^^^^^^^ This is always true here
+
+The comparison has no effect: the comparisons before it already make it
+true whenever it runs.
+
+Hint: A range check is written `low <= x && x <= high`. Check both
+comparisons against it.
+
+warning[grice_rules/ineffective-double-comparison]: Comparison decided by an earlier one
+   ┌─ src/app.gleam:45:18
+   │
+45 │   point.x > 0 && point.x >= 1
+   │   ----------- This comparison already decides it
+   │                  ^^^^^^^^^^^^ This is always true here
+
+The comparison has no effect: the comparisons before it already make it
+true whenever it runs.
+
+Hint: A range check is written `low <= x && x <= high`. Check both
+comparisons against it.
+
+warning[grice_rules/ineffective-double-comparison]: Comparison decided by an earlier one
+   ┌─ src/app.gleam:49:27
+   │
+49 │   box.size.width >= 10 && box.size.width > 9
+   │   -------------------- This comparison already decides it
+   │                           ^^^^^^^^^^^^^^^^^^ This is always true here
+
+The comparison has no effect: the comparisons before it already make it
+true whenever it runs.
+
+Hint: A range check is written `low <= x && x <= high`. Check both
+comparisons against it.
+
+warning[grice_rules/ineffective-double-comparison]: Comparison decided by an earlier one
+   ┌─ src/app.gleam:53:20
+   │
+53 │   count >= 0x10 && count > 0b1111
+   │   ------------- This comparison already decides it
+   │                    ^^^^^^^^^^^^^^ This is always true here
+
+The comparison has no effect: the comparisons before it already make it
+true whenever it runs.
+
+Hint: A range check is written `low <= x && x <= high`. Check both
+comparisons against it.
+
+warning[grice_rules/ineffective-double-comparison]: Comparison decided by an earlier one
+   ┌─ src/app.gleam:57:19
+   │
+57 │   count < 0o17 && count <= 10_000
+   │   ------------ This comparison already decides it
+   │                   ^^^^^^^^^^^^^^^ This is always true here
+
+The comparison has no effect: the comparisons before it already make it
+true whenever it runs.
+
+Hint: A range check is written `low <= x && x <= high`. Check both
+comparisons against it.
+
+warning[grice_rules/ineffective-double-comparison]: Comparison decided by an earlier one
+   ┌─ src/app.gleam:61:18
+   │
+61 │   count < -16 && count < -1
+   │   ----------- This comparison already decides it
+   │                  ^^^^^^^^^^ This is always true here
+
+The comparison has no effect: the comparisons before it already make it
+true whenever it runs.
+
+Hint: A range check is written `low <= x && x <= high`. Check both
+comparisons against it.
+
+warning[grice_rules/ineffective-double-comparison]: Comparison decided by an earlier one
+   ┌─ src/app.gleam:65:25
+   │
+65 │   count > 5 && ready && count > 0
+   │   --------- This comparison already decides it
+   │                         ^^^^^^^^^ This is always true here
+
+The comparison has no effect: the comparisons before it already make it
+true whenever it runs.
+
+Hint: A range check is written `low <= x && x <= high`. Check both
+comparisons against it.
+
+warning[grice_rules/ineffective-double-comparison]: Comparison decided by an earlier one
+   ┌─ src/app.gleam:69:31
+   │
+69 │   count >= 3 && count <= 3 && count == 3
+   │   ---------- This comparison decides it with the other one marked
+   │                 ---------- This comparison decides it with the other one marked
+   │                               ^^^^^^^^^^ This is always true here
+
+The comparison has no effect: the comparisons before it already make it
+true whenever it runs.
+
+Hint: A range check is written `low <= x && x <= high`. Check both
+comparisons against it.
+
+warning[grice_rules/ineffective-double-comparison]: Comparison decided by an earlier one
+   ┌─ src/app.gleam:73:17
+   │
+73 │   count == 3 && count == 4
+   │   ---------- This comparison already decides it
+   │                 ^^^^^^^^^^ This can never be true together with the comparisons before it
+
+It contradicts a comparison before it, so the whole `&&` chain is always
+`False`.
+
+Hint: A range check is written `low <= x && x <= high`. Check both
+comparisons against it.
+
+warning[grice_rules/ineffective-double-comparison]: Comparison decided by an earlier one
+   ┌─ src/app.gleam:79:30
+   │
+79 │   count <= 5 || count > 3 || count >= 2
+   │   ---------- This comparison decides it with the other one marked
+   │                 --------- This comparison decides it with the other one marked
+   │                              ^^^^^^^^^^ This is never true here
+
+It can only be true where a comparison before it already was, so it never
+changes the result.
+
+Hint: A range check is written `low <= x && x <= high`. Check both
+comparisons against it.
+
+warning[grice_rules/ineffective-double-comparison]: Comparison decided by an earlier one
+   ┌─ src/app.gleam:84:23
+   │
+84 │     _ if count > 5 && count > 0 -> 1
+   │          --------- This comparison already decides it
+   │                       ^^^^^^^^^ This is always true here
+
+The comparison has no effect: the comparisons before it already make it
+true whenever it runs.
+
+Hint: A range check is written `low <= x && x <= high`. Check both
+comparisons against it.
+
+17 warnings in 1 module.
+

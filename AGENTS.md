@@ -77,7 +77,7 @@ notice.
 | `src/grice/internal/line_index.gleam` | **Exists:** byte offset to line and column, line ranges, span checks, glance's offsets to bytes, and UTF-8 decoding that keeps every byte |
 | `src/grice/internal/typing.gleam` | **Exists:** girard integration: the order modules are typed in, the in-memory resolver and each module's type index |
 | `src/grice/internal/runner.gleam` | **Exists:** checking the rule set, planning which facts the rules need, running rules over the lint set, resolving reports, dropping what ignores and suppressions hide, and the coverage record with its notes |
-| `src/grice/internal/rules/` | **Exists:** one module per built-in rule, with its matching and its diagnostic text |
+| `src/grice/internal/rules/` | **Exists:** one module per built-in rule, with its matching and its diagnostic text, and `int_literal.gleam`, which reads glance's Int literals in every spelling for the rules that compare with one |
 | `src/grice/internal/suppress.gleam` | **Exists:** applying ignores and suppression comments, and the unused- and invalid-suppression warnings |
 | `src/grice/internal/render/human.gleam` | **Exists:** human output in a layout modelled on the compiler's, and a run's summary and stats |
 | `src/grice/internal/render/json.gleam` | **Exists:** the JSON document, schema version 1, pretty-printed |

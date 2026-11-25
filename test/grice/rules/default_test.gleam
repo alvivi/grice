@@ -12,7 +12,8 @@ import grice/testing
 
 pub fn default_has_each_built_in_rule_once_as_a_warning_test() {
   let codes = list.map(rules.default(), rule.code)
-  assert codes == ["grice_rules/no-echo"]
+  assert codes
+    == ["grice_rules/no-echo", "grice_rules/ineffective-double-comparison"]
   assert list.unique(codes) == codes
   let found =
     support.sample("no_echo_flagged")

@@ -82,6 +82,7 @@ echo step
 | Code | What it flags |
 |---|---|
 | [`grice_rules/no-echo`](#no-echo) | An `echo` left outside `test/` and `dev/`. |
+| [`grice_rules/ineffective-double-comparison`](#ineffective-double-comparison) | A comparison that the comparisons before it in its chain already decide. |
 
 ## no-echo
 
@@ -131,3 +132,63 @@ even when the warning is suppressed. Braces around the `echo` step,
 **Suppressing it.** A module under `src/` that prints with `echo` on
 purpose, such as a script, takes an ignore in `gleam.toml` or a
 `grice-ignore-file` comment, with the reason.
+
+## ineffective-double-comparison
+
+`grice_rules/ineffective-double-comparison` reports a comparison, in a
+chain of `&&` or of `||`, that the comparisons before it already decide.
+It compares a variable, or a field access on one such as `point.x`, with an
+Int literal, using `<`, `<=`, `>`, `>=` or `==`, with the literal on either
+side and in any spelling: decimal, `0x`, `0o` or `0b`, negative or not.
+
+In a chain of `&&`, the comparison is either always true where it runs,
+because the ones before it imply it, or never true together with them, so
+the whole chain is always `False`. In a chain of `||`, it can only be true
+where a comparison before it already was, so it never changes the result.
+The diagnostic marks the comparisons that decide it.
+
+**Why.** It's a bug: one of the comparisons doesn't say what was meant.
+Most often it's a range written the wrong way round. gleam_stdlib's
+`uri.gleam` had three, `{ 48 >= char && char <= 57 }` among them, which
+made the JavaScript URI parser reject bracketed IPv6 hosts with the hex
+digits b to f
+([gleam-lang/stdlib#881](https://github.com/gleam-lang/stdlib/issues/881)).
+
+Flagged, since `48 >= char` is `char <= 48`, so `char <= 57` is always true
+where it runs:
+
+```gleam
+pub fn is_digit(char: Int) -> Bool {
+  48 >= char && char <= 57
+}
+```
+
+Fixed:
+
+```gleam
+pub fn is_digit(char: Int) -> Bool {
+  48 <= char && char <= 57
+}
+```
+
+**What it leaves alone.**
+
+- The earlier comparison, even when a later one implies it, as in
+  `count > 0 && ready && count > 5`: it still guards what runs in between.
+- A comparison that is always true in a chain of `||`, as the last one in
+  `count < 0 || count > 0 || count == 0`. On JavaScript an Int can be NaN,
+  which fails all three.
+- `!=`, which NaN passes, comparisons of Floats, and comparisons of
+  anything but a variable or a field access with an Int literal, such as
+  of a call or a tuple index, or with a named constant in place of the
+  literal. Any other operand, such as a call or a block, adds nothing, but
+  the facts carry across it, so `count > 5 && ready && count > 0` is still
+  reported. A block or a chain of the other operator is judged on its own.
+- A literal outside JavaScript's safe integers, `-(2^53 - 1)` to
+  `2^53 - 1`, so the verdict is the same on both targets.
+- A decision that takes more than two comparisons to show, such as
+  `count >= 3 || count == 0 || count == 1 || count == 2 || count >= 0`.
+
+**Suppressing it.** The rule doesn't guess, so a finding is a real mistake
+to fix. If a chain is generated and meant to stay as it is, ignore the rule
+for that file in `gleam.toml`.
