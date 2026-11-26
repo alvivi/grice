@@ -16,11 +16,11 @@ What sets it apart from a syntactic linter is that rules can ask
 expression and for which definition any name or field access resolved to, and
 that its diagnostics follow the Gleam compiler's layout.
 
-**Status:** 0.1.0, the first release. grice won't be on Hex until 1.0, so
-each 0.x release is a tag on GitHub only. Everything the table below marks
-**Exists** has landed, with the corpus gate over the core packages, the
-benchmark and the JavaScript target. The default rule set has four
-built-in rules, under the `grice_rules/` prefix. The type predicates
+**Status:** 0.2.0, which adds the default rule set. grice won't be on Hex
+until 1.0, so each 0.x release is a tag on GitHub only. Everything the table
+below marks **Exists** has landed, with the corpus gate over the core
+packages, the benchmark and the JavaScript target. The default rule set has
+four built-in rules, under the `grice_rules/` prefix. The type predicates
 (`grice/types`) and the diagnostic builders are still to come.
 
 ## Build and Test
