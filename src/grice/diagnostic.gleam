@@ -18,6 +18,11 @@ import gleam/option.{type Option}
 /// `message` holds the explanation as a list of paragraphs. Write each one
 /// as plain, unwrapped text: renderers wrap paragraphs themselves. `hint` is
 /// a single suggestion on how to fix the problem, printed after the message.
+///
+/// All of a diagnostic's text, its title, message, hint and label messages,
+/// marks code with backticks, as Markdown's inline code and the compiler's
+/// own diagnostics do: `` Unknown key in `gleam.toml` ``. Renderers print the
+/// backticks as they are.
 pub type Diagnostic {
   Diagnostic(
     /// A stable identifier for the rule that produced the diagnostic, such

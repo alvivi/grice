@@ -99,6 +99,11 @@
 //// }
 //// ```
 ////
+//// A rule's title and its reports' labels, message and hint are plain text
+//// that marks code with backticks, as the compiler's diagnostics do, such
+//// as the title `` Leftover `echo` ``. The backticks are printed as they
+//// are.
+////
 //// Every rule reports with the severity `Warning` unless `with_severity`
 //// says otherwise.
 
