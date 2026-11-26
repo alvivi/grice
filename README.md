@@ -46,11 +46,8 @@ on GitHub, which you add to `[dev_dependencies]` in your `gleam.toml`:
 
 ```toml
 [dev_dependencies]
-grice = { git = "https://github.com/alvivi/grice.git", ref = "v0.1.0" }
+grice = { git = "https://github.com/alvivi/grice.git", ref = "v0.2.0" }
 ```
-
-The default rule set and `grice/rules`, below, aren't released yet: until
-the next release, a project that wants them depends on `ref = "main"`.
 
 ### Running the built-in rules
 

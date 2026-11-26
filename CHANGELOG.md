@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2026-11-26
 
 ### Added
 
@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   module of your own can run them beside its rules, change a rule's
   severity or leave one out. Each reports a warning, and its code starts
   with `grice_rules/`, so ignores and suppression comments hide it like
-  any rule's. [Built-in rules](https://github.com/alvivi/grice/blob/main/docs/RULES.md)
+  any rule's. [Built-in rules](https://github.com/alvivi/grice/blob/v0.2.0/docs/RULES.md)
   describes each one:
   - `grice_rules/no-echo`: an `echo` left in a module outside `test/` and
     `dev/`, which `gleam publish` refuses and an application prints.
@@ -53,4 +53,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and suppression comments, JSON output, a testing kit for rules, and both
   targets, Erlang and JavaScript on Node.
 
+[0.2.0]: https://github.com/alvivi/grice/releases/tag/v0.2.0
 [0.1.0]: https://github.com/alvivi/grice/releases/tag/v0.1.0
