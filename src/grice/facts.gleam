@@ -4,10 +4,12 @@
 //// describe the module as it's compiled for the project's target: a
 //// definition whose `@target` attribute names the other target isn't
 //// there, whatever its kind, and neither is an import marked that way.
+//// They also say which of the project's modules and types are internal.
 ////
 //// The `kind` parameter says which facts a rule can ask for. Every rule
 //// gets `Syntax` facts: the module's name, path, source, comments and
-//// syntax tree, and the project's target. A rule built with `rule.typed`
+//// syntax tree, the project's target, and which of the project's modules
+//// and types are internal. A rule built with `rule.typed`
 //// gets `Typed` facts, which also answer what girard, the type inference
 //// grice uses, found: the type of an expression, what a name or field
 //// access resolved to, and the type of a top-level definition. A typed
@@ -28,7 +30,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/pair
 import gleam/result
-import gleam/set
+import gleam/set.{type Set}
 import glexer
 import glexer/token.{type Token}
 import grice/internal/config
@@ -51,6 +53,8 @@ pub opaque type ModuleFacts(kind) {
     imports: List(String),
     comments: List(Comment),
     target: Target,
+    internal_modules: Set(String),
+    internal_types: Set(#(String, String)),
     // What girard found for the module: `None` when no rule asked for
     // types, or girard returned nothing for the module.
     types: Option(ModuleTypes),
@@ -104,17 +108,56 @@ pub fn target(facts: ModuleFacts(kind)) -> Target {
   facts.target
 }
 
-/// The facts of a loaded module, with what girard found for it when a rule
-/// asked for types, or an error when it doesn't parse, which the loader has
-/// already reported. Its comments are read here, so only modules that get
-/// facts are lexed for them.
+/// Whether `module` is one of the project's internal modules: a module of
+/// the project, under `src/`, `test/` or `dev/`, whose name matches a
+/// pattern of `internal_modules` in `gleam.toml`, or, when that key is
+/// absent and `name` is set, `<name>/internal` or a module under it.
+///
+/// The answer follows grice's reading of `gleam.toml`, which the
+/// configuration guide describes. It's exact for the project's own
+/// modules, and false for a dependency's, since grice doesn't read a
+/// dependency's `gleam.toml`.
+pub fn is_internal_module(facts: ModuleFacts(kind), module: String) -> Bool {
+  set.contains(facts.internal_modules, module)
+}
+
+/// Whether grice knows the type `name` of the project's module `module` to
+/// be internal: a public custom type of an internal module or marked
+/// `@internal`, or a type alias that isn't public API (private, marked
+/// `@internal` or in an internal module) whose definition, as written,
+/// names an internal type. A public alias named in that definition counts
+/// as a name, its written arguments included, and what it stands for
+/// doesn't count.
+///
+/// The answer is positive: `True` means internal, and `False` means grice
+/// doesn't know the type to be internal. That's also the answer for a type
+/// of a module grice didn't load, neither linted nor imported by a linted
+/// module, of a module that doesn't parse, of a dependency, and for a name
+/// that isn't a type. A module that matches an `internal_modules` pattern
+/// doesn't make every type of it internal: an alias there that names only
+/// public types isn't. Like `is_internal_module`, it follows grice's
+/// reading of `gleam.toml`, and it reads the module as compiled for the
+/// project's target.
+pub fn is_internal_type(
+  facts: ModuleFacts(kind),
+  module module: String,
+  name name: String,
+) -> Bool {
+  set.contains(facts.internal_types, #(module, name))
+}
+
+/// The facts of a loaded module of `project`, with what girard found for it
+/// when a rule asked for types, or an error when it doesn't parse, which
+/// the loader has already reported. Its comments are read here, so only
+/// modules that get facts are lexed for them.
 @internal
 pub fn new(
   module: loader.Module,
-  target: config.Target,
+  project: loader.Project,
   types: Option(ModuleTypes),
 ) -> Result(ModuleFacts(Syntax), Nil) {
   use syntax <- result.map(result.replace_error(module.parsed, Nil))
+  let target = project.config.target
   let view = loader.for_target(syntax, target)
   ModuleFacts(
     module_name: module.name,
@@ -129,6 +172,8 @@ pub fn new(
       config.Erlang -> Erlang
       config.JavaScript -> JavaScript
     },
+    internal_modules: project.internal_modules,
+    internal_types: project.internal_types,
     types:,
   )
 }

@@ -129,7 +129,7 @@ fn lint(
         option.then(types, fn(types) {
           option.from_result(dict.get(types, name))
         })
-      facts.new(module, project.config.target, module_types)
+      facts.new(module, project, module_types)
     })
   let module_rules =
     list.filter_map(rules, fn(lint_rule) {

@@ -118,9 +118,9 @@ pub opaque type Project {
 
 /// Why a project couldn't be loaded.
 pub type LoadError {
-  /// `[tools.grice]` or `target` in `gleam.toml` is invalid, or selects no
-  /// module to lint. Each `grice/invalid-config` diagnostic says what's
-  /// wrong.
+  /// `[tools.grice]`, `target`, `name` or `internal_modules` in
+  /// `gleam.toml` is invalid, or the configuration selects no module to
+  /// lint. Each `grice/invalid-config` diagnostic says what's wrong.
   InvalidConfig(diagnostics: List(Diagnostic))
   /// A file or directory grice needed couldn't be read, or a source isn't
   /// UTF-8. `path` is relative to the project root.

@@ -1,8 +1,9 @@
 # Configuration
 
-grice reads its configuration from the project's `gleam.toml`: the
-`target`, and the `[tools.grice]` table. Every key is optional, and a
-project with no `[tools.grice]` table lints `src/` with every rule.
+grice reads its configuration from the project's `gleam.toml`: three of
+the compiler's keys, `target`, `name` and `internal_modules`, and the
+`[tools.grice]` table. Every key is optional, and a project with no
+`[tools.grice]` table lints `src/` with every rule.
 
 ```toml
 name = "my_app"
@@ -23,7 +24,8 @@ the entry module that runs them (see the README). `gleam.toml` holds only
 which files are linted and what's ignored where.
 
 grice checks the configuration strictly. An unknown key, a value of the
-wrong type, a malformed glob or a rule code no rule of the run has is a
+wrong type, a malformed glob, a `name` that isn't a package name, a module
+pattern grice doesn't read or a rule code no rule of the run has is a
 `grice/invalid-config` error, and the run stops with exit code 2 before
 any rule runs. Every problem is reported at once.
 
@@ -35,6 +37,91 @@ import whose `@target` attribute names the other target is left out, as the
 compiler leaves it out. That doesn't depend on the target grice itself runs
 on: `gleam run` compiles grice for this target unless `--target` names
 another, and either way grice lints this one.
+
+## `name` and `internal_modules`
+
+The compiler's keys that say which of the package's modules are internal:
+not part of its public API, and left out of its documentation. grice reads
+them so that rules can ask which of the project's modules and types are
+internal, with `facts.is_internal_module` and `facts.is_internal_type`.
+
+```toml
+name = "my_app"
+internal_modules = ["my_app/internal", "my_app/internal/*", "my_app/web/private"]
+```
+
+- `name` is the package's name, which grice checks as the compiler does: a
+  lowercase letter followed by lowercase letters, digits and `_`, all
+  ASCII. Unlike the compiler, grice runs without one.
+- `internal_modules` lists module patterns. Without it, the internal
+  modules are `<name>/internal` and the modules under it, the compiler's
+  default, which needs `name`: with neither key, no module is internal. An
+  empty list, `internal_modules = []`, makes no module internal, where
+  removing the key brings the default back.
+
+A module is internal when a pattern matches its name, whether it's under
+`src/`, `test/` or `dev/`, linted or not. A dependency's modules never are,
+since grice doesn't read a dependency's `gleam.toml`. A type is internal
+when it's a public custom type of an internal module or one marked
+`@internal`, or a type alias that isn't public API, because it's private,
+marked `@internal` or in an internal module, and whose definition names an
+internal type.
+
+### Module patterns
+
+The patterns of `internal_modules` are over module names, such as
+`my_app/web/private`, not the path globs of `include` and `exclude`, such
+as `src/my_app/web/private.gleam`. A module pattern matches a whole module
+name:
+
+- `*` matches any run of characters, and `?` one character, `/` included
+  in both, so `my_app/internal/*` matches `my_app/internal/deep/thing`;
+- every other character matches itself.
+
+That's how the compiler reads these patterns. It reads more glob syntax
+there, but grice reads only `*` and `?`: a pattern holding `[`, `]`, `{`,
+`}`, `\` or `**` is a `grice/invalid-config` error, which stops every run
+on the project, whatever its rules. The compiler reads that syntax by its
+context, so grice rejects it rather than read it approximately and mark the
+wrong modules. A pattern the compiler rejects too, such as `app/[` with its
+class left open, needs fixing first. For one it accepts, each of these
+rewrites means the same to the compiler as the pattern it replaces, on the
+module names they can match:
+
+| Instead of | Write |
+|---|---|
+| `x/**` | `x/*` |
+| `**/x` | `x` and `*/x` |
+| `a/**/b` | `a/b` and `a/*/b` |
+| `a/{x,y}` or `a/[xy]` | `a/x` and `a/y` |
+
+For any other pattern the compiler accepts, list by name the modules it
+treats as internal today: under `src/`, the ones missing from the Modules
+list of the pages a successful `gleam docs build` writes, and under `test/`
+and `dev/`, which the documentation never shows, the ones the pattern
+matches. That keeps
+today's set, but a module added later needs adding to the list. If there
+are none, write `internal_modules = []`.
+
+### Spellings grice misreads
+
+grice reads `gleam.toml` with a TOML parser of its own, which reads a few
+rare spellings differently from the compiler:
+
+- It doesn't decode the `\u` and `\U` escapes of a string. So
+  `name = "\u0061pp"`, which the compiler reads as `app`, reaches grice as
+  `\u0061pp`, which isn't a package name, and a pattern written with one
+  holds a `\`, which grice doesn't read. Both are errors, rather than
+  values grice would read wrongly.
+- It doesn't decode the escapes of a quoted key, so a top-level key
+  written with a `\`, such as `"\u0069nternal_modules"`, is an error: grice
+  can't tell which key it is.
+- A multiline string that starts with two line breaks loses both, where
+  the compiler keeps the second. Written that way, `a/*` matches nothing
+  for the compiler, since no module name holds a line break, and the
+  modules under `a` for grice. This goes for every string grice reads,
+  globs included, and no check of the value can see it, so write each
+  pattern on one line.
 
 ## `[tools.grice]`
 

@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Internal modules and types in facts.** `facts.is_internal_module`
+  tells every rule whether a module of the project is internal: under
+  `src/`, `test/` or `dev/`, with a name that a pattern of
+  `internal_modules` in `gleam.toml` matches, or, when that key is absent
+  and `name` is set, `<name>/internal` or a module under it.
+  `facts.is_internal_type` tells whether grice knows a type of the project
+  to be internal: a public custom type of an internal module or marked
+  `@internal`, or a type alias that isn't public API (private, marked
+  `@internal` or in an internal module) whose definition names an internal
+  type. Its answer is positive: `False` also covers what grice can't see,
+  such as a dependency's types.
+
+### Changed
+
+- **grice reads `name` and `internal_modules`.** Besides `target`, grice
+  now reads two more of the compiler's keys in `gleam.toml`, to know which
+  modules are internal, and checks them as strictly: a `name` that isn't a
+  package name, or a top-level key written with a `\`, which grice's TOML
+  reader can't decode, stops the run with a `grice/invalid-config` error. A
+  project with no `name` still runs, with no default internal modules.
+- **Patterns in `internal_modules` use `*` and `?` only.** grice reads a
+  module pattern as the compiler does when it holds only literal
+  characters, `*` and `?`, and stops the run on one that holds `[`, `]`,
+  `{`, `}`, `\` or `**`, even with the default rule set alone. Write `x/*`
+  for `x/**`, `x` and `*/x` for `**/x`, `a/b` and `a/*/b` for `a/**/b`, and
+  `a/x` and `a/y` for `a/{x,y}`, which the compiler reads the same way on
+  the module names each can match; otherwise list the internal modules by
+  name. [Configuration](https://github.com/alvivi/grice/blob/main/docs/CONFIGURATION.md)
+  says how.
+
 ## [0.3.0] - 2026-11-27
 
 ### Added

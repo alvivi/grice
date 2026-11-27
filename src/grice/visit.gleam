@@ -241,6 +241,13 @@ pub fn pattern(
   walk_pattern(acc, pattern, visitor)
 }
 
+/// Walk a type annotation and the types inside it and return the final
+/// accumulator.
+@internal
+pub fn type_(type_: Type, from acc: acc, with visitor: Visitor(acc)) -> acc {
+  walk_type(acc, type_, visitor)
+}
+
 // A top-level definition of any kind.
 type TopLevel {
   ImportDefinition(Definition(Import))
