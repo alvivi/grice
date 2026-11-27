@@ -78,7 +78,7 @@ const typed_lint_budget = 68_787_000
 
 const project_lint_budget = 6_647_000
 
-const built_in_lint_budget = 72_034_000
+const built_in_lint_budget = 80_730_000
 
 const measured_passes = 3
 

@@ -18,6 +18,7 @@ pub fn simplify_has_each_rule_once_as_a_warning_test() {
       "grice_rules/list-map-then-flatten",
       "grice_rules/filter-then-length",
       "grice_rules/reverse-then-first",
+      "grice_rules/fold-plus",
     ]
   let found =
     one_finding_each
@@ -39,7 +40,8 @@ pub fn simplify_runs_beside_the_default_set_test() {
 }
 
 // A module with one finding for each rule of the pack, in the order of the
-// pack, and none for the default set.
+// pack, and none for the default set. Its fold adds as `int.sum` does on
+// JavaScript, the one form fold-plus reads on both targets.
 const one_finding_each =
   "import gleam/list
 import gleam/result
@@ -58,6 +60,10 @@ pub fn adults(ages: List(Int), adult: fn(Int) -> Bool) -> Int {
 
 pub fn latest(scores: List(Int)) -> Result(Int, Nil) {
   scores |> list.reverse |> list.first
+}
+
+pub fn total(scores: List(Int)) -> Int {
+  list.fold(scores, 0, fn(total, score) { score + total })
 }
 "
 

@@ -229,6 +229,18 @@ pub fn on_both_targets(source: String, rules: List(Rule)) -> testing.Run {
   project_on_both_targets("", [#("src/app.gleam", source)], rules)
 }
 
+/// Run `rules` over `source` as the project's `src/app.gleam`, with a
+/// `gleam.toml` that sets `target` to `target`, `erlang` or `javascript`:
+/// for a rule whose findings depend on the target, which
+/// `on_both_targets` can't check.
+pub fn on_target(
+  source: String,
+  target: String,
+  rules: List(Rule),
+) -> testing.Run {
+  project_on_target(target, "", [#("src/app.gleam", source)], rules)
+}
+
 /// Run `rules` over the project of `files`, `#(path, source)`, once with a
 /// `gleam.toml` that sets `target` to `erlang` and once to `javascript`,
 /// each followed by the `gleam.toml` text `toml`. Check that both runs show
@@ -240,15 +252,8 @@ pub fn project_on_both_targets(
   files: List(#(String, String)),
   rules: List(Rule),
 ) -> testing.Run {
-  let run = fn(target) {
-    testing.project([
-      #("gleam.toml", "target = \"" <> target <> "\"\n" <> toml),
-      ..files
-    ])
-    |> testing.run(rules)
-  }
-  let erlang = run("erlang")
-  let javascript = run("javascript")
+  let erlang = project_on_target("erlang", toml, files, rules)
+  let javascript = project_on_target("javascript", toml, files, rules)
   assert testing.diagnostics(erlang) == testing.diagnostics(javascript)
     as {
       "The two targets' diagnostics differ.\n\nOn Erlang:\n\n"
@@ -257,6 +262,21 @@ pub fn project_on_both_targets(
       <> testing.render(javascript)
     }
   erlang
+}
+
+// Run `rules` over the project of `files` with a `gleam.toml` that sets
+// `target` to `target`, followed by the `gleam.toml` text `toml`.
+fn project_on_target(
+  target: String,
+  toml: String,
+  files: List(#(String, String)),
+  rules: List(Rule),
+) -> testing.Run {
+  testing.project([
+    #("gleam.toml", "target = \"" <> target <> "\"\n" <> toml),
+    ..files
+  ])
+  |> testing.run(rules)
 }
 
 // Rules

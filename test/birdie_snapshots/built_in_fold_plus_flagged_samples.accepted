@@ -1,0 +1,176 @@
+---
+version: 2.0.2
+title: built-in fold-plus: flagged samples
+file: ./test/grice/rules/fold_plus_test.gleam
+test_name: fold_plus_flagged_samples_on_erlang_test
+---
+-- gleam.toml
+target = "erlang"
+-- src/app.gleam
+//// Each form fold-plus reports, one per function, on a project whose
+//// target is Erlang. On one whose target is JavaScript, it reports only
+//// `element_first`, which adds as `int.sum` does there. These functions
+//// never run: the module is here to be linted, and compiled by every build
+//// with `--warnings-as-errors`, which shows the compiler is silent on it.
+//// `gleam/int` is imported under an alias and `list.fold` also
+//// unqualified, and the rule finds them by what they resolve to.
+
+import gleam/int as integer
+import gleam/list.{fold}
+
+pub fn direct(numbers: List(Int)) -> Int {
+  list.fold(numbers, 0, integer.add)
+}
+
+pub fn piped(numbers: List(Int)) -> Int {
+  numbers |> list.fold(0, integer.add)
+}
+
+pub fn unqualified(numbers: List(Int)) -> Int {
+  fold(numbers, 0, integer.add)
+}
+
+pub fn labelled(numbers: List(Int)) -> Int {
+  list.fold(over: numbers, from: 0, with: integer.add)
+}
+
+pub fn labels_in_another_order(numbers: List(Int)) -> Int {
+  list.fold(numbers, with: integer.add, from: 0)
+}
+
+pub fn piped_into_a_capture(numbers: List(Int)) -> Int {
+  numbers |> list.fold(from: 0, over: _, with: integer.add)
+}
+
+pub fn hexadecimal_zero(numbers: List(Int)) -> Int {
+  list.fold(numbers, 0x0, integer.add)
+}
+
+pub fn binary_zero(numbers: List(Int)) -> Int {
+  list.fold(numbers, 0b0, integer.add)
+}
+
+pub fn total_first(numbers: List(Int)) -> Int {
+  list.fold(numbers, 0, fn(total, number) { total + number })
+}
+
+pub fn annotated(numbers: List(Int)) -> Int {
+  list.fold(numbers, 0, fn(total: Int, number: Int) -> Int { total + number })
+}
+
+pub fn element_first(numbers: List(Int)) -> Int {
+  list.fold(numbers, 0, fn(total, number) { number + total })
+}
+-- output
+warning[grice_rules/fold-plus]: A fold that sums
+   ┌─ src/app.gleam:13:3
+   │
+13 │   list.fold(numbers, 0, integer.add)
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This sums a list of ints with a fold
+
+`int.sum` adds up the same numbers: "Sums a list of ints."
+
+Hint: Use `sum` from `gleam/int` on the list in place of the fold.
+
+warning[grice_rules/fold-plus]: A fold that sums
+   ┌─ src/app.gleam:17:14
+   │
+17 │   numbers |> list.fold(0, integer.add)
+   │              ^^^^^^^^^^^^^^^^^^^^^^^^^ This sums a list of ints with a fold
+
+`int.sum` adds up the same numbers: "Sums a list of ints."
+
+Hint: Use `sum` from `gleam/int` on the list in place of the fold.
+
+warning[grice_rules/fold-plus]: A fold that sums
+   ┌─ src/app.gleam:21:3
+   │
+21 │   fold(numbers, 0, integer.add)
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This sums a list of ints with a fold
+
+`int.sum` adds up the same numbers: "Sums a list of ints."
+
+Hint: Use `sum` from `gleam/int` on the list in place of the fold.
+
+warning[grice_rules/fold-plus]: A fold that sums
+   ┌─ src/app.gleam:25:3
+   │
+25 │   list.fold(over: numbers, from: 0, with: integer.add)
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This sums a list of ints with a fold
+
+`int.sum` adds up the same numbers: "Sums a list of ints."
+
+Hint: Use `sum` from `gleam/int` on the list in place of the fold.
+
+warning[grice_rules/fold-plus]: A fold that sums
+   ┌─ src/app.gleam:29:3
+   │
+29 │   list.fold(numbers, with: integer.add, from: 0)
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This sums a list of ints with a fold
+
+`int.sum` adds up the same numbers: "Sums a list of ints."
+
+Hint: Use `sum` from `gleam/int` on the list in place of the fold.
+
+warning[grice_rules/fold-plus]: A fold that sums
+   ┌─ src/app.gleam:33:14
+   │
+33 │   numbers |> list.fold(from: 0, over: _, with: integer.add)
+   │              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This sums a list of ints with a fold
+
+`int.sum` adds up the same numbers: "Sums a list of ints."
+
+Hint: Use `sum` from `gleam/int` on the list in place of the fold.
+
+warning[grice_rules/fold-plus]: A fold that sums
+   ┌─ src/app.gleam:37:3
+   │
+37 │   list.fold(numbers, 0x0, integer.add)
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This sums a list of ints with a fold
+
+`int.sum` adds up the same numbers: "Sums a list of ints."
+
+Hint: Use `sum` from `gleam/int` on the list in place of the fold.
+
+warning[grice_rules/fold-plus]: A fold that sums
+   ┌─ src/app.gleam:41:3
+   │
+41 │   list.fold(numbers, 0b0, integer.add)
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This sums a list of ints with a fold
+
+`int.sum` adds up the same numbers: "Sums a list of ints."
+
+Hint: Use `sum` from `gleam/int` on the list in place of the fold.
+
+warning[grice_rules/fold-plus]: A fold that sums
+   ┌─ src/app.gleam:45:3
+   │
+45 │   list.fold(numbers, 0, fn(total, number) { total + number })
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This sums a list of ints with a fold
+
+`int.sum` adds up the same numbers: "Sums a list of ints."
+
+Hint: Use `sum` from `gleam/int` on the list in place of the fold.
+
+warning[grice_rules/fold-plus]: A fold that sums
+   ┌─ src/app.gleam:49:3
+   │
+49 │   list.fold(numbers, 0, fn(total: Int, number: Int) -> Int { total + number })
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This sums a list of ints with a fold
+
+`int.sum` adds up the same numbers: "Sums a list of ints."
+
+Hint: Use `sum` from `gleam/int` on the list in place of the fold.
+
+warning[grice_rules/fold-plus]: A fold that sums
+   ┌─ src/app.gleam:53:3
+   │
+53 │   list.fold(numbers, 0, fn(total, number) { number + total })
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This sums a list of ints with a fold
+
+`int.sum` adds up the same numbers: "Sums a list of ints."
+
+Hint: Use `sum` from `gleam/int` on the list in place of the fold.
+
+11 warnings in 1 module.
+

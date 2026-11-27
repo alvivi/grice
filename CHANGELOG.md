@@ -11,9 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The simplify pack.** `rules.simplify()` in `grice/rules` is an opt-in
   set of built-in rules for code that is correct but takes the long way
-  round, where one standard library function does the same: the rewrite
-  each finding suggests gives the same result, and calls any function
-  passed to it the same way. `gleam run -m grice` still runs the default
+  round, where one standard library function does the same: on the target
+  grice lints for, the rewrite each finding suggests gives the same
+  result, and calls any function passed to it the same way (fold-plus's
+  can give a NaN sum other bits in code also built for JavaScript; see
+  below). `gleam run -m grice` still runs the default
   set alone; add the pack in an entry module of your own with
   `grice.run(list.append(rules.default(), rules.simplify()))`. Each rule
   finds its functions by what girard resolved, reads the calls nested or
@@ -32,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     report such a check in the forms each reads.
   - `grice_rules/reverse-then-first`: `list.reverse` then `list.first`,
     which `list.last` does without the reversed copy.
+  - `grice_rules/fold-plus`: a `list.fold` that sums a list of ints from
+    0, with `int.add` or a function that adds its two parameters, which
+    `int.sum` does. On a project whose target is JavaScript, it reads
+    only `fn(total, x) { x + total }`, which adds as `int.sum` does there,
+    since the other order can give a NaN sum other bits.
 - **The project's target in facts.** `facts.target` gives every rule the
   target the project is linted for, as the new `facts.Target`: its
   `gleam.toml`'s `target`, or Erlang when it sets none. The facts already

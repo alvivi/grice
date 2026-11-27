@@ -90,6 +90,39 @@ pub fn read(
   }
 }
 
+/// The argument for `parameter`, given the labels of the function's
+/// parameters in order, as Gleam matches them: a labelled argument by its
+/// label, and the others in order into the parameters left.
+pub fn argument(
+  call: Call,
+  parameters: List(String),
+  parameter: String,
+) -> Result(Argument, Nil) {
+  use <- result.lazy_or(labelled(call, parameter))
+  let taken =
+    list.filter_map(call.arguments, fn(argument) {
+      option.to_result(argument.label, Nil)
+    })
+  let positional =
+    list.filter(call.arguments, fn(argument) { argument.label == None })
+  parameters
+  |> list.filter(fn(name) { !list.contains(taken, name) })
+  |> list.zip(positional)
+  |> list.key_find(parameter)
+}
+
+/// The module and name of the module function girard resolved
+/// `reference`, a name or a module access, to.
+pub fn module_function(
+  reference: glance.Expression,
+  module_facts: ModuleFacts(Typed),
+) -> Result(#(String, String), Nil) {
+  case facts.resolution_of(module_facts, reference.location) {
+    Ok(girard.ModuleFn(module:, name:)) -> Ok(#(module, name))
+    _ -> Error(Nil)
+  }
+}
+
 // A pipe `left |> right`, read as a call of the function `right` names.
 fn piped(
   left: glance.Expression,
@@ -127,18 +160,6 @@ fn piped(
       use #(module, name) <- result.map(module_function(right, module_facts))
       Call(module:, name:, span: right.location, arguments: [first])
     }
-  }
-}
-
-// The module and name of the module function girard resolved `reference`,
-// a name or a module access, to.
-fn module_function(
-  reference: glance.Expression,
-  module_facts: ModuleFacts(Typed),
-) -> Result(#(String, String), Nil) {
-  case facts.resolution_of(module_facts, reference.location) {
-    Ok(girard.ModuleFn(module:, name:)) -> Ok(#(module, name))
-    _ -> Error(Nil)
   }
 }
 

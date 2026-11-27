@@ -117,7 +117,9 @@ A rule `<name>`, with the code `grice_rules/<name>`, comes with:
 - **Its tests,** `test/grice/rules/<name>_test.gleam`. `support.sample`
   reads a sample, and `support.on_both_targets` lints it as a project whose
   target is Erlang and as one whose target is JavaScript, checks that both
-  show the same diagnostics, and returns the Erlang run. The flagged
+  show the same diagnostics, and returns the Erlang run. A rule whose
+  findings depend on the target, such as fold-plus, lints a sample once
+  per target with `support.on_target` and checks each run. The flagged
   sample's render is a snapshot, beside a check of its codes with
   `testing.expect_codes`; the clean sample and the forms the compiler
   already reports, as the same problem, give `testing.expect_none`.
