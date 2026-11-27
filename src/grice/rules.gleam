@@ -58,6 +58,7 @@ import grice/internal/rules/list_map_then_flatten
 import grice/internal/rules/map_then_flatten
 import grice/internal/rules/no_echo
 import grice/internal/rules/no_length_for_emptiness
+import grice/internal/rules/reverse_then_first
 import grice/rule.{type Rule}
 
 /// The default set, which `gleam run -m grice` runs: every rule below, in
@@ -202,7 +203,12 @@ pub fn check_then_assert() -> Rule {
 /// that a single standard library function does in one call, with the same
 /// result, and calls any function passed to it the same way.
 pub fn simplify() -> List(Rule) {
-  [map_then_flatten(), list_map_then_flatten(), filter_then_length()]
+  [
+    map_then_flatten(),
+    list_map_then_flatten(),
+    filter_then_length(),
+    reverse_then_first(),
+  ]
 }
 
 /// `grice_rules/map-then-flatten`: `result.map` then `result.flatten`, or
@@ -285,4 +291,31 @@ pub fn list_map_then_flatten() -> Rule {
 /// in the rule reference.
 pub fn filter_then_length() -> Rule {
   filter_then_length.rule()
+}
+
+/// `grice_rules/reverse-then-first`: `list.reverse` then `list.first`,
+/// nested or piped. `list.reverse` builds a reversed copy of the list only
+/// for `list.first` to take one element of it, and `list.last` walks to
+/// the last element without the copy.
+///
+/// Flagged:
+///
+/// ```gleam
+/// pub fn latest(events: List(String)) -> Result(String, Nil) {
+///   events |> list.reverse |> list.first
+/// }
+/// ```
+///
+/// Fixed:
+///
+/// ```gleam
+/// pub fn latest(events: List(String)) -> Result(String, Nil) {
+///   events |> list.last
+/// }
+/// ```
+///
+/// [reverse-then-first](https://github.com/alvivi/grice/blob/main/docs/RULES.md#reverse-then-first)
+/// in the rule reference.
+pub fn reverse_then_first() -> Rule {
+  reverse_then_first.rule()
 }

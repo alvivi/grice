@@ -97,6 +97,8 @@ result:
   `list.flat_map`.
 - `grice_rules/filter-then-length`: `list.filter` then `list.length`, for
   `list.count`.
+- `grice_rules/reverse-then-first`: `list.reverse` then `list.first`, for
+  `list.last`.
 
 To run it, add `rules.simplify()` to the default set in an entry module of
 your own, as [Running your own rules](#running-your-own-rules) shows:
