@@ -46,7 +46,7 @@ on GitHub, which you add to `[dev_dependencies]` in your `gleam.toml`:
 
 ```toml
 [dev_dependencies]
-grice = { git = "https://github.com/alvivi/grice.git", ref = "v0.2.0" }
+grice = { git = "https://github.com/alvivi/grice.git", ref = "v0.3.0" }
 ```
 
 ### Running the built-in rules

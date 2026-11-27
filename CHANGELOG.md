@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-11-27
 
 ### Added
 
@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `grice.run(list.append(rules.default(), rules.simplify()))`. Each rule
   finds its functions by what girard resolved, reads the calls nested or
   piped, and reports a warning.
-  [Built-in rules](https://github.com/alvivi/grice/blob/main/docs/RULES.md)
+  [Built-in rules](https://github.com/alvivi/grice/blob/v0.3.0/docs/RULES.md)
   describes each one:
   - `grice_rules/map-then-flatten`: `result.map` then `result.flatten`, or
     `option.map` then `option.flatten`, which `result.try` and
@@ -93,5 +93,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and suppression comments, JSON output, a testing kit for rules, and both
   targets, Erlang and JavaScript on Node.
 
+[0.3.0]: https://github.com/alvivi/grice/releases/tag/v0.3.0
 [0.2.0]: https://github.com/alvivi/grice/releases/tag/v0.2.0
 [0.1.0]: https://github.com/alvivi/grice/releases/tag/v0.1.0
