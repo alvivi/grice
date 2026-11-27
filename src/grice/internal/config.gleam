@@ -1,8 +1,11 @@
-//// grice's configuration, read from a project's `gleam.toml`: the `target`
-//// and the `[tools.grice]` table.
+//// grice's configuration, read from a project's `gleam.toml`: three of the
+//// compiler's keys, `target`, `name` and `internal_modules`, and the
+//// `[tools.grice]` table.
 ////
 //// ```toml
+//// name = "my_app"
 //// target = "erlang"
+//// internal_modules = ["my_app/internal", "my_app/internal/*"]
 ////
 //// [tools.grice]
 //// include = ["src/"]
@@ -14,7 +17,8 @@
 //// reason = "Tests may panic."
 //// ```
 ////
-//// `include` and `exclude` choose the modules rules run on. Each
+//// `name` and `internal_modules` say which modules the compiler treats as
+//// internal. `include` and `exclude` choose the modules rules run on. Each
 //// `[[tools.grice.ignore]]` entry hides the diagnostics of its `rules` in
 //// the files its `paths` match, only inside the top-level definitions its
 //// optional `definitions` name, and says why in `reason`.
@@ -32,7 +36,9 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import grice/diagnostic.{type Diagnostic, Diagnostic}
-import grice/internal/glob.{type Glob, type GlobError, type Name}
+import grice/internal/glob.{
+  type Glob, type GlobError, type ModulePattern, type Name,
+}
 import tom.{type Toml}
 
 /// The target the project is linted for. It decides which `@target`
@@ -46,6 +52,12 @@ pub type Target {
 pub type Config {
   Config(
     target: Target,
+    /// The package's name, when `gleam.toml` gives one.
+    name: Option(String),
+    /// The patterns of the modules the compiler treats as internal: those
+    /// of `internal_modules`, or, when it's absent and the package has a
+    /// name, `<name>/internal` and `<name>/internal/*`.
+    internal_modules: List(ModulePattern),
     /// The modules to lint, before `exclude`. Defaults to `src/`.
     include: List(Glob),
     /// The modules not to lint, even when an `include` selects them.
@@ -72,23 +84,26 @@ pub type Ignore {
 }
 
 /// Read the configuration from the text of a `gleam.toml`. Missing keys get
-/// their defaults: the Erlang target, `include = ["src/"]`, no exclusions,
-/// no ignores and suppression comments on.
+/// their defaults: the Erlang target, no name, the compiler's default
+/// `internal_modules`, `include = ["src/"]`, no exclusions, no ignores and
+/// suppression comments on.
 ///
-/// Every problem is reported, in a fixed order: `target`, then `include`,
-/// `exclude`, `ignore` (entry by entry: `paths`, `definitions`, `rules`,
-/// `reason`, then its unknown keys in alphabetical order) and
-/// `suppression_comments`, then unknown keys in alphabetical order. A file
-/// that isn't valid TOML gives one diagnostic alone.
+/// Every problem is reported, in a fixed order: `target`, `name`,
+/// `internal_modules`, the top-level keys written with a `\` in
+/// alphabetical order, then `include`, `exclude`, `ignore` (entry by entry:
+/// `paths`, `definitions`, `rules`, `reason`, then its unknown keys in
+/// alphabetical order) and `suppression_comments`, then unknown keys in
+/// alphabetical order. A file that isn't valid TOML gives one diagnostic
+/// alone.
 pub fn parse(gleam_toml: String) -> Result(Config, List(Diagnostic)) {
   use toml <- result.try(
     tom.parse(gleam_toml)
     |> result.map_error(fn(error) { [syntax_error(error)] }),
   )
-  let target = parse_target(dict.get(toml, "target"))
+  let package = parse_package(toml)
   case grice_table(toml) {
-    Ok(grice) -> parse_grice(target, grice)
-    Error(found) -> Error(list.append(problems(target), found))
+    Ok(grice) -> parse_grice(package, grice)
+    Error(found) -> Error(list.append(problems(package), found))
   }
 }
 
@@ -118,6 +133,20 @@ pub fn ignore_key(index: Int, key: String) -> String {
   <> " of `tools.grice.ignore`"
 }
 
+/// Whether `name` is an ASCII lowercase letter followed by ASCII lowercase
+/// letters, digits and `_`, as the compiler requires of a package name and
+/// of each segment of a module name.
+@internal
+pub fn is_lowercase_name(name: String) -> Bool {
+  let lowercase = "abcdefghijklmnopqrstuvwxyz"
+  case string.to_graphemes(name) {
+    [first, ..rest] ->
+      string.contains(lowercase, first)
+      && list.all(rest, string.contains(lowercase <> "0123456789_", _))
+    [] -> False
+  }
+}
+
 /// Why the TOML parser rejected a file, for a message that names the file.
 pub fn describe_toml_error(error: tom.ParseError) -> String {
   case error {
@@ -134,6 +163,15 @@ pub fn describe_toml_error(error: tom.ParseError) -> String {
 // problems, so one bad key never hides another. Messages name a key with a
 // subject: the dotted key in backticks, or a phrase that names an ignore
 // entry's key.
+
+// The compiler's keys grice reads, at the top level of `gleam.toml`.
+type Package {
+  Package(
+    target: Target,
+    name: Option(String),
+    internal_modules: List(ModulePattern),
+  )
+}
 
 const known_keys = ["include", "exclude", "ignore", "suppression_comments"]
 
@@ -159,8 +197,40 @@ fn table_at(
   }
 }
 
+// The compiler's keys. grice's TOML reader keeps the escapes of a quoted key
+// as they're written, so a top-level key written with a `\` can't be told
+// apart from the key it stands for, which may be one of these: it's an
+// error, rather than a key grice reads as unset. No key the compiler reads
+// holds a `\`.
+fn parse_package(
+  toml: Dict(String, Toml),
+) -> Result(Package, List(Diagnostic)) {
+  let target = parse_target(dict.get(toml, "target"))
+  let name = parse_name(dict.get(toml, "name"))
+  let internal_modules =
+    parse_internal_modules(dict.get(toml, "internal_modules"), name)
+  let escaped =
+    dict.keys(toml)
+    |> list.filter(string.contains(_, "\\"))
+    |> list.sort(string.compare)
+    |> list.map(escaped_key)
+  case target, name, internal_modules, escaped {
+    Ok(target), Ok(name), Ok(internal_modules), [] ->
+      Ok(Package(target:, name:, internal_modules:))
+    _, _, _, _ ->
+      Error(
+        list.flatten([
+          problems(target),
+          problems(name),
+          problems(internal_modules),
+          escaped,
+        ]),
+      )
+  }
+}
+
 fn parse_grice(
-  target: Result(Target, List(Diagnostic)),
+  package: Result(Package, List(Diagnostic)),
   grice: Dict(String, Toml),
 ) -> Result(Config, List(Diagnostic)) {
   let value = fn(key, default) {
@@ -183,18 +253,27 @@ fn parse_grice(
     |> list.map(fn(key) {
       unknown_key(quoted("tools.grice." <> key), grice_keys)
     })
-  case target, include, exclude, ignore, suppression_comments, unknown {
-    Ok(target),
+  case package, include, exclude, ignore, suppression_comments, unknown {
+    Ok(Package(target:, name:, internal_modules:)),
       Ok(include),
       Ok(exclude),
       Ok(ignore),
       Ok(suppression_comments),
       []
-    -> Ok(Config(target:, include:, exclude:, ignore:, suppression_comments:))
+    ->
+      Ok(Config(
+        target:,
+        name:,
+        internal_modules:,
+        include:,
+        exclude:,
+        ignore:,
+        suppression_comments:,
+      ))
     _, _, _, _, _, _ ->
       Error(
         list.flatten([
-          problems(target),
+          problems(package),
           problems(include),
           problems(exclude),
           problems(ignore),
@@ -213,6 +292,53 @@ fn parse_target(value: Result(Toml, Nil)) -> Result(Target, List(Diagnostic)) {
     Ok(tom.String(other)) -> Error([unknown_target(other)])
     Ok(other) -> Error([wrong_type(quoted("target"), "a string", other)])
   }
+}
+
+// A package name, as the compiler requires it: an ASCII lowercase letter
+// followed by ASCII lowercase letters, digits and `_`. It's checked because
+// grice's TOML reader doesn't decode a `\u` escape in a string, so an
+// escaped name would reach grice as other text than the compiler reads.
+fn parse_name(
+  value: Result(Toml, Nil),
+) -> Result(Option(String), List(Diagnostic)) {
+  case value {
+    Error(Nil) -> Ok(None)
+    Ok(tom.String(name)) ->
+      case is_lowercase_name(name) {
+        True -> Ok(Some(name))
+        False -> Error([invalid_name(name)])
+      }
+    Ok(other) -> Error([wrong_type(quoted("name"), "a string", other)])
+  }
+}
+
+// The patterns of `internal_modules`, or the compiler's default when it's
+// absent: none without a name, since the default patterns hold it. An
+// empty list gives none, as it does for the compiler.
+fn parse_internal_modules(
+  value: Result(Toml, Nil),
+  name: Result(Option(String), List(Diagnostic)),
+) -> Result(List(ModulePattern), List(Diagnostic)) {
+  let subject = quoted("internal_modules")
+  case value, name {
+    Ok(value), _ -> {
+      use pattern <- parse_strings(value, subject, "module pattern")
+      glob.parse_module(pattern)
+      |> result.map_error(fn(unread) {
+        [unread_module_pattern(pattern, unread.syntax)]
+      })
+    }
+    Error(Nil), Ok(Some(name)) -> Ok(default_internal_modules(name))
+    Error(Nil), Ok(None) | Error(Nil), Error(_) -> Ok([])
+  }
+}
+
+// `<name>/internal` and the modules under it. A package name holds only
+// lowercase letters, digits and `_`, so it reads the same in a pattern as it
+// does literally, and both patterns parse.
+fn default_internal_modules(name: String) -> List(ModulePattern) {
+  [name <> "/internal", name <> "/internal/*"]
+  |> list.filter_map(glob.parse_module)
 }
 
 fn parse_globs(
@@ -423,6 +549,9 @@ const name_hint =
 const ignore_hint =
   "Write each ignore as a `[[tools.grice.ignore]]` entry with `paths`, `rules` and `reason`, such as `paths = [\"test/**\"]`, `rules = [\"my_app/no-panic\"]` and `reason = \"Tests may panic.\"`. Add `definitions = [\"render_*\"]` to cover only the top-level definitions with matching names."
 
+const module_pattern_hint =
+  "`*` matches any run of characters and `?` any one character, `/` included in both. A pattern the compiler rejects, such as `app/[`, needs fixing first. Of those it accepts, the compiler reads these the same way on the module names each can match: `x/*` for `x/**`, `x` and `*/x` for `**/x`, `a/b` and `a/*/b` for `a/**/b`, and `a/x` and `a/y` for `a/{x,y}` or `a/[xy]`. For any other pattern it accepts, list by name the modules it treats as internal today: under `src/`, the ones missing from the Modules list of the pages a successful `gleam docs build` writes, and under `test/` and `dev/`, which the documentation never shows, the ones the pattern matches. That keeps today's set, but not the modules added later. If there are none, write `internal_modules = []`, since removing the key brings back the default."
+
 const grice_keys =
   "The keys of `[tools.grice]` are `include`, `exclude`, `ignore` and `suppression_comments`."
 
@@ -467,6 +596,46 @@ fn old_ignore_table() -> Diagnostic {
     title: "Outdated ignores in `gleam.toml`",
     message: "`tools.grice.ignore` in `gleam.toml` is a table from globs to rule codes, which grice no longer reads. Each ignore is now an entry of its own, which says why it's there and can cover only some definitions.",
     hint: Some(ignore_hint),
+  )
+}
+
+fn invalid_name(name: String) -> Diagnostic {
+  let hint = case string.contains(name, "\\") {
+    True ->
+      Some(
+        "grice doesn't decode a `\\u` or `\\U` escape in a TOML string, so write the name as plain text.",
+      )
+    False -> None
+  }
+  diagnostic(
+    title: "Invalid package name in `gleam.toml`",
+    message: "`name` in `gleam.toml` is `"
+      <> name
+      <> "`, which isn't a package name: a lowercase letter followed by lowercase letters, digits and `_`, all ASCII.",
+    hint:,
+  )
+}
+
+fn escaped_key(key: String) -> Diagnostic {
+  diagnostic(
+    title: "Escaped key in `gleam.toml`",
+    message: "`gleam.toml` sets the key `"
+      <> key
+      <> "`, written with a `\\`. grice doesn't decode the escapes of a quoted key, so it can't tell which key this is, and it may be one grice reads.",
+    hint: Some("Write the key as plain text, without escapes."),
+  )
+}
+
+// `syntax` is what the pattern holds that grice doesn't read.
+fn unread_module_pattern(pattern: String, syntax: String) -> Diagnostic {
+  diagnostic(
+    title: "Unsupported module pattern in `gleam.toml`",
+    message: "`internal_modules` in `gleam.toml` holds `"
+      <> pattern
+      <> "`, which grice can't read: of the glob syntax the compiler reads there, grice reads only `*` and `?`, and this pattern holds `"
+      <> syntax
+      <> "`.",
+    hint: Some(module_pattern_hint),
   )
 }
 

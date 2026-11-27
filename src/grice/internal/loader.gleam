@@ -7,6 +7,10 @@
 //// dictionary and an editor integration its unsaved buffers. Of the
 //// project's own sources, only the load set is read.
 ////
+//// A project also knows which of its modules and types are internal, from
+//// `internal_modules` in `gleam.toml`, the compiler's default patterns and
+//// `@internal`, so every rule can ask.
+////
 //// `root` is the only path read relative to the working directory. Every
 //// other path in a `Project` is relative to the root, except a local
 //// dependency whose manifest `path` is absolute.
@@ -28,6 +32,7 @@ import grice/internal/config.{type Config}
 import grice/internal/glance_spans
 import grice/internal/glob
 import grice/internal/line_index.{type LineIndex}
+import grice/internal/type_names
 import simplifile
 import tom.{type Toml}
 
@@ -52,6 +57,14 @@ pub type Project {
     missing_dependencies: List(Package),
     /// A `grice/parse-error` for each lint-set module that doesn't parse.
     diagnostics: List(Diagnostic),
+    /// The names of the project's internal modules: every module under
+    /// `src/`, `test/` and `dev/`, loaded or not, whose name a pattern of
+    /// the configuration's `internal_modules` matches.
+    internal_modules: Set(String),
+    /// The internal types of the load set's modules that parse, as they're
+    /// compiled for the target, each `#(module, name)`: what
+    /// `type_names.internal_types` finds.
+    internal_types: Set(#(String, String)),
   )
 }
 
@@ -130,6 +143,19 @@ pub fn load(
       use module <- result.try(dict.get(modules, name))
       parse_error(module)
     })
+  let internal_modules =
+    dict.keys(table)
+    |> list.filter(fn(name) {
+      list.any(config.internal_modules, glob.matches_module(_, name))
+    })
+    |> set.from_list
+  let internal_types =
+    dict.values(modules)
+    |> list.filter_map(fn(module) {
+      use syntax <- result.map(module.parsed)
+      #(module.name, for_target(syntax, config.target))
+    })
+    |> type_names.internal_types(internal_modules)
   Ok(Project(
     root:,
     config:,
@@ -138,6 +164,8 @@ pub fn load(
     dependencies:,
     missing_dependencies:,
     diagnostics:,
+    internal_modules:,
+    internal_types:,
   ))
 }
 
@@ -270,8 +298,6 @@ fn field(
 // lowercase letters, digits and `_`, ending in `.gleam`. The compiler warns
 // about other `.gleam` files and ignores them, so grice skips them silently.
 
-const lowercase = "abcdefghijklmnopqrstuvwxyz"
-
 /// The module name of a path whose first segment is `src`, `test` or `dev`,
 /// such as `app/router` for `src/app/router.gleam`, or `Error` when the path
 /// isn't a module path.
@@ -284,19 +310,10 @@ pub fn module_name(path: String) -> Result(String, Nil) {
   let name = string.drop_end(relative, string.length(".gleam"))
   case
     string.ends_with(relative, ".gleam")
-    && list.all(string.split(name, "/"), is_module_segment)
+    && list.all(string.split(name, "/"), config.is_lowercase_name)
   {
     True -> Ok(name)
     False -> Error(Nil)
-  }
-}
-
-fn is_module_segment(segment: String) -> Bool {
-  case string.to_graphemes(segment) {
-    [first, ..rest] ->
-      string.contains(lowercase, first)
-      && list.all(rest, string.contains(lowercase <> "0123456789_", _))
-    [] -> False
   }
 }
 

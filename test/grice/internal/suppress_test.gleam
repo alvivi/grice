@@ -494,7 +494,7 @@ fn apply_counting(
   let modules =
     list.filter_map(project.lint_set, fn(name) {
       use module <- result.try(dict.get(project.modules, name))
-      facts.new(module, project.config.target, None)
+      facts.new(module, project, None)
     })
   suppress.apply(diagnostics, modules, project.config, set.from_list(codes))
 }

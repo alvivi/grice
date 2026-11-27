@@ -1,5 +1,5 @@
-//// Tests for loading a project. Discovery, the load set, parse errors and
-//// the manifest are tested in memory, through `load` with a dictionary as
+//// Tests for loading a project. Discovery, the load set, parse errors, the
+//// internal modules and types, and the manifest are tested in memory, through `load` with a dictionary as
 //// the file system. The IO tests then write small projects to disk and load
 //// them with `load_project`: the main project, then the directory walk with
 //// its links and odd source directories. The manifests Gleam wrote, used by
@@ -7,11 +7,11 @@
 
 import glance
 import gleam/dict
-@target(javascript)
 import gleam/int
 import gleam/list
 import gleam/option.{None}
 import gleam/result
+import gleam/set
 import gleam/string
 import glexer
 import glexer/token
@@ -23,6 +23,7 @@ import grice/internal/loader.{
   InvalidManifest, Local, Module, Package,
 }
 import grice/internal/render/human
+import grice/internal/type_names
 import grice/support
 import simplifile
 
@@ -313,6 +314,245 @@ fn render(project: Project) -> String {
       human.Options(colour: False, directory: ""),
     )
   text
+}
+
+// Internal modules and types
+
+// The compiler's default patterns for `app`, over every module under
+// `src/`, `test/` and `dev/`, loaded or not: `unread` is excluded and
+// nothing imports it, so reading it would fail.
+pub fn load_finds_the_internal_modules_of_every_module_test() {
+  let toml =
+    "name = \"app\"\n[tools.grice]\nexclude = [\"src/app/internal/unread.gleam\"]\n"
+  let assert Ok(project) =
+    load_files_with_unreadable(
+      toml,
+      [
+        #("src/app.gleam", ""),
+        #("src/app/internal.gleam", ""),
+        #("src/app/internal/deep/x.gleam", ""),
+        #("src/app/internally.gleam", ""),
+        #("src/other/internal.gleam", ""),
+        #("test/app/internal/helper.gleam", ""),
+        #("dev/app/internal/tool.gleam", ""),
+      ],
+      ["src/app/internal/unread.gleam"],
+    )
+  assert loaded(project)
+    == [
+      "app", "app/internal", "app/internal/deep/x", "app/internally",
+      "other/internal",
+    ]
+  assert sorted(project.internal_modules)
+    == [
+      "app/internal", "app/internal/deep/x", "app/internal/helper",
+      "app/internal/tool", "app/internal/unread",
+    ]
+}
+
+pub fn load_reads_custom_internal_modules_test() {
+  let files = [
+    #("src/app.gleam", ""),
+    #("src/app/internal/x.gleam", ""),
+    #("src/app/web/private.gleam", ""),
+    #("src/app/web/view.gleam", ""),
+  ]
+  let toml = "name = \"app\"\ninternal_modules = [\"app/web/p*\"]\n"
+  let assert Ok(project) = load_files(toml, files)
+  assert sorted(project.internal_modules) == ["app/web/private"]
+  let assert Ok(project) =
+    load_files("name = \"app\"\ninternal_modules = []\n", files)
+  assert sorted(project.internal_modules) == []
+  // With no name, the default patterns don't apply.
+  let assert Ok(project) = load_files("", files)
+  assert sorted(project.internal_modules) == []
+}
+
+// The internal custom types are the public ones of an internal module or
+// marked `@internal`, and an alias that isn't public API counts as what
+// it names. A public alias names a type for its users, so a private alias
+// of one isn't internal, though its written arguments count.
+pub fn load_finds_the_internal_types_test() {
+  let assert Ok(project) =
+    load_files("name = \"app\"\n", [
+      #(
+        "src/app.gleam",
+        "import app/internal/thing
+pub type Public { Public }
+@internal
+pub type Marked { Marked }
+type Private = thing.Thing
+type Plain = Int
+pub type Exposed = thing.Thing
+@internal
+pub type MarkedPlain = Int
+@internal
+pub type MarkedLeak = List(thing.Box(Int))
+type ThroughPublic = Exposed
+type Nested = List(Exposed)
+type Argument = Result(Exposed, fn(Int) -> #(String, thing.Thing))
+",
+      ),
+      #(
+        "src/app/internal/thing.gleam",
+        "pub type Thing { Thing }
+pub type Box(a) { Box(a) }
+type Hidden { Hidden }
+pub type Same = Int
+pub type Leak = Box(Thing)
+",
+      ),
+    ])
+  assert sorted_types(project)
+    == [
+      "app.Argument", "app.Marked", "app.MarkedLeak", "app.Private",
+      "app/internal/thing.Box", "app/internal/thing.Leak",
+      "app/internal/thing.Thing",
+    ]
+}
+
+// An alias that isn't public API reaches an internal type through aliases
+// of other modules, in any order of definition.
+pub fn load_follows_aliases_across_modules_test() {
+  let assert Ok(project) =
+    load_files("name = \"app\"\n", [
+      #("src/app.gleam", "import app/b\ntype A = b.B\n"),
+      #(
+        "src/app/b.gleam",
+        "import app/c as see\n@internal\npub type B = #(see.C, Int)\n",
+      ),
+      #(
+        "src/app/c.gleam",
+        "import app/internal/thing.{type Thing as T}\ntype Unused = Int\npub type Public = T\n@internal\npub type C = List(T)\n",
+      ),
+      #("src/app/internal/thing.gleam", "pub type Thing { Thing }\n"),
+    ])
+  assert sorted_types(project)
+    == ["app.A", "app/b.B", "app/c.C", "app/internal/thing.Thing"]
+}
+
+// Only modules that load and parse count, as compiled for the target. The
+// qualifier `selected` names an internal module on Erlang and a public one
+// on JavaScript, so `Selected` is internal on Erlang only. Both modules it
+// can name are linted, so both load on either target, and on JavaScript
+// only the imports compiled for it keep `Selected` from naming the internal
+// one.
+pub fn load_finds_internal_types_in_the_load_set_for_the_target_test() {
+  let files = [
+    #(
+      "src/app.gleam",
+      "import app/broken
+import app/excluded
+@target(erlang)
+import app/internal/beam as selected
+@target(javascript)
+import app/public/script as selected
+@target(javascript)
+@internal
+pub type Script { Script }
+@target(erlang)
+@internal
+pub type Beam { Beam }
+type Lost = broken.Broken
+type Kept = excluded.Excluded
+type Selected = selected.Handle
+",
+    ),
+    #("src/app/internal/beam.gleam", "pub type Handle { Handle }\n"),
+    #("src/app/public/script.gleam", "pub type Handle { Handle }\n"),
+    #("src/app/broken.gleam", "@internal\npub type Broken { Broken }\npub fn ("),
+    #("src/app/excluded.gleam", "@internal\npub type Excluded { Excluded }\n"),
+    #("src/app/unloaded.gleam", "@internal\npub type Unloaded { Unloaded }\n"),
+  ]
+  let toml =
+    "name = \"app\"
+[tools.grice]
+include = [\"src/app.gleam\", \"src/app/internal/beam.gleam\", \"src/app/public/script.gleam\"]
+"
+  let assert Ok(erlang) = load_files(toml, files)
+  assert sorted_types(erlang)
+    == [
+      "app.Beam", "app.Kept", "app.Selected", "app/excluded.Excluded",
+      "app/internal/beam.Handle",
+    ]
+  let assert Ok(javascript) =
+    load_files("target = \"javascript\"\n" <> toml, files)
+  assert sorted_types(javascript)
+    == [
+      "app.Kept", "app.Script", "app/excluded.Excluded",
+      "app/internal/beam.Handle",
+    ]
+}
+
+// Each alias of the chain names the one before it twice, so following
+// each alias down to what it names would read 2^15 names. The index reads
+// each definition once, 30 names, and marks each internal type once: the
+// custom type, and each alias of the chain when it starts from that type.
+pub fn internal_types_visit_each_alias_once_test() {
+  let over_int = index(alias_chain("Int"))
+  assert over_int.visits == 30 + 1
+  assert set.to_list(over_int.types) == [#("app/internal/thing", "Thing")]
+  let over_thing = index(alias_chain("thing.Thing"))
+  assert over_thing.visits == 30 + 16
+  assert set.size(over_thing.types) == 16
+  assert set.contains(over_thing.types, #("app", "A15"))
+}
+
+// A project whose `app` defines `A1 = #(first, first)` and each `A<n>` as
+// `#(A<n-1>, A<n-1>)` up to `A15`, beside an internal custom type.
+fn alias_chain(first: String) -> Project {
+  let aliases =
+    list.repeat(Nil, 14)
+    |> list.index_map(fn(_, index) {
+      let previous = "A" <> int.to_string(index + 1)
+      "type A"
+      <> int.to_string(index + 2)
+      <> " = #("
+      <> previous
+      <> ", "
+      <> previous
+      <> ")\n"
+    })
+  let source =
+    "import app/internal/thing\ntype A1 = #("
+    <> first
+    <> ", "
+    <> first
+    <> ")\n"
+    <> string.concat(aliases)
+  let assert Ok(project) =
+    load_files("name = \"app\"\n", [
+      #("src/app.gleam", source),
+      #("src/app/internal/thing.gleam", "pub type Thing { Thing }\n"),
+    ])
+  project
+}
+
+// The index of the project's modules that parse, which must give the
+// project's internal types.
+fn index(project: Project) -> type_names.Index {
+  let found =
+    project.modules
+    |> dict.values
+    |> list.filter_map(fn(module) {
+      use syntax <- result.map(module.parsed)
+      #(module.name, loader.for_target(syntax, project.config.target))
+    })
+    |> type_names.index(project.internal_modules)
+  assert found.types == project.internal_types
+  found
+}
+
+fn sorted(names: set.Set(String)) -> List(String) {
+  names |> set.to_list |> list.sort(string.compare)
+}
+
+// The project's internal types, each as `module.Name`, sorted.
+fn sorted_types(project: Project) -> List(String) {
+  project.internal_types
+  |> set.to_list
+  |> list.map(fn(type_) { type_.0 <> "." <> type_.1 })
+  |> list.sort(string.compare)
 }
 
 // Dependencies

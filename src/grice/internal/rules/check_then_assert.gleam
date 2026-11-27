@@ -52,8 +52,8 @@ import gleam/dict.{type Dict}
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
-import gleam/string
 import grice/facts.{type ModuleFacts, type Typed}
+import grice/internal/type_names
 import grice/rule.{type Report, type Rule}
 import grice/visit
 
@@ -811,7 +811,9 @@ fn constructor_variant(
   case module {
     Some(module) -> {
       use import_ <- result.try(
-        list.find(imports, fn(import_) { local_name(import_) == Ok(module) }),
+        list.find(imports, fn(import_) {
+          type_names.qualifier(import_) == Ok(module)
+        }),
       )
       variant(import_.module, name)
     }
@@ -832,15 +834,6 @@ fn constructor_variant(
         Error(Nil), _ -> Error(Nil)
       }
     }
-  }
-}
-
-// The name a module uses for an import: its alias or its last segment.
-fn local_name(import_: glance.Import) -> Result(String, Nil) {
-  case import_.alias {
-    Some(glance.Named(name)) -> Ok(name)
-    Some(glance.Discarded(_)) -> Error(Nil)
-    None -> string.split(import_.module, "/") |> list.last
   }
 }
 

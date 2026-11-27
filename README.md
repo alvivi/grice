@@ -208,8 +208,10 @@ Each option may be given once, and in any order. grice takes no paths:
 ### Configuration
 
 `[tools.grice]` in `gleam.toml` chooses the files to lint and holds
-ignores, and `grice-ignore` comments hide a diagnostic in the source. Both
-are described in [Configuration](https://github.com/alvivi/grice/blob/main/docs/CONFIGURATION.md).
+ignores, and `grice-ignore` comments hide a diagnostic in the source. grice
+also reads the compiler's `name` and `internal_modules`, so rules know
+which modules and types are internal. All of it is described in
+[Configuration](https://github.com/alvivi/grice/blob/main/docs/CONFIGURATION.md).
 
 ## Contributing
 

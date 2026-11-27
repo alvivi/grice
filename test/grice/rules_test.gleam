@@ -1,6 +1,6 @@
 //// Tests for what rules report, run with `grice/testing` as a rule's author
-//// would. Module rules come first, then the facts, target view and
-//// comments they see, then project rules. Then typed rules: the types
+//// would. Module rules come first, then the facts, target view, internal
+//// modules and types, and comments they see, then project rules. Then typed rules: the types
 //// they see, what each query answers, and why a query has no answer. Last,
 //// what a report becomes and its severity. Snapshots are titled
 //// `rules: …`. Edge cases use small rules built in the test.
@@ -294,6 +294,164 @@ fn findings_on_target(target: String) -> List(String) {
   ])
   |> testing.diagnostics
   |> support.describe
+}
+
+// Internal modules and types
+//
+// What `facts.is_internal_module` and `facts.is_internal_type` answer, from
+// `name` and `internal_modules` in `gleam.toml` and from `@internal`.
+
+// A project module of any source directory, loaded or not, whose name a
+// pattern matches. Not a dependency's, though the pattern matches its name
+// too, and not a module the project doesn't have.
+pub fn facts_know_the_internal_modules_test() {
+  let modules = [
+    "app", "app/internal", "app/internal/thing", "app/internal/helper",
+    "app/internal/tool", "dep/internal/thing",
+  ]
+  let files = [
+    #("src/app.gleam", "pub fn main() {\n  1\n}\n"),
+    #("src/app/internal/thing.gleam", ""),
+    #("test/app/internal/helper.gleam", ""),
+    #("dev/app/internal/tool.gleam", ""),
+  ]
+  let ask = fn(module_facts) {
+    list.map(modules, facts.is_internal_module(module_facts, _))
+  }
+  assert internal_answers("name = \"app\"\n", files, ask)
+    == [False, False, True, True, True, False]
+  assert internal_answers(
+      "name = \"app\"\ninternal_modules = [\"*/internal/*\"]\n",
+      files,
+      ask,
+    )
+    == [False, False, True, True, True, False]
+  // With no name, the default patterns don't apply.
+  assert internal_answers("", files, ask)
+    == [False, False, False, False, False, False]
+}
+
+pub fn facts_know_the_internal_types_test() {
+  let files = [
+    #(
+      "src/app.gleam",
+      "import app/broken
+import app/internal/thing
+import dep/internal/other
+
+pub type Public {
+  Public
+}
+
+@internal
+pub type Marked {
+  Marked
+}
+
+type Private =
+  thing.Thing
+
+type Plain =
+  Int
+
+pub type Exposed =
+  thing.Thing
+
+type Dependency =
+  other.Other
+
+pub fn main() {
+  1
+}
+",
+    ),
+    #(
+      "src/app/internal/thing.gleam",
+      "pub type Thing {\n  Thing\n}\n\npub type Same =\n  Int\n\npub type Leak =\n  Thing\n",
+    ),
+    #(
+      "src/app/broken.gleam",
+      "@internal\npub type Broken {\n  Broken\n}\n\npub fn (",
+    ),
+    #(
+      "src/app/unloaded.gleam",
+      "@internal\npub type Unloaded {\n  Unloaded\n}\n",
+    ),
+  ]
+  let toml =
+    "name = \"app\"
+internal_modules = [\"*/internal\", \"*/internal/*\"]
+
+[tools.grice]
+include = [\"src/app.gleam\", \"src/app/internal/\"]
+"
+  let types = [
+    #("app/internal/thing", "Thing"),
+    #("app/internal/thing", "Same"),
+    #("app/internal/thing", "Leak"),
+    #("app", "Public"),
+    #("app", "Marked"),
+    #("app", "Private"),
+    #("app", "Plain"),
+    #("app", "Exposed"),
+    #("app", "Dependency"),
+    #("app", "main"),
+    #("app/broken", "Broken"),
+    #("app/unloaded", "Unloaded"),
+    #("dep/internal/other", "Other"),
+  ]
+  let answers =
+    testing.project([#("gleam.toml", toml), ..files])
+    |> testing.with_dependency(
+      module: "dep/internal/other",
+      source: "pub type Other {\n  Other\n}\n",
+    )
+    |> internal_answers_of(fn(module_facts) {
+      list.map(types, fn(type_) {
+        facts.is_internal_type(module_facts, module: type_.0, name: type_.1)
+      })
+    })
+  assert answers
+    == [
+      True, False, True, False, True, True, False, False, False, False, False,
+      False, False,
+    ]
+}
+
+// What `ask` answers on the module `app` of the project with the
+// `gleam.toml` text `toml` and the files of `files`.
+fn internal_answers(
+  toml: String,
+  files: List(#(String, String)),
+  ask: fn(ModuleFacts(Syntax)) -> List(Bool),
+) -> List(Bool) {
+  testing.project([#("gleam.toml", toml), ..files])
+  |> internal_answers_of(ask)
+}
+
+// What `ask` answers on the module `app` of `fixture`, as a fixture rule
+// sees it. Every kind of facts holds the same answers.
+fn internal_answers_of(
+  fixture: testing.Fixture,
+  ask: fn(ModuleFacts(Syntax)) -> List(Bool),
+) -> List(Bool) {
+  let assert [answers] =
+    fixture
+    |> testing.run([
+      support.on_module_end("fixture/internal", fn(module_facts) {
+        case facts.module_name(module_facts) {
+          "app" -> [
+            support.at_start(
+              ask(module_facts) |> list.map(bool.to_string) |> string.join(" "),
+            ),
+          ]
+          _ -> []
+        }
+      }),
+    ])
+    |> testing.diagnostics
+    |> support.labels
+  string.split(answers, " ") |> list.map(fn(answer) { answer == "True" })
 }
 
 // Comments
@@ -691,11 +849,7 @@ fn answers(source: String, ask: fn(ModuleFacts(Typed)) -> a) -> a {
   let types = typing.infer(project, typing.resolver(project))
   let assert Ok(module) = dict.get(project.modules, "app")
   let assert Ok(module_facts) =
-    facts.new(
-      module,
-      project.config.target,
-      option.from_result(dict.get(types, "app")),
-    )
+    facts.new(module, project, option.from_result(dict.get(types, "app")))
   ask(facts.change_kind(module_facts))
 }
 
