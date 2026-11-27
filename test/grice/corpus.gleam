@@ -32,10 +32,12 @@ import grice/support
 import simplifile
 import tom
 
-/// Every built-in rule, the default set and the simplify pack, which the
-/// gate and the benchmark both run.
+/// Every built-in rule, the default set, the simplify pack and the library
+/// pack, which the gate and the benchmark both run.
 pub fn built_in_rules() -> List(Rule) {
-  list.append(rules.default(), rules.simplify())
+  rules.default()
+  |> list.append(rules.simplify())
+  |> list.append(rules.library())
 }
 
 /// The corpus project's directory, relative to grice's root, where the

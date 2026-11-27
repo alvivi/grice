@@ -8,7 +8,7 @@ repository.
 **grice** is a type-aware linter for Gleam, written in Gleam. It is the
 infrastructure for linting a Gleam project: a runner, a rule API, a type layer,
 suppression comments and a diagnostics renderer. Rules are ordinary Gleam
-values. grice ships a default rule set and an opt-in pack, offered by
+values. grice ships a default rule set and opt-in packs, offered by
 `grice/rules`, and clients write their own rules with the same API the
 built-ins use.
 
@@ -17,11 +17,13 @@ What sets it apart from a syntactic linter is that rules can ask
 expression and for which definition any name or field access resolved to, and
 that its diagnostics follow the Gleam compiler's layout.
 
-**Status:** 0.3.0, which adds the simplify pack. grice won't be on Hex until
-1.0, so each 0.x release is a tag on GitHub only. Everything the table below
-marks **Exists** has landed, with the corpus gate over the core packages, the
-benchmark and the JavaScript target. The default rule set has four built-in
-rules and the opt-in simplify pack five, all under the `grice_rules/` prefix.
+**Status:** 0.3.0, which adds the simplify pack, and the library pack since.
+grice won't be on Hex until 1.0, so each 0.x release is a tag on GitHub
+only. Everything the table below marks **Exists** has landed, with the
+corpus gate over the core packages, the benchmark and the JavaScript
+target. The default rule set has four built-in rules, the opt-in simplify
+pack five and the opt-in library pack one, all under the `grice_rules/`
+prefix.
 The type predicates (`grice/types`) and the diagnostic builders are still to
 come.
 
@@ -66,7 +68,7 @@ notice.
 | `src/grice.gleam` | **Exists:** entry points: `main()`, which runs `rules.default()`, `run(rules)` for a client's own set, and the library API: `load_project`, `lint`, `diagnostics`, `coverage` and `render` |
 | `src/grice/coverage.gleam` | **Exists:** the coverage of a run and its gaps, public so tools can pattern-match on them |
 | `src/grice/rule.gleam` | **Exists:** module and project rule builders, reports and severities |
-| `src/grice/rules.gleam` | **Exists:** the built-in rules: `default()`, the set `main()` runs, `simplify()`, the opt-in simplify pack, and one function per rule |
+| `src/grice/rules.gleam` | **Exists:** the built-in rules: `default()`, the set `main()` runs, `simplify()` and `library()`, the opt-in packs, and one function per rule |
 | `src/grice/facts.gleam` | **Exists:** per-module facts: name, path, source, imports, comments, the project's target and the syntax tree as compiled for it, which of the project's modules and types are internal, and for typed rules the type queries and the `Unknown` type |
 | `src/grice/types.gleam` | Type predicates over girard's `Type` |
 | `src/grice/visit.gleam` | **Exists:** the glance syntax tree walk, in source order, with a hook per kind of node |

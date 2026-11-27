@@ -89,8 +89,10 @@ A built-in rule ships in the default set only if it passes the gate in
 [`docs/RULES.md`](docs/RULES.md): the compiler is silent on what it flags,
 it's exact, it's cited, it's clean on the core packages, and it finds real
 problems. A rule that passes all but the citation, since no Gleam source
-calls the code it flags wrong, goes in an opt-in pack such as `simplify()`.
-A rule `<name>`, with the code `grice_rules/<name>`, comes with:
+calls the code it flags wrong, goes in an opt-in pack such as `simplify()`,
+and a rule about what a package published to Hex offers its users goes in
+`library()`, whose rules read only `src/`. A rule `<name>`, with the code
+`grice_rules/<name>`, comes with:
 
 - **Its module,** `src/grice/internal/rules/<name>.gleam`, with
   `pub fn rule() -> Rule`, its code as a private constant, and its
@@ -100,10 +102,13 @@ A rule `<name>`, with the code `grice_rules/<name>`, comes with:
 - **Its function in [`src/grice/rules.gleam`](src/grice/rules.gleam),**
   with a doc comment: what it flags, a flagged and a fixed example, and a
   link to its section of `docs/RULES.md`. Add it to its set: `default()`,
-  or a pack such as `simplify()`.
+  or a pack, `simplify()` or `library()`.
 - **Its samples,** `test/grice/rules/samples/<name>_flagged.gleam` and
   `<name>_clean.gleam`: ordinary modules of public functions, importing
-  only the standard library, with no warning. Every build compiles them
+  only the standard library, with no warning. A rule about what other
+  modules hold, such as an internal module's types, has those modules
+  under `test/grice/internal/rules/samples/`, which
+  `support.internal_sample` reads. Every build compiles them
   with `--warnings-as-errors`, on every compiler and target CI runs, which
   shows the compiler is silent on them. `_flagged` holds each form the
   rule reports, one finding per function where it can; `_clean` holds the
@@ -119,7 +124,8 @@ A rule `<name>`, with the code `grice_rules/<name>`, comes with:
   target is Erlang and as one whose target is JavaScript, checks that both
   show the same diagnostics, and returns the Erlang run. A rule whose
   findings depend on the target, such as fold-plus, lints a sample once
-  per target with `support.on_target` and checks each run. The flagged
+  per target with `support.on_target`, or a project of several modules
+  with `support.project_on_target`, and checks each run. The flagged
   sample's render is a snapshot, beside a check of its codes with
   `testing.expect_codes`; the clean sample and the forms the compiler
   already reports, as the same problem, give `testing.expect_none`.
@@ -152,8 +158,8 @@ that, gleam's cache serves the packages. Never run `gleam` in
 as grice's tests.
 
 The corpus gate, [`test/grice/corpus_test.gleam`](test/grice/corpus_test.gleam),
-runs every built-in rule, the default set and the packs, over each of the
-Gleam core team's packages in the corpus. Their typed rules make girard
+runs every built-in rule, the default set, the simplify pack and the
+library pack, over each of the Gleam core team's packages in the corpus. Their typed rules make girard
 type every package, and the gate fails a package not fully typed, so a rule
 set that lost its typed rules fails it too. It asserts that every package
 is clean: no finding but those it allows, no coverage gap, every module

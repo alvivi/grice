@@ -111,6 +111,27 @@ your own, as [Running your own rules](#running-your-own-rules) shows:
 grice.run(list.append(rules.default(), rules.simplify()))
 ```
 
+The library pack is a third set, for a package published to Hex, whose
+rules read only `src/`:
+
+- `grice_rules/internal-type-in-public-api`: a public function, constant
+  or constructor whose written signature names an internal type of the
+  package, which the compiler leaves to a planned warning: a public custom
+  type of an internal module or marked `@internal`, or a type alias that
+  isn't public API (private, marked `@internal` or in an internal module)
+  whose definition names an internal type.
+
+grice knows the package's internal modules from `name` and
+`internal_modules` in its `gleam.toml`, in the part of the compiler's
+pattern syntax that
+[Configuration](https://github.com/alvivi/grice/blob/main/docs/CONFIGURATION.md#module-patterns)
+describes, with the limits of grice's TOML reader. Add the pack the same
+way:
+
+```gleam
+grice.run(list.append(rules.default(), rules.library()))
+```
+
 ### Running your own rules
 
 Rules are Gleam code. Write them with `grice/rule`, and run them from an

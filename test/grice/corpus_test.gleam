@@ -1,13 +1,13 @@
-//// The corpus gate: every built-in rule, the default set and the simplify
-//// pack, over the Gleam core team's packages, pinned in `test/corpus/`. A
-//// rule is on by default only if it runs clean on them, or each finding it
-//// keeps there is a real defect, recorded below with its reason. A pack
-//// rule's finding there is either a false positive to fix in the rule, or
-//// correct, and then recorded with a reason that says so and that the pack
-//// is opt-in. So the gate asserts that every package is clean but for
-//// those findings: every other diagnostic fails it, which covers every
-//// other finding and every coverage gap, and so does a module girard
-//// didn't type. A failure lists each problem.
+//// The corpus gate: every built-in rule, the default set, the simplify
+//// pack and the library pack, over the Gleam core team's packages, pinned
+//// in `test/corpus/`. A rule is on by default only if it runs clean on
+//// them, or each finding it keeps there is a real defect, recorded below
+//// with its reason. A pack rule's finding there is either a false positive
+//// to fix in the rule, or correct, and then recorded with a reason that
+//// says so and that the pack is opt-in. So the gate asserts that every
+//// package is clean but for those findings: every other diagnostic fails
+//// it, which covers every other finding and every coverage gap, and so
+//// does a module girard didn't type. A failure lists each problem.
 ////
 //// The built-in rules include typed ones, so girard types every package,
 //// and a module it couldn't type shows up as a coverage note. The gate
