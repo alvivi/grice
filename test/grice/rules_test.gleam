@@ -245,6 +245,41 @@ pub fn rules_see_only_javascript_definitions_on_javascript_test() {
     ]
 }
 
+// `facts.target` is the project's target, Erlang when `gleam.toml` sets
+// none, for syntax and typed rules alike.
+pub fn rules_see_the_project_target_test() {
+  assert targets_seen("") == ["Erlang", "Erlang"]
+  assert targets_seen("target = \"erlang\"\n") == ["Erlang", "Erlang"]
+  assert targets_seen("target = \"javascript\"\n")
+    == ["JavaScript", "JavaScript"]
+}
+
+// The target a syntax rule and a typed rule see, in that order, on a
+// project with the `gleam.toml` text `toml`.
+fn targets_seen(toml: String) -> List(String) {
+  testing.project([
+    #("gleam.toml", toml),
+    #("src/app.gleam", "pub fn main() {\n  1\n}\n"),
+  ])
+  |> testing.run([
+    support.on_module_end("fixture/syntax-target", fn(module_facts) {
+      [support.at_start(describe_target(module_facts))]
+    }),
+    support.typed_on_module_end("fixture/typed-target", fn(module_facts) {
+      [support.at_start(describe_target(module_facts))]
+    }),
+  ])
+  |> testing.diagnostics
+  |> support.labels
+}
+
+fn describe_target(module_facts: ModuleFacts(kind)) -> String {
+  case facts.target(module_facts) {
+    facts.Erlang -> "Erlang"
+    facts.JavaScript -> "JavaScript"
+  }
+}
+
 // What the echo and duplicate rules find in the two target modules on
 // `target`.
 fn findings_on_target(target: String) -> List(String) {
