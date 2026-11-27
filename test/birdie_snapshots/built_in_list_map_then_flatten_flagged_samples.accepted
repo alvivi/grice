@@ -1,0 +1,194 @@
+---
+version: 2.0.2
+title: built-in list-map-then-flatten: flagged samples
+file: ./test/grice/rules/list_map_then_flatten_test.gleam
+test_name: list_map_then_flatten_flagged_samples_test
+---
+-- gleam.toml
+target = "erlang"
+-- src/app.gleam
+//// Each form list-map-then-flatten reports, one per function. These
+//// functions never run: the module is here to be linted, and compiled by
+//// every build with `--warnings-as-errors`, which shows the compiler is
+//// silent on it. `list.map` and `list.flatten` are also imported
+//// unqualified, and the rule finds them by what they resolve to.
+
+import gleam/list.{flatten, map}
+
+pub fn nested(rows: List(Int), cells: fn(Int) -> List(Int)) -> List(Int) {
+  list.flatten(list.map(rows, cells))
+}
+
+pub fn unqualified(rows: List(Int), cells: fn(Int) -> List(Int)) -> List(Int) {
+  flatten(map(rows, cells))
+}
+
+pub fn piped_into_the_flatten(
+  rows: List(Int),
+  cells: fn(Int) -> List(Int),
+) -> List(Int) {
+  list.map(rows, cells) |> list.flatten
+}
+
+pub fn piped_with_parentheses(
+  rows: List(Int),
+  cells: fn(Int) -> List(Int),
+) -> List(Int) {
+  list.map(rows, cells) |> list.flatten()
+}
+
+pub fn piped_throughout(
+  rows: List(Int),
+  cells: fn(Int) -> List(Int),
+) -> List(Int) {
+  rows |> list.map(cells) |> list.flatten
+}
+
+pub fn piped_inside(rows: List(Int), cells: fn(Int) -> List(Int)) -> List(Int) {
+  list.flatten(rows |> list.map(cells))
+}
+
+pub fn piped_into_a_capture(
+  rows: List(Int),
+  cells: fn(Int) -> List(Int),
+) -> List(Int) {
+  cells |> list.map(rows, _) |> list.flatten
+}
+
+pub fn labelled(rows: List(Int), cells: fn(Int) -> List(Int)) -> List(Int) {
+  list.map(rows, with: cells) |> list.flatten
+}
+
+pub fn labelled_placeholder(
+  rows: List(Int),
+  cells: fn(Int) -> List(Int),
+) -> List(Int) {
+  cells |> list.map(rows, with: _) |> list.flatten
+}
+
+pub fn shorthand(rows: List(Int), with: fn(Int) -> List(Int)) -> List(Int) {
+  list.map(rows, with:) |> list.flatten
+}
+-- output
+warning[grice_rules/list-map-then-flatten]: A map then a flatten of a list
+   ┌─ src/app.gleam:10:3
+   │
+10 │   list.flatten(list.map(rows, cells))
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This maps a list into lists and then flattens them
+
+`list.flat_map` does both in one call. Its docs say it "Maps the list with
+the given function into a list of lists, and then flattens it."
+
+Hint: Call `list.flat_map(over: list, with: fun)` in place of `list.map`,
+and drop the `list.flatten`.
+
+warning[grice_rules/list-map-then-flatten]: A map then a flatten of a list
+   ┌─ src/app.gleam:14:3
+   │
+14 │   flatten(map(rows, cells))
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^ This maps a list into lists and then flattens them
+
+`list.flat_map` does both in one call. Its docs say it "Maps the list with
+the given function into a list of lists, and then flattens it."
+
+Hint: Call `list.flat_map(over: list, with: fun)` in place of `list.map`,
+and drop the `list.flatten`.
+
+warning[grice_rules/list-map-then-flatten]: A map then a flatten of a list
+   ┌─ src/app.gleam:21:3
+   │
+21 │   list.map(rows, cells) |> list.flatten
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This maps a list into lists and then flattens them
+
+`list.flat_map` does both in one call. Its docs say it "Maps the list with
+the given function into a list of lists, and then flattens it."
+
+Hint: Call `list.flat_map(over: list, with: fun)` in place of `list.map`,
+and drop the `list.flatten`.
+
+warning[grice_rules/list-map-then-flatten]: A map then a flatten of a list
+   ┌─ src/app.gleam:28:3
+   │
+28 │   list.map(rows, cells) |> list.flatten()
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This maps a list into lists and then flattens them
+
+`list.flat_map` does both in one call. Its docs say it "Maps the list with
+the given function into a list of lists, and then flattens it."
+
+Hint: Call `list.flat_map(over: list, with: fun)` in place of `list.map`,
+and drop the `list.flatten`.
+
+warning[grice_rules/list-map-then-flatten]: A map then a flatten of a list
+   ┌─ src/app.gleam:35:11
+   │
+35 │   rows |> list.map(cells) |> list.flatten
+   │           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This maps a list into lists and then flattens them
+
+`list.flat_map` does both in one call. Its docs say it "Maps the list with
+the given function into a list of lists, and then flattens it."
+
+Hint: Call `list.flat_map(over: list, with: fun)` in place of `list.map`,
+and drop the `list.flatten`.
+
+warning[grice_rules/list-map-then-flatten]: A map then a flatten of a list
+   ┌─ src/app.gleam:39:3
+   │
+39 │   list.flatten(rows |> list.map(cells))
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This maps a list into lists and then flattens them
+
+`list.flat_map` does both in one call. Its docs say it "Maps the list with
+the given function into a list of lists, and then flattens it."
+
+Hint: Call `list.flat_map(over: list, with: fun)` in place of `list.map`,
+and drop the `list.flatten`.
+
+warning[grice_rules/list-map-then-flatten]: A map then a flatten of a list
+   ┌─ src/app.gleam:46:12
+   │
+46 │   cells |> list.map(rows, _) |> list.flatten
+   │            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This maps a list into lists and then flattens them
+
+`list.flat_map` does both in one call. Its docs say it "Maps the list with
+the given function into a list of lists, and then flattens it."
+
+Hint: Call `list.flat_map(over: list, with: fun)` in place of `list.map`,
+and drop the `list.flatten`.
+
+warning[grice_rules/list-map-then-flatten]: A map then a flatten of a list
+   ┌─ src/app.gleam:50:3
+   │
+50 │   list.map(rows, with: cells) |> list.flatten
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This maps a list into lists and then flattens them
+
+`list.flat_map` does both in one call. Its docs say it "Maps the list with
+the given function into a list of lists, and then flattens it."
+
+Hint: Call `list.flat_map(over: list, with: fun)` in place of `list.map`,
+and drop the `list.flatten`.
+
+warning[grice_rules/list-map-then-flatten]: A map then a flatten of a list
+   ┌─ src/app.gleam:57:12
+   │
+57 │   cells |> list.map(rows, with: _) |> list.flatten
+   │            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This maps a list into lists and then flattens them
+
+`list.flat_map` does both in one call. Its docs say it "Maps the list with
+the given function into a list of lists, and then flattens it."
+
+Hint: Call `list.flat_map(over: list, with: fun)` in place of `list.map`,
+and drop the `list.flatten`.
+
+warning[grice_rules/list-map-then-flatten]: A map then a flatten of a list
+   ┌─ src/app.gleam:61:3
+   │
+61 │   list.map(rows, with:) |> list.flatten
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This maps a list into lists and then flattens them
+
+`list.flat_map` does both in one call. Its docs say it "Maps the list with
+the given function into a list of lists, and then flattens it."
+
+Hint: Call `list.flat_map(over: list, with: fun)` in place of `list.map`,
+and drop the `list.flatten`.
+
+10 warnings in 1 module.
+

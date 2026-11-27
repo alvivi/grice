@@ -93,6 +93,8 @@ result:
 
 - `grice_rules/map-then-flatten`: `result.map` then `result.flatten`, or
   `option.map` then `option.flatten`, for `result.try` or `option.then`.
+- `grice_rules/list-map-then-flatten`: `list.map` then `list.flatten`, for
+  `list.flat_map`.
 
 To run it, add `rules.simplify()` to the default set in an entry module of
 your own, as [Running your own rules](#running-your-own-rules) shows:

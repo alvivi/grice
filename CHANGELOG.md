@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `grice_rules/map-then-flatten`: `result.map` then `result.flatten`, or
     `option.map` then `option.flatten`, which `result.try` and
     `option.then` do in one call.
+  - `grice_rules/list-map-then-flatten`: `list.map` then `list.flatten`,
+    which `list.flat_map` does in one call.
 
 ## [0.2.0] - 2026-11-26
 

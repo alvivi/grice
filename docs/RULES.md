@@ -113,6 +113,7 @@ echo step
 | Code | What it flags |
 |---|---|
 | [`grice_rules/map-then-flatten`](#map-then-flatten) | `result.map` then `result.flatten`, or `option.map` then `option.flatten`, for `result.try` or `option.then`. |
+| [`grice_rules/list-map-then-flatten`](#list-map-then-flatten) | `list.map` then `list.flatten`, for `list.flat_map`. |
 
 Each rule finds the functions by what [girard](https://hexdocs.pm/girard)
 resolved the calls to, and reads a call however it's written: nested, as
@@ -460,3 +461,44 @@ and `option.then` themselves.
 worth fixing. To keep the two steps, put
 `// grice-ignore grice_rules/map-then-flatten: <reason>` on the line above
 it.
+
+## list-map-then-flatten
+
+`grice_rules/list-map-then-flatten` reports `list.map` followed by
+`list.flatten`, in every form the pack reads:
+`list.flatten(list.map(xs, f))`, `list.map(xs, f) |> list.flatten` and
+`xs |> list.map(f) |> list.flatten`.
+
+**Why.** [`list.flat_map`](https://hexdocs.pm/gleam_stdlib/gleam/list.html#flat_map)
+does both in one call. Its docs say it "Maps the list with the given
+function into a list of lists, and then flattens it", and the standard
+library writes it as exactly that, so it calls the function the same way
+and gives the same list. It has a code of its own, apart from
+map-then-flatten, as it's far more common in application code, so a
+project can take one rule without the other.
+
+Flagged:
+
+```gleam
+pub fn words(lines: List(String)) -> List(String) {
+  lines |> list.map(string.split(_, " ")) |> list.flatten
+}
+```
+
+Fixed:
+
+```gleam
+pub fn words(lines: List(String)) -> List(String) {
+  lines |> list.flat_map(string.split(_, " "))
+}
+```
+
+**What it leaves alone.** A `map` or a `flatten` alone, a `map` followed by
+another function, a `flatten` followed by a `map`, and the forms the pack
+doesn't read. Inside `list.flat_map` itself, which the standard library
+writes as `flatten(map(list, fun))`.
+
+**Suppressing it.** The rewrite gives the same result, so a finding is
+worth fixing. To keep the two steps, put
+`// grice-ignore grice_rules/list-map-then-flatten: <reason>` on the line
+above it.
