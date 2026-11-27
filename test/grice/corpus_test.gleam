@@ -1,14 +1,17 @@
-//// The corpus gate: grice's built-in rules over the Gleam core team's
-//// packages, pinned in `test/corpus/`. A rule is on by default only if it
-//// runs clean on them, or each finding it keeps there is a real defect,
-//// recorded below with its reason. So the gate asserts that every package
-//// is clean but for those findings: every other diagnostic fails it,
-//// which covers every other finding and every coverage gap, and so does
-//// a module girard didn't type. A failure lists each problem.
+//// The corpus gate: every built-in rule, the default set and the simplify
+//// pack, over the Gleam core team's packages, pinned in `test/corpus/`. A
+//// rule is on by default only if it runs clean on them, or each finding it
+//// keeps there is a real defect, recorded below with its reason. A pack
+//// rule's finding there is either a false positive to fix in the rule, or
+//// correct, and then recorded with a reason that says so and that the pack
+//// is opt-in. So the gate asserts that every package is clean but for
+//// those findings: every other diagnostic fails it, which covers every
+//// other finding and every coverage gap, and so does a module girard
+//// didn't type. A failure lists each problem.
 ////
-//// The default set has typed rules, so girard types every package, and a
-//// module it couldn't type shows up as a coverage note. The gate checks
-//// that every module was typed, so a default set that lost its typed
+//// The built-in rules include typed ones, so girard types every package,
+//// and a module it couldn't type shows up as a coverage note. The gate
+//// checks that every module was typed, so a rule set that lost its typed
 //// rules fails it instead of passing over untyped packages.
 ////
 //// Each allowed finding is matched one to one: a diagnostic takes at most
@@ -27,7 +30,6 @@ import grice/corpus
 import grice/coverage.{Requested}
 import grice/internal/parallel
 import grice/rule
-import grice/rules
 
 // Allowed findings
 
@@ -87,7 +89,7 @@ pub fn core_packages_are_clean_test() {
     corpus.core
     |> parallel.map(fn(package) {
       let project = corpus.load(package, installed)
-      let linted = corpus.lint(project, rules.default())
+      let linted = corpus.lint(project, corpus.built_in_rules())
       let coverage = linted.coverage
       let typed = Requested(full: coverage.modules, partial: 0, none: 0)
       let untyped = case coverage.types == typed {

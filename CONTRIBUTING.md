@@ -88,7 +88,9 @@ in the same change.
 A built-in rule ships in the default set only if it passes the gate in
 [`docs/RULES.md`](docs/RULES.md): the compiler is silent on what it flags,
 it's exact, it's cited, it's clean on the core packages, and it finds real
-problems. A rule `<name>`, with the code `grice_rules/<name>`, comes with:
+problems. A rule that passes all but the citation, since no Gleam source
+calls the code it flags wrong, goes in an opt-in pack such as `simplify()`.
+A rule `<name>`, with the code `grice_rules/<name>`, comes with:
 
 - **Its module,** `src/grice/internal/rules/<name>.gleam`, with
   `pub fn rule() -> Rule`, its code as a private constant, and its
@@ -97,7 +99,8 @@ problems. A rule `<name>`, with the code `grice_rules/<name>`, comes with:
   fix it. Every built-in rule reports a warning.
 - **Its function in [`src/grice/rules.gleam`](src/grice/rules.gleam),**
   with a doc comment: what it flags, a flagged and a fixed example, and a
-  link to its section of `docs/RULES.md`. Add it to `default()`.
+  link to its section of `docs/RULES.md`. Add it to its set: `default()`,
+  or a pack such as `simplify()`.
 - **Its samples,** `test/grice/rules/samples/<name>_flagged.gleam` and
   `<name>_clean.gleam`: ordinary modules of public functions, importing
   only the standard library, with no warning. Every build compiles them
@@ -107,24 +110,29 @@ problems. A rule `<name>`, with the code `grice_rules/<name>`, comes with:
   near misses it must leave alone. No sample function's name may end in
   `_test`, or gleeunit runs it. A form the compiler warns on, or that
   `gleam format` rewrites, can't be a sample: it's an in-memory source in
-  the tests, with a comment saying why.
+  the tests, with a comment saying why. A warning about another part of
+  the code doesn't make a form clean: the compiler's redundant capture in
+  `r |> result.map(f) |> result.flatten(_)` is still a map-then-flatten
+  finding.
 - **Its tests,** `test/grice/rules/<name>_test.gleam`. `support.sample`
   reads a sample, and `support.on_both_targets` lints it as a project whose
   target is Erlang and as one whose target is JavaScript, checks that both
   show the same diagnostics, and returns the Erlang run. The flagged
   sample's render is a snapshot, beside a check of its codes with
-  `testing.expect_codes`; the clean sample and the compiler's own forms
-  give `testing.expect_none`.
-- **The corpus gate,** which must pass: a finding on a core package is
-  either a false positive to fix, or a real defect to add to the gate's
-  `allowed` list with its reason (see below).
+  `testing.expect_codes`; the clean sample and the forms the compiler
+  already reports, as the same problem, give `testing.expect_none`.
+- **The corpus gate,** which runs every built-in rule and must pass: a
+  finding on a core package is either a false positive to fix, or a real
+  defect to add to the gate's `allowed` list with its reason (see below).
+  A pack rule's finding there may also be correct, which the reason says,
+  with the pack being opt-in.
 - **The benchmark's `built-in` budget,** measured again, since the rule
-  adds to what the default set costs (see below).
+  adds to what the built-in rules cost (see below).
 - **Its section in [`docs/RULES.md`](docs/RULES.md):** its code, what it
   flags, why, with its source linked, a flagged and a fixed example, what
   it leaves alone, and how to suppress it; and a line in the table there
   and in the README.
-- **A changelog entry,** under the default rule set's.
+- **A changelog entry,** under its set's.
 
 ## Corpus and benchmark
 
@@ -142,33 +150,35 @@ that, gleam's cache serves the packages. Never run `gleam` in
 as grice's tests.
 
 The corpus gate, [`test/grice/corpus_test.gleam`](test/grice/corpus_test.gleam),
-runs the built-in rules over each of the Gleam core team's packages in the
-corpus. Their typed rules make girard type every package, and the gate
-fails a package not fully typed, so a default set that lost its typed
-rules fails it too. It asserts that every package is clean: no finding but those it allows, no coverage gap, every
-module typed. A built-in rule is on by default only if it runs clean on
-these packages, or each finding it keeps there is a real defect. Those
-are the `allowed` list in the gate, each with its package, path, line,
-column, code and the reason it's allowed. Each entry allows exactly one
-diagnostic: a second one at the same place is a new finding. An entry
-that no diagnostic matches is stale, and fails the gate too, so the bump
-that picks up a fix removes it. An entry can't allow one of grice's own
-diagnostics. A failure lists each finding not allowed, each stale entry
-and each package not fully typed.
+runs every built-in rule, the default set and the packs, over each of the
+Gleam core team's packages in the corpus. Their typed rules make girard
+type every package, and the gate fails a package not fully typed, so a rule
+set that lost its typed rules fails it too. It asserts that every package
+is clean: no finding but those it allows, no coverage gap, every module
+typed. A built-in rule is on by default only if it runs clean on these
+packages, or each finding it keeps there is a real defect, and a pack's
+rule only if each such finding is a real defect or correct. Those are the
+`allowed` list in the gate, each with its package, path, line, column, code
+and the reason it's allowed. Each entry allows exactly one diagnostic: a
+second one at the same place is a new finding. An entry that no diagnostic
+matches is stale, and fails the gate too, so the bump that picks up a fix
+removes it. An entry can't allow one of grice's own diagnostics. A failure
+lists each finding not allowed, each stale entry and each package not
+fully typed.
 
 `gleam run -m grice/bench` runs the benchmark,
 [`test/grice/bench.gleam`](test/grice/bench.gleam), over every package of
-the corpus. It measures five scenarios: four rule sets that never
-report, which are no rule, a syntax rule with every hook, a typed rule
-that asks the type of every expression, and a project rule; and the
-built-in rules, the default set `gleam run -m grice` runs. Each scenario
-runs a warm-up pass and three measured passes, and the benchmark prints
-the medians of loading and linting. Every pass checks that it analysed
-the whole corpus (no diagnostic but the built-in rules' findings, so
-none of grice's own, every module parsed, every module typed in the
-typed scenarios, and the pinned module and line totals), and fails the
-run before any budget is compared if it didn't, since a pass over less
-code would fit any budget.
+the corpus. It measures five scenarios: four rule sets that never report,
+which are no rule, a syntax rule with every hook, a typed rule that asks
+the type of every expression, and a project rule; and the built-in rules,
+the default set `gleam run -m grice` runs and the packs. Each scenario runs
+a warm-up pass and three measured passes, and the benchmark prints the
+medians of loading and linting. Every pass checks that it analysed the
+whole corpus (no diagnostic but the built-in rules' findings, so none of
+grice's own, every module parsed, every module typed in the typed
+scenarios, and the pinned module and line totals), and fails the run before
+any budget is compared if it didn't, since a pass over less code would fit
+any budget.
 
 The budgets are reductions, the runtime's count of work done, which
 barely move between runs and machines; milliseconds are printed but

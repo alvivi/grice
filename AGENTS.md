@@ -8,19 +8,21 @@ repository.
 **grice** is a type-aware linter for Gleam, written in Gleam. It is the
 infrastructure for linting a Gleam project: a runner, a rule API, a type layer,
 suppression comments and a diagnostics renderer. Rules are ordinary Gleam
-values. grice ships a default rule set, offered by `grice/rules`, and clients
-write their own rules with the same API the built-ins use.
+values. grice ships a default rule set and an opt-in pack, offered by
+`grice/rules`, and clients write their own rules with the same API the
+built-ins use.
 
 What sets it apart from a syntactic linter is that rules can ask
 [girard](https://github.com/alvivi/girard) for the inferred type of any
 expression and for which definition any name or field access resolved to, and
 that its diagnostics follow the Gleam compiler's layout.
 
-**Status:** 0.2.0, which adds the default rule set. grice won't be on Hex
-until 1.0, so each 0.x release is a tag on GitHub only. Everything the table
-below marks **Exists** has landed, with the corpus gate over the core
-packages, the benchmark and the JavaScript target. The default rule set has
-four built-in rules, under the `grice_rules/` prefix. The type predicates
+**Status:** 0.2.0, which adds the default rule set, and since then the
+simplify pack. grice won't be on Hex until 1.0, so each 0.x release is a tag
+on GitHub only. Everything the table below marks **Exists** has landed, with
+the corpus gate over the core packages, the benchmark and the JavaScript
+target. The default rule set has four built-in rules and the opt-in simplify
+pack one, all under the `grice_rules/` prefix. The type predicates
 (`grice/types`) and the diagnostic builders are still to come.
 
 ## Build and Test
@@ -64,7 +66,7 @@ notice.
 | `src/grice.gleam` | **Exists:** entry points: `main()`, which runs `rules.default()`, `run(rules)` for a client's own set, and the library API: `load_project`, `lint`, `diagnostics`, `coverage` and `render` |
 | `src/grice/coverage.gleam` | **Exists:** the coverage of a run and its gaps, public so tools can pattern-match on them |
 | `src/grice/rule.gleam` | **Exists:** module and project rule builders, reports and severities |
-| `src/grice/rules.gleam` | **Exists:** the built-in rules: `default()`, the set `main()` runs, and one function per rule |
+| `src/grice/rules.gleam` | **Exists:** the built-in rules: `default()`, the set `main()` runs, `simplify()`, the opt-in simplify pack, and one function per rule |
 | `src/grice/facts.gleam` | **Exists:** per-module facts: name, path, source, imports, comments and the syntax tree as compiled for the target, and for typed rules the type queries and the `Unknown` type |
 | `src/grice/types.gleam` | Type predicates over girard's `Type` |
 | `src/grice/visit.gleam` | **Exists:** the glance syntax tree walk, in source order, with a hook per kind of node |
@@ -77,7 +79,7 @@ notice.
 | `src/grice/internal/line_index.gleam` | **Exists:** byte offset to line and column, line ranges, span checks, glance's offsets to bytes, and UTF-8 decoding that keeps every byte |
 | `src/grice/internal/typing.gleam` | **Exists:** girard integration: the order modules are typed in, the in-memory resolver and each module's type index |
 | `src/grice/internal/runner.gleam` | **Exists:** checking the rule set, planning which facts the rules need, running rules over the lint set, resolving reports, dropping what ignores and suppressions hide, and the coverage record with its notes |
-| `src/grice/internal/rules/` | **Exists:** one module per built-in rule, with its matching and its diagnostic text, and `int_literal.gleam`, which reads glance's Int literals in every spelling for the rules that compare with one |
+| `src/grice/internal/rules/` | **Exists:** one module per built-in rule, with its matching and its diagnostic text; `int_literal.gleam`, which reads glance's Int literals in every spelling for the rules that compare with one; and `call.gleam`, which reads a call of a module function however it's written, nested or piped, for the simplify pack |
 | `src/grice/internal/suppress.gleam` | **Exists:** applying ignores and suppression comments, and the unused- and invalid-suppression warnings |
 | `src/grice/internal/render/human.gleam` | **Exists:** human output in a layout modelled on the compiler's, and a run's summary and stats |
 | `src/grice/internal/render/json.gleam` | **Exists:** the JSON document, schema version 1, pretty-printed |

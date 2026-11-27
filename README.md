@@ -86,6 +86,21 @@ built-in rules on Node, name the target:
 gleam run --target javascript -m grice
 ```
 
+The simplify pack is a second set of built-in rules, which
+`gleam run -m grice` doesn't run: code that is correct but takes the long
+way round, where one standard library function does the same, with the same
+result:
+
+- `grice_rules/map-then-flatten`: `result.map` then `result.flatten`, or
+  `option.map` then `option.flatten`, for `result.try` or `option.then`.
+
+To run it, add `rules.simplify()` to the default set in an entry module of
+your own, as [Running your own rules](#running-your-own-rules) shows:
+
+```gleam
+grice.run(list.append(rules.default(), rules.simplify()))
+```
+
 ### Running your own rules
 
 Rules are Gleam code. Write them with `grice/rule`, and run them from an

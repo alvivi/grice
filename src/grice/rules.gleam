@@ -34,9 +34,26 @@
 //// start with `grice_rules/`, and are ignored and suppressed like any
 //// rule's. [Built-in rules](https://github.com/alvivi/grice/blob/main/docs/RULES.md)
 //// describes each rule.
+////
+//// `simplify` is an opt-in pack, which `gleam run -m grice` doesn't run:
+//// rules for code that is correct but takes the long way round, where the
+//// standard library has one function that does the same. No rule is in
+//// more than one set, so a project adds the pack to the default set in an
+//// entry module of its own:
+////
+//// ```gleam
+//// import gleam/list
+//// import grice
+//// import grice/rules
+////
+//// pub fn main() -> Nil {
+////   grice.run(list.append(rules.default(), rules.simplify()))
+//// }
+//// ```
 
 import grice/internal/rules/check_then_assert
 import grice/internal/rules/ineffective_double_comparison
+import grice/internal/rules/map_then_flatten
 import grice/internal/rules/no_echo
 import grice/internal/rules/no_length_for_emptiness
 import grice/rule.{type Rule}
@@ -176,4 +193,39 @@ pub fn no_length_for_emptiness() -> Rule {
 /// in the rule reference.
 pub fn check_then_assert() -> Rule {
   check_then_assert.rule()
+}
+
+/// The simplify pack, an opt-in set that `gleam run -m grice` doesn't run:
+/// every rule below this one, in the order they're listed. Each flags code
+/// that a single standard library function does in one call, with the same
+/// result, and calls any function passed to it the same way.
+pub fn simplify() -> List(Rule) {
+  [map_then_flatten()]
+}
+
+/// `grice_rules/map-then-flatten`: `result.map` then `result.flatten`, or
+/// `option.map` then `option.flatten`, nested or piped. `result.try` and
+/// `option.then` do both in one call, and their docs say they're "the
+/// equivalent of calling `map` followed by `flatten`".
+///
+/// Flagged:
+///
+/// ```gleam
+/// pub fn port(text: String) -> Result(Int, Nil) {
+///   text |> int.parse |> result.map(valid_port) |> result.flatten
+/// }
+/// ```
+///
+/// Fixed:
+///
+/// ```gleam
+/// pub fn port(text: String) -> Result(Int, Nil) {
+///   text |> int.parse |> result.try(valid_port)
+/// }
+/// ```
+///
+/// [map-then-flatten](https://github.com/alvivi/grice/blob/main/docs/RULES.md#map-then-flatten)
+/// in the rule reference.
+pub fn map_then_flatten() -> Rule {
+  map_then_flatten.rule()
 }

@@ -124,9 +124,13 @@ pub fn hidden() -> Nil {
 "
 
 // The app the default rule set runs on, with a finding for a syntax rule
-// and one for a typed rule.
+// and one for a typed rule, and a map then a flatten in `parse_positive`,
+// which only the simplify pack flags, so the run shows that
+// `gleam run -m grice` runs the default set alone.
 const built_in_app =
-  "import gleam/io
+  "import gleam/int
+import gleam/io
+import gleam/result
 import gleam/string
 
 pub fn main() -> Nil {
@@ -137,6 +141,17 @@ pub fn greeting(name: String) -> String {
   case string.length(name) == 0 {
     True -> \"Hello!\"
     False -> echo \"Hello, \" <> name
+  }
+}
+
+pub fn parse_positive(text: String) -> Result(Int, Nil) {
+  int.parse(text) |> result.map(positive) |> result.flatten
+}
+
+fn positive(number: Int) -> Result(Int, Nil) {
+  case number > 0 {
+    True -> Ok(number)
+    False -> Error(Nil)
   }
 }
 "

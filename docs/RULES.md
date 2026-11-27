@@ -1,7 +1,8 @@
 # Built-in rules
 
-grice ships a default rule set, which `gleam run -m grice` runs. Every rule
-in it reports a warning, has a code that starts with `grice_rules/`, and is
+grice ships a default rule set, which `gleam run -m grice` runs, and an
+opt-in pack, simplify, which a project adds itself. Every built-in rule
+reports a warning, has a code that starts with `grice_rules/`, and is
 offered by the `grice/rules` module, so a project can run it beside rules
 of its own.
 
@@ -22,8 +23,14 @@ A rule is in the default set only when it passes five tests:
    recorded with its reason.
 5. **It finds real problems.** Real Gleam code makes the mistake.
 
-A rule that is cited but sometimes wrong to apply doesn't belong in the
-default set: write it as a rule of your own, or wait for an opt-in set.
+A pack's rules pass tests 1, 2 and 4, but no Gleam source calls the code
+they flag wrong (test 3), so a project opts in to them. The simplify pack
+flags code that is correct but takes the long way round, where one standard
+library function does the same: each rewrite it suggests gives the same
+result, and calls any function passed to it the same way.
+
+A rule that is cited but sometimes wrong to apply doesn't belong in any
+built-in set: write it as a rule of your own.
 
 ## Running the rules
 
@@ -42,6 +49,19 @@ import lint/no_io_in_view
 
 pub fn main() -> Nil {
   grice.run([no_io_in_view.rule(), ..rules.default()])
+}
+```
+
+`rules.simplify()` is the simplify pack. No rule is in two sets, so add it
+to the default set in the same entry module:
+
+```gleam
+import gleam/list
+import grice
+import grice/rules
+
+pub fn main() -> Nil {
+  grice.run(list.append(rules.default(), rules.simplify()))
 }
 ```
 
@@ -79,12 +99,63 @@ echo step
 
 ## The rules
 
+### The default set
+
 | Code | What it flags |
 |---|---|
 | [`grice_rules/no-echo`](#no-echo) | An `echo` left outside `test/` and `dev/`. |
 | [`grice_rules/ineffective-double-comparison`](#ineffective-double-comparison) | A comparison that the comparisons before it in its chain already decide. |
 | [`grice_rules/no-length-for-emptiness`](#no-length-for-emptiness) | `string.length` or `list.length` compared with 0 or 1 to check for emptiness. |
 | [`grice_rules/check-then-assert`](#check-then-assert) | A `Result` or an `Option` checked with a predicate, then `let assert`-ed where the check already proved its variant. |
+
+### The simplify pack
+
+| Code | What it flags |
+|---|---|
+| [`grice_rules/map-then-flatten`](#map-then-flatten) | `result.map` then `result.flatten`, or `option.map` then `option.flatten`, for `result.try` or `option.then`. |
+
+Each rule finds the functions by what [girard](https://hexdocs.pm/girard)
+resolved the calls to, and reads a call however it's written: nested, as
+in `result.flatten(result.map(r, f))`; piped, as in
+`r |> result.map(f) |> result.flatten`, with or without empty parentheses;
+or piped into a capture, as in `f |> result.map(r, _)`. It doesn't join
+two calls that something stands between: a block, as in
+`result.flatten({ result.map(r, f) })`, a callback supplied by `use`, or a
+value bound with `let` first. Nor does it read a capture nothing is piped
+into. A whole composition inside a block is still read. Where girard has no
+answer, it stays silent.
+
+A finding's label covers the calls the rewrite replaces, without the value
+piped into them. Its hint names the function to call and the call to drop,
+as an edit in place, so the arguments are still evaluated in the order they
+were (a call's labelled arguments are evaluated in its function's parameter
+order, whatever order they're written in), and when the replaced call
+labels an argument the new function doesn't take, it says how to write that
+argument. Each rule stays silent inside the standard library function it
+recommends, which may be written as the code the rule flags.
+
+To suppress a finding, put a `grice-ignore` comment above the line its
+label starts on. In a pipe written over several lines, that's the line of
+the first call the label covers, after the value piped in, not the pipe's
+first line:
+
+```gleam
+pub fn port(text: String) -> Result(Int, Nil) {
+  text
+  |> int.parse
+  // grice-ignore grice_rules/map-then-flatten: Kept as two steps here.
+  |> result.map(valid_port)
+  |> result.flatten
+}
+```
+
+**The standard library it assumes.** The hints name functions of
+gleam_stdlib, and the rules don't check that the linted project's stdlib
+has them. A project that runs grice with `gleam run` depends on grice, which
+requires stdlib 0.44.0 or later, so it has them all. A project linted
+without depending on grice, through the library API or by an entry module
+built elsewhere, may have an older stdlib: every function the hints name is
+in stdlib 0.31.0 and later.
 
 ## no-echo
 
@@ -343,3 +414,49 @@ pub fn port(text: String) -> Int {
 **Suppressing it.** Rewrite the check and the assert as one `case`. To keep
 one, put `// grice-ignore grice_rules/check-then-assert: <reason>` on the
 line above the assert.
+
+## map-then-flatten
+
+`grice_rules/map-then-flatten` reports `result.map` followed by
+`result.flatten`, and `option.map` followed by `option.flatten`, in every
+form the pack reads: `result.flatten(result.map(r, f))`,
+`result.map(r, f) |> result.flatten` and
+`r |> result.map(f) |> result.flatten`.
+
+**Why.** [`result.try`](https://hexdocs.pm/gleam_stdlib/gleam/result.html#try)
+does both in one call: its docs say it "is the equivalent of calling `map`
+followed by `flatten`", and it's the function `use` chains fallible steps
+with. [`option.then`](https://hexdocs.pm/gleam_stdlib/gleam/option.html#then)
+is the same for `Option`. Each calls the function once on an `Ok` or a
+`Some`, never on an `Error` or a `None`, and gives the same result as the
+two calls.
+
+Flagged:
+
+```gleam
+pub fn port(text: String) -> Result(Int, Nil) {
+  text |> int.parse |> result.map(valid_port) |> result.flatten
+}
+```
+
+Fixed:
+
+```gleam
+pub fn port(text: String) -> Result(Int, Nil) {
+  text |> int.parse |> result.try(valid_port)
+}
+```
+
+`result.try` and `option.then` take their first argument unlabelled and
+label their function `apply:`, so the hint says how to write labelled
+arguments: `result.map(over: r, with: f)` becomes
+`result.try(r, apply: f)`, and a shorthand `with:` becomes `apply: with`.
+
+**What it leaves alone.** A `map` or a `flatten` alone, a `map` followed by
+another function, and the forms the pack doesn't read. Inside `result.try`
+and `option.then` themselves.
+
+**Suppressing it.** The rewrite gives the same result, so a finding is
+worth fixing. To keep the two steps, put
+`// grice-ignore grice_rules/map-then-flatten: <reason>` on the line above
+it.

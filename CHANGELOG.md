@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **The simplify pack.** `rules.simplify()` in `grice/rules` is an opt-in
+  set of built-in rules for code that is correct but takes the long way
+  round, where one standard library function does the same: the rewrite
+  each finding suggests gives the same result, and calls any function
+  passed to it the same way. `gleam run -m grice` still runs the default
+  set alone; add the pack in an entry module of your own with
+  `grice.run(list.append(rules.default(), rules.simplify()))`. Each rule
+  finds its functions by what girard resolved, reads the calls nested or
+  piped, and reports a warning.
+  [Built-in rules](https://github.com/alvivi/grice/blob/main/docs/RULES.md)
+  describes each one:
+  - `grice_rules/map-then-flatten`: `result.map` then `result.flatten`, or
+    `option.map` then `option.flatten`, which `result.try` and
+    `option.then` do in one call.
+
 ## [0.2.0] - 2026-11-26
 
 ### Added
