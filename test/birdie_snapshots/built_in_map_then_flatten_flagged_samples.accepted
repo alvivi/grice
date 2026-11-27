@@ -1,0 +1,313 @@
+---
+version: 2.0.2
+title: built-in map-then-flatten: flagged samples
+file: ./test/grice/rules/map_then_flatten_test.gleam
+test_name: map_then_flatten_flagged_samples_test
+---
+-- gleam.toml
+target = "erlang"
+-- src/app.gleam
+//// Each form map-then-flatten reports, one per function. These functions
+//// never run: the module is here to be linted, and compiled by every build
+//// with `--warnings-as-errors`, which shows the compiler is silent on it.
+//// `gleam/option` is imported under an alias and `result.flatten`
+//// unqualified, and the rule finds both by what they resolve to.
+
+import gleam/int
+import gleam/option as maybe
+import gleam/result.{flatten}
+
+pub fn nested(
+  parsed: Result(Int, Nil),
+  check: fn(Int) -> Result(Int, Nil),
+) -> Result(Int, Nil) {
+  result.flatten(result.map(parsed, check))
+}
+
+pub fn unqualified(
+  parsed: Result(Int, Nil),
+  check: fn(Int) -> Result(Int, Nil),
+) -> Result(Int, Nil) {
+  flatten(result.map(parsed, check))
+}
+
+pub fn piped_into_the_flatten(
+  parsed: Result(Int, Nil),
+  check: fn(Int) -> Result(Int, Nil),
+) -> Result(Int, Nil) {
+  result.map(parsed, check) |> result.flatten
+}
+
+pub fn piped_with_parentheses(
+  parsed: Result(Int, Nil),
+  check: fn(Int) -> Result(Int, Nil),
+) -> Result(Int, Nil) {
+  result.map(parsed, check) |> result.flatten()
+}
+
+pub fn piped_throughout(
+  parsed: Result(Int, Nil),
+  check: fn(Int) -> Result(Int, Nil),
+) -> Result(Int, Nil) {
+  parsed |> result.map(check) |> result.flatten
+}
+
+pub fn piped_inside(
+  parsed: Result(Int, Nil),
+  check: fn(Int) -> Result(Int, Nil),
+) -> Result(Int, Nil) {
+  result.flatten(parsed |> result.map(check))
+}
+
+pub fn piped_into_a_capture(
+  parsed: Result(Int, Nil),
+  check: fn(Int) -> Result(Int, Nil),
+) -> Result(Int, Nil) {
+  check |> result.map(parsed, _) |> result.flatten
+}
+
+pub fn labelled(
+  parsed: Result(Int, Nil),
+  check: fn(Int) -> Result(Int, Nil),
+) -> Result(Int, Nil) {
+  result.map(over: parsed, with: check) |> result.flatten
+}
+
+pub fn labelled_function_first(
+  parsed: Result(Int, Nil),
+  check: fn(Int) -> Result(Int, Nil),
+) -> Result(Int, Nil) {
+  result.flatten(result.map(with: check, over: parsed))
+}
+
+pub fn captured_function_first(
+  parsed: Result(Int, Nil),
+  check: fn(Int) -> Result(Int, Nil),
+) -> Result(Int, Nil) {
+  check |> result.map(with: _, over: parsed) |> result.flatten
+}
+
+pub fn labelled_placeholder(
+  parsed: Result(Int, Nil),
+  check: fn(Int) -> Result(Int, Nil),
+) -> Result(Int, Nil) {
+  parsed |> result.map(over: _, with: check) |> result.flatten
+}
+
+// `apply` is in scope, so `with:` written as the shorthand `apply:` would
+// pass it in place of `with`.
+pub fn shorthand(
+  over: Result(Int, Nil),
+  with: fn(Int) -> Result(Int, Nil),
+  apply: fn(Int) -> Int,
+) -> Result(Int, Nil) {
+  result.map(over:, with:) |> result.flatten |> result.map(apply)
+}
+
+pub fn option(
+  found: maybe.Option(Int),
+  check: fn(Int) -> maybe.Option(Int),
+) -> maybe.Option(Int) {
+  found |> maybe.map(check) |> maybe.flatten
+}
+
+// The label of the pipe below starts after a literal e-acute, which is two
+// bytes and one UTF-16 code unit, so its column shows that the span counts
+// the same on both targets.
+pub fn after_a_literal_e_acute(
+  parsed: Result(Int, Nil),
+) -> Result(String, Nil) {
+  let prefix = "café "
+  parsed
+  |> result.map(fn(count) { Ok(prefix <> int.to_string(count)) })
+  |> result.flatten
+}
+-- output
+warning[grice_rules/map-then-flatten]: A map then a flatten
+   ┌─ src/app.gleam:15:3
+   │
+15 │   result.flatten(result.map(parsed, check))
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This maps a `Result` and then flattens it
+
+`result.try` does both in one call: its docs say it "is the equivalent of
+calling `map` followed by `flatten`", and it is the function `use` chains
+fallible steps with.
+
+Hint: Call `result.try(result, apply: fun)` in place of `result.map`, and
+drop the `result.flatten`.
+
+warning[grice_rules/map-then-flatten]: A map then a flatten
+   ┌─ src/app.gleam:22:3
+   │
+22 │   flatten(result.map(parsed, check))
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This maps a `Result` and then flattens it
+
+`result.try` does both in one call: its docs say it "is the equivalent of
+calling `map` followed by `flatten`", and it is the function `use` chains
+fallible steps with.
+
+Hint: Call `result.try(result, apply: fun)` in place of `result.map`, and
+drop the `result.flatten`.
+
+warning[grice_rules/map-then-flatten]: A map then a flatten
+   ┌─ src/app.gleam:29:3
+   │
+29 │   result.map(parsed, check) |> result.flatten
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This maps a `Result` and then flattens it
+
+`result.try` does both in one call: its docs say it "is the equivalent of
+calling `map` followed by `flatten`", and it is the function `use` chains
+fallible steps with.
+
+Hint: Call `result.try(result, apply: fun)` in place of `result.map`, and
+drop the `result.flatten`.
+
+warning[grice_rules/map-then-flatten]: A map then a flatten
+   ┌─ src/app.gleam:36:3
+   │
+36 │   result.map(parsed, check) |> result.flatten()
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This maps a `Result` and then flattens it
+
+`result.try` does both in one call: its docs say it "is the equivalent of
+calling `map` followed by `flatten`", and it is the function `use` chains
+fallible steps with.
+
+Hint: Call `result.try(result, apply: fun)` in place of `result.map`, and
+drop the `result.flatten`.
+
+warning[grice_rules/map-then-flatten]: A map then a flatten
+   ┌─ src/app.gleam:43:13
+   │
+43 │   parsed |> result.map(check) |> result.flatten
+   │             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This maps a `Result` and then flattens it
+
+`result.try` does both in one call: its docs say it "is the equivalent of
+calling `map` followed by `flatten`", and it is the function `use` chains
+fallible steps with.
+
+Hint: Call `result.try(result, apply: fun)` in place of `result.map`, and
+drop the `result.flatten`.
+
+warning[grice_rules/map-then-flatten]: A map then a flatten
+   ┌─ src/app.gleam:50:3
+   │
+50 │   result.flatten(parsed |> result.map(check))
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This maps a `Result` and then flattens it
+
+`result.try` does both in one call: its docs say it "is the equivalent of
+calling `map` followed by `flatten`", and it is the function `use` chains
+fallible steps with.
+
+Hint: Call `result.try(result, apply: fun)` in place of `result.map`, and
+drop the `result.flatten`.
+
+warning[grice_rules/map-then-flatten]: A map then a flatten
+   ┌─ src/app.gleam:57:12
+   │
+57 │   check |> result.map(parsed, _) |> result.flatten
+   │            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This maps a `Result` and then flattens it
+
+`result.try` does both in one call: its docs say it "is the equivalent of
+calling `map` followed by `flatten`", and it is the function `use` chains
+fallible steps with.
+
+Hint: Call `result.try(result, apply: fun)` in place of `result.map`, and
+drop the `result.flatten`.
+
+warning[grice_rules/map-then-flatten]: A map then a flatten
+   ┌─ src/app.gleam:64:3
+   │
+64 │   result.map(over: parsed, with: check) |> result.flatten
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This maps a `Result` and then flattens it
+
+`result.try` does both in one call: its docs say it "is the equivalent of
+calling `map` followed by `flatten`", and it is the function `use` chains
+fallible steps with.
+
+Hint: Call `result.try(result, apply: fun)` in place of `result.map`, and
+drop the `result.flatten`. Move the `over:` value first, without its label.
+Write `with:` as `apply:`.
+
+warning[grice_rules/map-then-flatten]: A map then a flatten
+   ┌─ src/app.gleam:71:3
+   │
+71 │   result.flatten(result.map(with: check, over: parsed))
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This maps a `Result` and then flattens it
+
+`result.try` does both in one call: its docs say it "is the equivalent of
+calling `map` followed by `flatten`", and it is the function `use` chains
+fallible steps with.
+
+Hint: Call `result.try(result, apply: fun)` in place of `result.map`, and
+drop the `result.flatten`. Move the `over:` value first, without its label.
+Write `with:` as `apply:`.
+
+warning[grice_rules/map-then-flatten]: A map then a flatten
+   ┌─ src/app.gleam:78:12
+   │
+78 │   check |> result.map(with: _, over: parsed) |> result.flatten
+   │            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This maps a `Result` and then flattens it
+
+`result.try` does both in one call: its docs say it "is the equivalent of
+calling `map` followed by `flatten`", and it is the function `use` chains
+fallible steps with.
+
+Hint: Call `result.try(result, apply: fun)` in place of `result.map`, and
+drop the `result.flatten`. Move the `over:` value first, without its label.
+Write `with: _` as `apply: _`.
+
+warning[grice_rules/map-then-flatten]: A map then a flatten
+   ┌─ src/app.gleam:85:13
+   │
+85 │   parsed |> result.map(over: _, with: check) |> result.flatten
+   │             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This maps a `Result` and then flattens it
+
+`result.try` does both in one call: its docs say it "is the equivalent of
+calling `map` followed by `flatten`", and it is the function `use` chains
+fallible steps with.
+
+Hint: Call `result.try(result, apply: fun)` in place of `result.map`, and
+drop the `result.flatten`. Drop `over: _`; the piped value goes first.
+Write `with:` as `apply:`.
+
+warning[grice_rules/map-then-flatten]: A map then a flatten
+   ┌─ src/app.gleam:95:3
+   │
+95 │   result.map(over:, with:) |> result.flatten |> result.map(apply)
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This maps a `Result` and then flattens it
+
+`result.try` does both in one call: its docs say it "is the equivalent of
+calling `map` followed by `flatten`", and it is the function `use` chains
+fallible steps with.
+
+Hint: Call `result.try(result, apply: fun)` in place of `result.map`, and
+drop the `result.flatten`. Move `over:` first, as `over`. Write `with:` as
+`apply: with`.
+
+warning[grice_rules/map-then-flatten]: A map then a flatten
+    ┌─ src/app.gleam:102:12
+    │
+102 │   found |> maybe.map(check) |> maybe.flatten
+    │            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This maps an `Option` and then flattens it
+
+`option.then` does both in one call: its docs say it "is the equivalent of
+calling `map` followed by `flatten`".
+
+Hint: Call `option.then(option, apply: fun)` in place of `option.map`, and
+drop the `option.flatten`.
+
+warning[grice_rules/map-then-flatten]: A map then a flatten
+    ┌─ src/app.gleam:113:6
+    │
+113 │   |> result.map(fn(count) { Ok(prefix <> int.to_string(count)) })
+    │      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This maps a `Result` and then flattens it
+
+`result.try` does both in one call: its docs say it "is the equivalent of
+calling `map` followed by `flatten`", and it is the function `use` chains
+fallible steps with.
+
+Hint: Call `result.try(result, apply: fun)` in place of `result.map`, and
+drop the `result.flatten`.
+
+14 warnings in 1 module.
+

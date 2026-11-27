@@ -27,9 +27,16 @@ import grice/internal/loader
 import grice/internal/render/human
 import grice/internal/runner
 import grice/rule.{type Rule}
+import grice/rules
 import grice/support
 import simplifile
 import tom
+
+/// Every built-in rule, the default set and the simplify pack, which the
+/// gate and the benchmark both run.
+pub fn built_in_rules() -> List(Rule) {
+  list.append(rules.default(), rules.simplify())
+}
 
 /// The corpus project's directory, relative to grice's root, where the
 /// packages are downloaded.

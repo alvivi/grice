@@ -9,12 +9,12 @@
 //// `none` costs loading, the facts and the suppression pass; `syntax`
 //// adds a walk with every hook; `typed` adds girard and a type query at
 //// every expression; `project` adds a project rule's parallel per-module
-//// pass and its evaluation. `built-in` is the default set that
-//// `gleam run -m grice` runs, typed, whose rules report what they find in
-//// the corpus. Each scenario runs one warm-up pass and then
-//// `measured_passes` passes, and reports the median of each phase: `load`
-//// reads the corpus's installed modules once and loads every package, and
-//// `lint` runs the rules over every package.
+//// pass and its evaluation. `built-in` is every built-in rule, the default
+//// set that `gleam run -m grice` runs and the simplify pack, typed, whose
+//// rules report what they find in the corpus. Each scenario runs one
+//// warm-up pass and then `measured_passes` passes, and reports the median
+//// of each phase: `load` reads the corpus's installed modules once and
+//// loads every package, and `lint` runs the rules over every package.
 ////
 //// Every pass, the warm-up included, checks that it analysed the whole
 //// corpus: no diagnostic in any package's run but the findings of
@@ -53,7 +53,6 @@ import grice/internal/platform
 import grice/internal/runner
 import grice/internal/stats.{type Phase, Phase}
 import grice/rule.{type Rule}
-import grice/rules
 import grice/support
 
 // Budgets
@@ -318,7 +317,7 @@ fn scenarios() -> List(Scenario) {
     ),
     Scenario(
       "built-in",
-      rules.default(),
+      corpus.built_in_rules(),
       typed: True,
       reports: True,
       lint_budget: built_in_lint_budget,

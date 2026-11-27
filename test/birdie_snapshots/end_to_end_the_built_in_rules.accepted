@@ -8,10 +8,10 @@ exit: 0
 
 stdout:
 warning[grice_rules/no-length-for-emptiness]: Length used to check for emptiness
-  ┌─ src/app.gleam:9:8
-  │
-9 │   case string.length(name) == 0 {
-  │        ^^^^^^^^^^^^^^^^^^^^^^^^ This counts every grapheme of the string
+   ┌─ src/app.gleam:11:8
+   │
+11 │   case string.length(name) == 0 {
+   │        ^^^^^^^^^^^^^^^^^^^^^^^^ This counts every grapheme of the string
 
 `string.length` walks the whole string to count its graphemes, and its docs
 say to avoid it in a loop. Comparing with `""` answers the same question at
@@ -20,9 +20,9 @@ once.
 Hint: Compare with `""` instead: `== ""`.
 
 warning[grice_rules/no-echo]: Leftover `echo`
-   ┌─ src/app.gleam:11:14
+   ┌─ src/app.gleam:13:14
    │
-11 │     False -> echo "Hello, " <> name
+13 │     False -> echo "Hello, " <> name
    │              ^^^^^^^^^^^^^^^^^^^^^^ This prints debug output when it runs
 
 `echo` is for debugging. `gleam build` accepts it, but `gleam publish`
