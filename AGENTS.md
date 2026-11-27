@@ -22,7 +22,7 @@ simplify pack. grice won't be on Hex until 1.0, so each 0.x release is a tag
 on GitHub only. Everything the table below marks **Exists** has landed, with
 the corpus gate over the core packages, the benchmark and the JavaScript
 target. The default rule set has four built-in rules and the opt-in simplify
-pack four, all under the `grice_rules/` prefix. The type predicates
+pack five, all under the `grice_rules/` prefix. The type predicates
 (`grice/types`) and the diagnostic builders are still to come.
 
 ## Build and Test

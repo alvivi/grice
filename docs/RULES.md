@@ -27,7 +27,8 @@ A pack's rules pass tests 1, 2 and 4, but no Gleam source calls the code
 they flag wrong (test 3), so a project opts in to them. The simplify pack
 flags code that is correct but takes the long way round, where one standard
 library function does the same: each rewrite it suggests gives the same
-result, and calls any function passed to it the same way.
+result, and calls any function passed to it the same way, fold-plus's on
+the target grice lints for (see [fold-plus](#fold-plus)).
 
 A rule that is cited but sometimes wrong to apply doesn't belong in any
 built-in set: write it as a rule of your own.
@@ -116,6 +117,7 @@ echo step
 | [`grice_rules/list-map-then-flatten`](#list-map-then-flatten) | `list.map` then `list.flatten`, for `list.flat_map`. |
 | [`grice_rules/filter-then-length`](#filter-then-length) | `list.filter` then `list.length`, for `list.count`. |
 | [`grice_rules/reverse-then-first`](#reverse-then-first) | `list.reverse` then `list.first`, for `list.last`. |
+| [`grice_rules/fold-plus`](#fold-plus) | A `list.fold` that sums a list of ints from 0, for `int.sum`. |
 
 Each rule finds the functions by what [girard](https://hexdocs.pm/girard)
 resolved the calls to, and reads a call however it's written: nested, as
@@ -602,3 +604,67 @@ pack doesn't read. Inside `list.last` itself.
 worth fixing. To keep the two steps, put
 `// grice-ignore grice_rules/reverse-then-first: <reason>` on the line
 above it.
+
+## fold-plus
+
+`grice_rules/fold-plus` reports a `list.fold` that sums a list of ints
+from 0: its initial value is the literal `0`, written without a sign in
+any spelling, such as `0x0`, and its function is `int.add`, under any
+alias, or an anonymous function of two named parameters whose body is
+only their sum, annotated or not: `fn(total, x) { total + x }` or
+`fn(total, x) { x + total }`. The arguments are matched as Gleam matches
+them, so `list.fold(xs, with: int.add, from: 0)` is read too, and a piped
+fold only when the pipe supplies the list: `xs |> list.fold(0, int.add)`.
+
+**Why.** [`int.sum`](https://hexdocs.pm/gleam_stdlib/gleam/int.html#sum)
+adds up the same numbers: "Sums a list of ints." On Erlang both add the
+same integers from 0, left to right.
+
+On JavaScript, where an Int is a number, `int.sum` adds each element as
+`element + total`, while the fold with `int.add` or
+`fn(total, x) { total + x }` adds `total + element`. Swapping the operands
+of an addition keeps the number, but a NaN result, as from an Int that
+overflowed, can come out with other bits, which a float segment of a bit
+array, or the order of a dict's entries on JavaScript, can show. So on a
+project whose target is JavaScript, the rule reads only
+`fn(total, x) { x + total }`, which adds as `int.sum` does, and leaves
+`int.add` and `fn(total, x) { total + x }` alone. The target is the one in
+`gleam.toml`, the one grice lints for: code of a project configured for
+Erlang, or with no target, gets every finding even when it's also built
+for JavaScript, as a library a JavaScript project uses or with
+`gleam run --target javascript`, and there it can see that difference.
+
+Flagged, on a project whose target is Erlang:
+
+```gleam
+pub fn total(prices: List(Int)) -> Int {
+  list.fold(prices, 0, int.add)
+}
+```
+
+Fixed:
+
+```gleam
+pub fn total(prices: List(Int)) -> Int {
+  int.sum(prices)
+}
+```
+
+**What it leaves alone.**
+
+- A fold from anything but an unsigned `0`: `-0` is negative zero on
+  JavaScript, which the fold returns for an empty list and `int.sum`
+  doesn't.
+- A function that does more than add its two parameters, such as
+  `fn(sum, row) { sum + width(row) }`, adds a parameter to itself, or
+  discards one; a named function other than `int.add`; and `add` passed
+  unqualified, which girard doesn't resolve as a value.
+- A fold piped its initial value or its function, such as
+  `0 |> list.fold(xs, _, int.add)`, which the edit would turn into
+  `0 |> int.sum(xs)`.
+- Floats: `list.fold(xs, 0.0, float.add)` isn't read.
+- Inside `int.sum` itself.
+
+**Suppressing it.** The rewrite gives the same sum, so a finding is worth
+fixing. To keep the fold, put
+`// grice-ignore grice_rules/fold-plus: <reason>` on the line above it.

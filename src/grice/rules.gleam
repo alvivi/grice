@@ -37,9 +37,10 @@
 ////
 //// `simplify` is an opt-in pack, which `gleam run -m grice` doesn't run:
 //// rules for code that is correct but takes the long way round, where the
-//// standard library has one function that does the same. No rule is in
-//// more than one set, so a project adds the pack to the default set in an
-//// entry module of its own:
+//// standard library has one function that does the same on the target
+//// grice lints for (see `fold_plus` for code also built for JavaScript).
+//// No rule is in more than one set, so a project adds the pack to the
+//// default set in an entry module of its own:
 ////
 //// ```gleam
 //// import gleam/list
@@ -53,6 +54,7 @@
 
 import grice/internal/rules/check_then_assert
 import grice/internal/rules/filter_then_length
+import grice/internal/rules/fold_plus
 import grice/internal/rules/ineffective_double_comparison
 import grice/internal/rules/list_map_then_flatten
 import grice/internal/rules/map_then_flatten
@@ -201,13 +203,16 @@ pub fn check_then_assert() -> Rule {
 /// The simplify pack, an opt-in set that `gleam run -m grice` doesn't run:
 /// every rule below this one, in the order they're listed. Each flags code
 /// that a single standard library function does in one call, with the same
-/// result, and calls any function passed to it the same way.
+/// result on the target grice lints for, and calls any function passed to
+/// it the same way. `fold_plus` says what code also built for JavaScript
+/// can see.
 pub fn simplify() -> List(Rule) {
   [
     map_then_flatten(),
     list_map_then_flatten(),
     filter_then_length(),
     reverse_then_first(),
+    fold_plus(),
   ]
 }
 
@@ -318,4 +323,37 @@ pub fn filter_then_length() -> Rule {
 /// in the rule reference.
 pub fn reverse_then_first() -> Rule {
   reverse_then_first.rule()
+}
+
+/// `grice_rules/fold-plus`: a `list.fold` that sums a list of ints from 0,
+/// with `int.add` or an anonymous function that adds its two parameters.
+/// `int.sum` adds up the same numbers: "Sums a list of ints."
+///
+/// On JavaScript, where an Int is a number, `int.sum` adds each element as
+/// `element + total`, and adding in the other order can give a NaN result
+/// other bits. So on a project whose target is JavaScript, the rule reads
+/// only `fn(total, x) { x + total }`. Code built for JavaScript from a
+/// project configured for Erlang, such as a library a JavaScript project
+/// uses, gets every finding, and can see that difference.
+///
+/// Flagged, on a project whose target is Erlang:
+///
+/// ```gleam
+/// pub fn total(prices: List(Int)) -> Int {
+///   list.fold(prices, 0, int.add)
+/// }
+/// ```
+///
+/// Fixed:
+///
+/// ```gleam
+/// pub fn total(prices: List(Int)) -> Int {
+///   int.sum(prices)
+/// }
+/// ```
+///
+/// [fold-plus](https://github.com/alvivi/grice/blob/main/docs/RULES.md#fold-plus)
+/// in the rule reference.
+pub fn fold_plus() -> Rule {
+  fold_plus.rule()
 }

@@ -89,7 +89,9 @@ gleam run --target javascript -m grice
 The simplify pack is a second set of built-in rules, which
 `gleam run -m grice` doesn't run: code that is correct but takes the long
 way round, where one standard library function does the same, with the same
-result:
+result on the target grice lints for. fold-plus's rewrite can give a NaN
+sum other bits in code also built for JavaScript, as its section of the
+reference says:
 
 - `grice_rules/map-then-flatten`: `result.map` then `result.flatten`, or
   `option.map` then `option.flatten`, for `result.try` or `option.then`.
@@ -99,6 +101,8 @@ result:
   `list.count`.
 - `grice_rules/reverse-then-first`: `list.reverse` then `list.first`, for
   `list.last`.
+- `grice_rules/fold-plus`: a `list.fold` that sums a list of ints from 0,
+  for `int.sum`.
 
 To run it, add `rules.simplify()` to the default set in an entry module of
 your own, as [Running your own rules](#running-your-own-rules) shows:
