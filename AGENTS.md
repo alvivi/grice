@@ -67,7 +67,7 @@ notice.
 | `src/grice/coverage.gleam` | **Exists:** the coverage of a run and its gaps, public so tools can pattern-match on them |
 | `src/grice/rule.gleam` | **Exists:** module and project rule builders, reports and severities |
 | `src/grice/rules.gleam` | **Exists:** the built-in rules: `default()`, the set `main()` runs, `simplify()`, the opt-in simplify pack, and one function per rule |
-| `src/grice/facts.gleam` | **Exists:** per-module facts: name, path, source, imports, comments and the syntax tree as compiled for the target, and for typed rules the type queries and the `Unknown` type |
+| `src/grice/facts.gleam` | **Exists:** per-module facts: name, path, source, imports, comments, the project's target and the syntax tree as compiled for it, and for typed rules the type queries and the `Unknown` type |
 | `src/grice/types.gleam` | Type predicates over girard's `Type` |
 | `src/grice/visit.gleam` | **Exists:** the glance syntax tree walk, in source order, with a hook per kind of node |
 | `src/grice/diagnostic.gleam` | **Exists:** the diagnostic model (`Diagnostic`, `Severity`, `Location`, `Label`, `Span`, `Fix`, `Edit`). Planned: report, label and fix builders |

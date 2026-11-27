@@ -7,11 +7,12 @@
 ////
 //// The `kind` parameter says which facts a rule can ask for. Every rule
 //// gets `Syntax` facts: the module's name, path, source, comments and
-//// syntax tree. A rule built with `rule.typed` gets `Typed` facts, which
-//// also answer what girard, the type inference grice uses, found: the type
-//// of an expression, what a name or field access resolved to, and the type
-//// of a top-level definition. A typed query never guesses: when girard has
-//// no answer, it says why with an `Unknown`.
+//// syntax tree, and the project's target. A rule built with `rule.typed`
+//// gets `Typed` facts, which also answer what girard, the type inference
+//// grice uses, found: the type of an expression, what a name or field
+//// access resolved to, and the type of a top-level definition. A typed
+//// query never guesses: when girard has no answer, it says why with an
+//// `Unknown`.
 ////
 //// Spans count what glance counts on the target grice runs on: bytes on
 //// Erlang and UTF-16 code units on JavaScript. The syntax tree, the
@@ -30,7 +31,7 @@ import gleam/result
 import gleam/set
 import glexer
 import glexer/token.{type Token}
-import grice/internal/config.{type Target}
+import grice/internal/config
 import grice/internal/line_index.{type LineIndex}
 import grice/internal/loader
 import grice/internal/typing.{type ModuleTypes}
@@ -49,6 +50,7 @@ pub opaque type ModuleFacts(kind) {
     module: glance.Module,
     imports: List(String),
     comments: List(Comment),
+    target: Target,
     // What girard found for the module: `None` when no rule asked for
     // types, or girard returned nothing for the module.
     types: Option(ModuleTypes),
@@ -88,6 +90,20 @@ pub fn imports(facts: ModuleFacts(kind)) -> List(String) {
   facts.imports
 }
 
+/// A target the Gleam compiler builds for.
+pub type Target {
+  Erlang
+  JavaScript
+}
+
+/// The target the project is linted for: its `gleam.toml`'s `target`, or
+/// Erlang when it sets none. The module's facts describe it as compiled for
+/// that target. A project can still build its code for the other target,
+/// with `gleam run --target` or as a dependency of a project that does.
+pub fn target(facts: ModuleFacts(kind)) -> Target {
+  facts.target
+}
+
 /// The facts of a loaded module, with what girard found for it when a rule
 /// asked for types, or an error when it doesn't parse, which the loader has
 /// already reported. Its comments are read here, so only modules that get
@@ -95,7 +111,7 @@ pub fn imports(facts: ModuleFacts(kind)) -> List(String) {
 @internal
 pub fn new(
   module: loader.Module,
-  target: Target,
+  target: config.Target,
   types: Option(ModuleTypes),
 ) -> Result(ModuleFacts(Syntax), Nil) {
   use syntax <- result.map(result.replace_error(module.parsed, Nil))
@@ -107,6 +123,12 @@ pub fn new(
     module: view,
     imports: module.imports,
     comments: read_comments(module.source, syntax, view),
+    // The configuration can't use the public type, as this module imports
+    // it.
+    target: case target {
+      config.Erlang -> Erlang
+      config.JavaScript -> JavaScript
+    },
     types:,
   )
 }

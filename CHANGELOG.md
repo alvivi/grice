@@ -32,6 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     report such a check in the forms each reads.
   - `grice_rules/reverse-then-first`: `list.reverse` then `list.first`,
     which `list.last` does without the reversed copy.
+- **The project's target in facts.** `facts.target` gives every rule the
+  target the project is linted for, as the new `facts.Target`: its
+  `gleam.toml`'s `target`, or Erlang when it sets none. The facts already
+  describe each module as compiled for that target, and now a rule whose
+  verdict depends on the target can ask for it.
 
 ## [0.2.0] - 2026-11-26
 
