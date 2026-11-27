@@ -53,6 +53,7 @@
 
 import grice/internal/rules/check_then_assert
 import grice/internal/rules/ineffective_double_comparison
+import grice/internal/rules/list_map_then_flatten
 import grice/internal/rules/map_then_flatten
 import grice/internal/rules/no_echo
 import grice/internal/rules/no_length_for_emptiness
@@ -200,7 +201,7 @@ pub fn check_then_assert() -> Rule {
 /// that a single standard library function does in one call, with the same
 /// result, and calls any function passed to it the same way.
 pub fn simplify() -> List(Rule) {
-  [map_then_flatten()]
+  [map_then_flatten(), list_map_then_flatten()]
 }
 
 /// `grice_rules/map-then-flatten`: `result.map` then `result.flatten`, or
@@ -228,4 +229,31 @@ pub fn simplify() -> List(Rule) {
 /// in the rule reference.
 pub fn map_then_flatten() -> Rule {
   map_then_flatten.rule()
+}
+
+/// `grice_rules/list-map-then-flatten`: `list.map` then `list.flatten`,
+/// nested or piped. `list.flat_map` does both in one call: its docs say it
+/// "Maps the list with the given function into a list of lists, and then
+/// flattens it."
+///
+/// Flagged:
+///
+/// ```gleam
+/// pub fn words(lines: List(String)) -> List(String) {
+///   lines |> list.map(string.split(_, " ")) |> list.flatten
+/// }
+/// ```
+///
+/// Fixed:
+///
+/// ```gleam
+/// pub fn words(lines: List(String)) -> List(String) {
+///   lines |> list.flat_map(string.split(_, " "))
+/// }
+/// ```
+///
+/// [list-map-then-flatten](https://github.com/alvivi/grice/blob/main/docs/RULES.md#list-map-then-flatten)
+/// in the rule reference.
+pub fn list_map_then_flatten() -> Rule {
+  list_map_then_flatten.rule()
 }

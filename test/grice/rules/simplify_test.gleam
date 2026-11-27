@@ -12,7 +12,11 @@ import grice/testing
 
 pub fn simplify_has_each_rule_once_as_a_warning_test() {
   let codes = list.map(rules.simplify(), rule.code)
-  assert codes == ["grice_rules/map-then-flatten"]
+  assert codes
+    == [
+      "grice_rules/map-then-flatten",
+      "grice_rules/list-map-then-flatten",
+    ]
   let found =
     one_finding_each
     |> support.on_both_targets(rules.simplify())
@@ -35,14 +39,28 @@ pub fn simplify_runs_beside_the_default_set_test() {
 // A module with one finding for each rule of the pack, in the order of the
 // pack, and none for the default set.
 const one_finding_each =
+  "import gleam/list
+import gleam/result
+
+pub fn parsed(text: Result(Int, Nil), check: fn(Int) -> Result(Int, Nil)) -> Result(Int, Nil) {
+  text |> result.map(check) |> result.flatten
+}
+
+pub fn cells(rows: List(Int), cells: fn(Int) -> List(Int)) -> List(Int) {
+  rows |> list.map(cells) |> list.flatten
+}
+"
+
+// Hiding
+
+// A module with one finding of the pack.
+const one_finding =
   "import gleam/result
 
 pub fn parsed(text: Result(Int, Nil), check: fn(Int) -> Result(Int, Nil)) -> Result(Int, Nil) {
   text |> result.map(check) |> result.flatten
 }
 "
-
-// Hiding
 
 pub fn a_simplify_finding_is_hidden_by_an_ignore_test() {
   support.project_on_both_targets(
@@ -51,7 +69,7 @@ paths = [\"src/app.gleam\"]
 rules = [\"grice_rules/map-then-flatten\"]
 reason = \"This module keeps the two steps apart.\"
 ",
-    [#("src/app.gleam", one_finding_each)],
+    [#("src/app.gleam", one_finding)],
     rules.simplify(),
   )
   |> testing.expect_none
