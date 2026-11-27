@@ -16,6 +16,7 @@ pub fn simplify_has_each_rule_once_as_a_warning_test() {
     == [
       "grice_rules/map-then-flatten",
       "grice_rules/list-map-then-flatten",
+      "grice_rules/filter-then-length",
     ]
   let found =
     one_finding_each
@@ -48,6 +49,10 @@ pub fn parsed(text: Result(Int, Nil), check: fn(Int) -> Result(Int, Nil)) -> Res
 
 pub fn cells(rows: List(Int), cells: fn(Int) -> List(Int)) -> List(Int) {
   rows |> list.map(cells) |> list.flatten
+}
+
+pub fn adults(ages: List(Int), adult: fn(Int) -> Bool) -> Int {
+  ages |> list.filter(adult) |> list.length
 }
 "
 

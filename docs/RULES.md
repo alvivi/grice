@@ -114,6 +114,7 @@ echo step
 |---|---|
 | [`grice_rules/map-then-flatten`](#map-then-flatten) | `result.map` then `result.flatten`, or `option.map` then `option.flatten`, for `result.try` or `option.then`. |
 | [`grice_rules/list-map-then-flatten`](#list-map-then-flatten) | `list.map` then `list.flatten`, for `list.flat_map`. |
+| [`grice_rules/filter-then-length`](#filter-then-length) | `list.filter` then `list.length`, for `list.count`. |
 
 Each rule finds the functions by what [girard](https://hexdocs.pm/girard)
 resolved the calls to, and reads a call however it's written: nested, as
@@ -155,8 +156,9 @@ gleam_stdlib, and the rules don't check that the linted project's stdlib
 has them. A project that runs grice with `gleam run` depends on grice, which
 requires stdlib 0.44.0 or later, so it has them all. A project linted
 without depending on grice, through the library API or by an entry module
-built elsewhere, may have an older stdlib: every function the hints name is
-in stdlib 0.31.0 and later.
+built elsewhere, may have an older stdlib: `list.count`, which
+filter-then-length recommends, is in stdlib 0.40.0 and later, and every
+other function the hints name in 0.31.0 and later.
 
 ## no-echo
 
@@ -501,4 +503,63 @@ writes as `flatten(map(list, fun))`.
 **Suppressing it.** The rewrite gives the same result, so a finding is
 worth fixing. To keep the two steps, put
 `// grice-ignore grice_rules/list-map-then-flatten: <reason>` on the line
+above it.
+
+## filter-then-length
+
+`grice_rules/filter-then-length` reports `list.filter` followed by
+`list.length`, in every form the pack reads:
+`list.length(list.filter(xs, p))`, `list.filter(xs, p) |> list.length`
+and `xs |> list.filter(p) |> list.length`, with `list.length`'s `of:`
+label or without.
+
+**Why.** `list.filter` builds a new list that `list.length` then walks to
+count. [`list.count`](https://hexdocs.pm/gleam_stdlib/gleam/list.html#count)
+counts the elements that pass without building one: "Counts the number of
+elements in a given list satisfying a given predicate." It calls the
+predicate once per element, first to last, as `list.filter` does.
+
+Flagged:
+
+```gleam
+pub fn adults(ages: List(Int)) -> Int {
+  ages |> list.filter(fn(age) { age >= 18 }) |> list.length
+}
+```
+
+Fixed:
+
+```gleam
+pub fn adults(ages: List(Int)) -> Int {
+  ages |> list.count(fn(age) { age >= 18 })
+}
+```
+
+`list.count` labels its predicate `where:`, where `list.filter` has
+`keeping:`, so the hint says how to write a labelled one:
+`list.filter(xs, keeping: p)` becomes `list.count(xs, where: p)`, and a
+shorthand `keeping:` becomes `where: keeping`.
+
+**What it leaves alone.**
+
+- A count checked for emptiness, such as
+  `xs |> list.filter(p) |> list.length > 0` or a `case` on it with a lone
+  `0` clause: `list.count` would still count every element. The compiler
+  reports `list.length(list.filter(xs, p)) == 0`, and
+  no-length-for-emptiness the pipe and the `case`. Their fix checks the
+  filtered list in place of its count: `list.filter(xs, p) != []` for a
+  count checked as not empty (`> 0`, `!= 0`, `>= 1`),
+  `list.filter(xs, p) == []` for one checked as empty (`== 0`, `< 1`,
+  `<= 0`), and a `case` on `list.filter(xs, p)` with an `[]` clause in
+  place of the `0` clause. Each still runs the filter in full and builds
+  its list, but doesn't count it. A captured length,
+  `xs |> list.filter(p) |> list.length(of: _) > 0`, gets no finding from
+  either today. A count compared with any other number, such as `> 1`, is
+  reported.
+- A `filter` or a `length` alone, a `filter` followed by another function,
+  and the forms the pack doesn't read. Inside `list.count` itself.
+
+**Suppressing it.** The rewrite gives the same count, so a finding is worth
+fixing. To keep the two steps, put
+`// grice-ignore grice_rules/filter-then-length: <reason>` on the line
 above it.

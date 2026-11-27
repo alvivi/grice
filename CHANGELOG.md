@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `option.then` do in one call.
   - `grice_rules/list-map-then-flatten`: `list.map` then `list.flatten`,
     which `list.flat_map` does in one call.
+  - `grice_rules/filter-then-length`: `list.filter` then `list.length`,
+    which `list.count` does without building the filtered list. It's
+    silent on a count checked for emptiness, where `list.count` would
+    still count every element; the compiler and no-length-for-emptiness
+    report such a check in the forms each reads.
 
 ## [0.2.0] - 2026-11-26
 
