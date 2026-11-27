@@ -52,6 +52,7 @@
 //// ```
 
 import grice/internal/rules/check_then_assert
+import grice/internal/rules/filter_then_length
 import grice/internal/rules/ineffective_double_comparison
 import grice/internal/rules/list_map_then_flatten
 import grice/internal/rules/map_then_flatten
@@ -201,7 +202,7 @@ pub fn check_then_assert() -> Rule {
 /// that a single standard library function does in one call, with the same
 /// result, and calls any function passed to it the same way.
 pub fn simplify() -> List(Rule) {
-  [map_then_flatten(), list_map_then_flatten()]
+  [map_then_flatten(), list_map_then_flatten(), filter_then_length()]
 }
 
 /// `grice_rules/map-then-flatten`: `result.map` then `result.flatten`, or
@@ -256,4 +257,32 @@ pub fn map_then_flatten() -> Rule {
 /// in the rule reference.
 pub fn list_map_then_flatten() -> Rule {
   list_map_then_flatten.rule()
+}
+
+/// `grice_rules/filter-then-length`: `list.filter` then `list.length`,
+/// nested or piped. `list.filter` builds a new list only for `list.length`
+/// to walk it, and `list.count` counts the elements that pass without
+/// building one. It's silent where the count is checked for emptiness,
+/// which `list.count` would still count in full.
+///
+/// Flagged:
+///
+/// ```gleam
+/// pub fn adults(ages: List(Int)) -> Int {
+///   ages |> list.filter(fn(age) { age >= 18 }) |> list.length
+/// }
+/// ```
+///
+/// Fixed:
+///
+/// ```gleam
+/// pub fn adults(ages: List(Int)) -> Int {
+///   ages |> list.count(fn(age) { age >= 18 })
+/// }
+/// ```
+///
+/// [filter-then-length](https://github.com/alvivi/grice/blob/main/docs/RULES.md#filter-then-length)
+/// in the rule reference.
+pub fn filter_then_length() -> Rule {
+  filter_then_length.rule()
 }

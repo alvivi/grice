@@ -43,19 +43,85 @@ fn check(
   expression: glance.Expression,
   module_facts: ModuleFacts(Typed),
 ) -> List(Report) {
-  case expression {
-    glance.BinaryOperator(name:, left:, right:, location:) ->
-      case comparison(name, left, right, module_facts) {
-        Ok(#(call, polarity)) -> [comparison_report(location, call, polarity)]
-        Error(Nil) -> []
-      }
-    glance.Case(subjects: [subject], clauses: [zero, rest], ..) ->
-      case length_call(subject, module_facts), is_emptiness_case(zero, rest) {
-        Ok(call), True -> [case_report(subject.location, call)]
-        _, _ -> []
-      }
-    _ -> []
+  let found = {
+    use check <- result.try(emptiness_check(expression))
+    use call <- result.map(length_call(check.operand, module_facts))
+    #(check, call)
   }
+  case found {
+    Ok(#(Compared(operator:, literal:, polarity:, ..), call)) ->
+      case compiler_warns(call, operator, literal) {
+        True -> []
+        False -> [comparison_report(expression.location, call, polarity)]
+      }
+    Ok(#(Matched(operand:), call)) -> [case_report(operand.location, call)]
+    Error(Nil) -> []
+  }
+}
+
+/// The operand `expression` checks for emptiness, when it's an emptiness
+/// check whatever its operand: a comparison with an Int literal that
+/// makes it one, such as `> 0` or `< 1`, the side that isn't the literal,
+/// or a `case` with a lone zero clause and a discard, its subject. It
+/// reads the check alone, before the forms the compiler warns on are left
+/// out, so the simplify pack can stay silent on a count that is checked
+/// for emptiness.
+pub fn emptiness_operand(
+  expression: glance.Expression,
+) -> Result(glance.Expression, Nil) {
+  emptiness_check(expression) |> result.map(fn(check) { check.operand })
+}
+
+// Emptiness checks
+
+// An emptiness check of an operand, read without the operand.
+type Check {
+  // `operand <operator> literal`, with the operator turned so the operand
+  // is on its left.
+  Compared(
+    operand: glance.Expression,
+    operator: glance.BinaryOperator,
+    literal: glance.Expression,
+    polarity: Polarity,
+  )
+  // A `case` on `operand`, its subject, with a lone zero clause and a
+  // discard.
+  Matched(operand: glance.Expression)
+}
+
+fn emptiness_check(expression: glance.Expression) -> Result(Check, Nil) {
+  case expression {
+    glance.BinaryOperator(name:, left:, right:, ..) ->
+      compared(name, left, right)
+    glance.Case(subjects: [subject], clauses: [zero, rest], ..) ->
+      case is_emptiness_case(zero, rest) {
+        True -> Ok(Matched(operand: subject))
+        False -> Error(Nil)
+      }
+    _ -> Error(Nil)
+  }
+}
+
+// `left <operator> right` as an emptiness check, when one side is a
+// literal that makes it one: the right first, then the left.
+fn compared(
+  operator: glance.BinaryOperator,
+  left: glance.Expression,
+  right: glance.Expression,
+) -> Result(Check, Nil) {
+  use <- bool.guard(when: !is_comparison(operator), return: Error(Nil))
+  oriented(left, operator, right)
+  |> result.lazy_or(fn() { oriented(right, int_literal.mirror(operator), left) })
+}
+
+fn oriented(
+  operand: glance.Expression,
+  operator: glance.BinaryOperator,
+  literal: glance.Expression,
+) -> Result(Check, Nil) {
+  use value <- result.try(int_literal.value(literal))
+  use polarity <- result.map(polarity(operator, value))
+  Compared(operand:, operator:, literal:, polarity:)
 }
 
 // Length calls
@@ -122,33 +188,6 @@ fn counted(
 type Polarity {
   Empty
   NotEmpty
-}
-
-// The length call and the polarity of `left <operator> right`, when one
-// side is a length call and the other a literal that makes it an emptiness
-// check, and it isn't a form the compiler warns on.
-fn comparison(
-  operator: glance.BinaryOperator,
-  left: glance.Expression,
-  right: glance.Expression,
-  module_facts: ModuleFacts(Typed),
-) -> Result(#(LengthCall, Polarity), Nil) {
-  use <- bool.guard(when: !is_comparison(operator), return: Error(Nil))
-  use #(call, operator, literal) <- result.try(
-    length_call(left, module_facts)
-    |> result.map(fn(call) { #(call, operator, right) })
-    |> result.lazy_or(fn() {
-      length_call(right, module_facts)
-      |> result.map(fn(call) { #(call, int_literal.mirror(operator), left) })
-    }),
-  )
-  use value <- result.try(int_literal.value(literal))
-  use polarity <- result.try(polarity(operator, value))
-  use <- bool.guard(
-    when: compiler_warns(call, operator, literal),
-    return: Error(Nil),
-  )
-  Ok(#(call, polarity))
 }
 
 fn is_comparison(operator: glance.BinaryOperator) -> Bool {
