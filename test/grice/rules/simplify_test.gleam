@@ -17,6 +17,7 @@ pub fn simplify_has_each_rule_once_as_a_warning_test() {
       "grice_rules/map-then-flatten",
       "grice_rules/list-map-then-flatten",
       "grice_rules/filter-then-length",
+      "grice_rules/reverse-then-first",
     ]
   let found =
     one_finding_each
@@ -53,6 +54,10 @@ pub fn cells(rows: List(Int), cells: fn(Int) -> List(Int)) -> List(Int) {
 
 pub fn adults(ages: List(Int), adult: fn(Int) -> Bool) -> Int {
   ages |> list.filter(adult) |> list.length
+}
+
+pub fn latest(scores: List(Int)) -> Result(Int, Nil) {
+  scores |> list.reverse |> list.first
 }
 "
 

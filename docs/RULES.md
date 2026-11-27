@@ -115,6 +115,7 @@ echo step
 | [`grice_rules/map-then-flatten`](#map-then-flatten) | `result.map` then `result.flatten`, or `option.map` then `option.flatten`, for `result.try` or `option.then`. |
 | [`grice_rules/list-map-then-flatten`](#list-map-then-flatten) | `list.map` then `list.flatten`, for `list.flat_map`. |
 | [`grice_rules/filter-then-length`](#filter-then-length) | `list.filter` then `list.length`, for `list.count`. |
+| [`grice_rules/reverse-then-first`](#reverse-then-first) | `list.reverse` then `list.first`, for `list.last`. |
 
 Each rule finds the functions by what [girard](https://hexdocs.pm/girard)
 resolved the calls to, and reads a call however it's written: nested, as
@@ -562,4 +563,42 @@ shorthand `keeping:` becomes `where: keeping`.
 **Suppressing it.** The rewrite gives the same count, so a finding is worth
 fixing. To keep the two steps, put
 `// grice-ignore grice_rules/filter-then-length: <reason>` on the line
+above it.
+
+## reverse-then-first
+
+`grice_rules/reverse-then-first` reports `list.reverse` followed by
+`list.first`, in every form the pack reads:
+`list.first(list.reverse(xs))`, `list.reverse(xs) |> list.first` and
+`xs |> list.reverse |> list.first`.
+
+**Why.** `list.reverse` builds a reversed copy of the whole list only for
+`list.first` to take one element of it.
+[`list.last`](https://hexdocs.pm/gleam_stdlib/gleam/list.html#last) walks
+to the last element without the copy. Both give `Error(Nil)` for an empty
+list and the last element otherwise, and neither takes a function.
+
+Flagged:
+
+```gleam
+pub fn latest(events: List(String)) -> Result(String, Nil) {
+  events |> list.reverse |> list.first
+}
+```
+
+Fixed:
+
+```gleam
+pub fn latest(events: List(String)) -> Result(String, Nil) {
+  events |> list.last
+}
+```
+
+**What it leaves alone.** A `reverse` or a `first` alone, a `reverse`
+followed by another function, a `first` of anything else, and the forms the
+pack doesn't read. Inside `list.last` itself.
+
+**Suppressing it.** The rewrite gives the same result, so a finding is
+worth fixing. To keep the two steps, put
+`// grice-ignore grice_rules/reverse-then-first: <reason>` on the line
 above it.

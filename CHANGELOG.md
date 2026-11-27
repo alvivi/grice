@@ -30,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     silent on a count checked for emptiness, where `list.count` would
     still count every element; the compiler and no-length-for-emptiness
     report such a check in the forms each reads.
+  - `grice_rules/reverse-then-first`: `list.reverse` then `list.first`,
+    which `list.last` does without the reversed copy.
 
 ## [0.2.0] - 2026-11-26
 

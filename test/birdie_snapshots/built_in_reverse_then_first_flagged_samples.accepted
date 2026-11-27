@@ -1,0 +1,141 @@
+---
+version: 2.0.2
+title: built-in reverse-then-first: flagged samples
+file: ./test/grice/rules/reverse_then_first_test.gleam
+test_name: reverse_then_first_flagged_samples_test
+---
+-- gleam.toml
+target = "erlang"
+-- src/app.gleam
+//// Each form reverse-then-first reports, one per function. These
+//// functions never run: the module is here to be linted, and compiled by
+//// every build with `--warnings-as-errors`, which shows the compiler is
+//// silent on it. `gleam/list` is imported under an alias, with `first`
+//// and `reverse` also unqualified, and the rule finds them by what they
+//// resolve to.
+
+import gleam/list.{first, reverse} as items
+
+pub fn nested(scores: List(Int)) -> Result(Int, Nil) {
+  items.first(items.reverse(scores))
+}
+
+pub fn unqualified(scores: List(Int)) -> Result(Int, Nil) {
+  first(reverse(scores))
+}
+
+pub fn piped_into_the_first(scores: List(Int)) -> Result(Int, Nil) {
+  items.reverse(scores) |> items.first
+}
+
+pub fn piped_with_parentheses(scores: List(Int)) -> Result(Int, Nil) {
+  items.reverse(scores) |> items.first()
+}
+
+pub fn piped_throughout(scores: List(Int)) -> Result(Int, Nil) {
+  scores |> items.reverse |> items.first
+}
+
+pub fn piped_inside(scores: List(Int)) -> Result(Int, Nil) {
+  items.first(scores |> items.reverse)
+}
+
+pub fn piped_with_parentheses_throughout(
+  scores: List(Int),
+) -> Result(Int, Nil) {
+  scores |> items.reverse() |> items.first()
+}
+-- output
+warning[grice_rules/reverse-then-first]: A reverse then a first
+   ┌─ src/app.gleam:11:3
+   │
+11 │   items.first(items.reverse(scores))
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This reverses the whole list to take its last element
+
+`list.reverse` builds a reversed copy of the list only for `list.first` to
+take one element of it. `list.last` walks to the last element without the
+copy.
+
+Hint: Call `list.last(list)` in place of `list.reverse`, and drop the
+`list.first`.
+
+warning[grice_rules/reverse-then-first]: A reverse then a first
+   ┌─ src/app.gleam:15:3
+   │
+15 │   first(reverse(scores))
+   │   ^^^^^^^^^^^^^^^^^^^^^^ This reverses the whole list to take its last element
+
+`list.reverse` builds a reversed copy of the list only for `list.first` to
+take one element of it. `list.last` walks to the last element without the
+copy.
+
+Hint: Call `list.last(list)` in place of `list.reverse`, and drop the
+`list.first`.
+
+warning[grice_rules/reverse-then-first]: A reverse then a first
+   ┌─ src/app.gleam:19:3
+   │
+19 │   items.reverse(scores) |> items.first
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This reverses the whole list to take its last element
+
+`list.reverse` builds a reversed copy of the list only for `list.first` to
+take one element of it. `list.last` walks to the last element without the
+copy.
+
+Hint: Call `list.last(list)` in place of `list.reverse`, and drop the
+`list.first`.
+
+warning[grice_rules/reverse-then-first]: A reverse then a first
+   ┌─ src/app.gleam:23:3
+   │
+23 │   items.reverse(scores) |> items.first()
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This reverses the whole list to take its last element
+
+`list.reverse` builds a reversed copy of the list only for `list.first` to
+take one element of it. `list.last` walks to the last element without the
+copy.
+
+Hint: Call `list.last(list)` in place of `list.reverse`, and drop the
+`list.first`.
+
+warning[grice_rules/reverse-then-first]: A reverse then a first
+   ┌─ src/app.gleam:27:13
+   │
+27 │   scores |> items.reverse |> items.first
+   │             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This reverses the whole list to take its last element
+
+`list.reverse` builds a reversed copy of the list only for `list.first` to
+take one element of it. `list.last` walks to the last element without the
+copy.
+
+Hint: Call `list.last(list)` in place of `list.reverse`, and drop the
+`list.first`.
+
+warning[grice_rules/reverse-then-first]: A reverse then a first
+   ┌─ src/app.gleam:31:3
+   │
+31 │   items.first(scores |> items.reverse)
+   │   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This reverses the whole list to take its last element
+
+`list.reverse` builds a reversed copy of the list only for `list.first` to
+take one element of it. `list.last` walks to the last element without the
+copy.
+
+Hint: Call `list.last(list)` in place of `list.reverse`, and drop the
+`list.first`.
+
+warning[grice_rules/reverse-then-first]: A reverse then a first
+   ┌─ src/app.gleam:37:13
+   │
+37 │   scores |> items.reverse() |> items.first()
+   │             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ This reverses the whole list to take its last element
+
+`list.reverse` builds a reversed copy of the list only for `list.first` to
+take one element of it. `list.last` walks to the last element without the
+copy.
+
+Hint: Call `list.last(list)` in place of `list.reverse`, and drop the
+`list.first`.
+
+7 warnings in 1 module.
+
