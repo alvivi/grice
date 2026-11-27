@@ -218,7 +218,17 @@ const showcase_dependencies = [
 /// The source of the sample `name`, such as `no_echo_flagged`, read from
 /// `test/grice/rules/samples/`.
 pub fn sample(name: String) -> String {
-  let path = "test/grice/rules/samples/" <> name <> ".gleam"
+  read_sample("test/grice/rules/samples/" <> name <> ".gleam")
+}
+
+/// The source of the module `name` that a rule's samples import, such as
+/// `hidden`, read from `test/grice/internal/rules/samples/`, where the
+/// compiler treats it as internal.
+pub fn internal_sample(name: String) -> String {
+  read_sample("test/grice/internal/rules/samples/" <> name <> ".gleam")
+}
+
+fn read_sample(path: String) -> String {
   let assert Ok(source) = simplifile.read(path) as { "can't read " <> path }
   source
 }
@@ -264,9 +274,11 @@ pub fn project_on_both_targets(
   erlang
 }
 
-// Run `rules` over the project of `files` with a `gleam.toml` that sets
-// `target` to `target`, followed by the `gleam.toml` text `toml`.
-fn project_on_target(
+/// Run `rules` over the project of `files`, `#(path, source)`, with a
+/// `gleam.toml` that sets `target` to `target`, `erlang` or `javascript`,
+/// followed by the `gleam.toml` text `toml`: as `on_target` does for one
+/// module, for a rule whose findings depend on the target.
+pub fn project_on_target(
   target: String,
   toml: String,
   files: List(#(String, String)),

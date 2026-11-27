@@ -51,11 +51,27 @@
 ////   grice.run(list.append(rules.default(), rules.simplify()))
 //// }
 //// ```
+////
+//// `library` is the library pack, another opt-in set: rules for a package
+//// published to Hex, about what it offers its users. Its rules read only
+//// the modules under `src/`, which is what a package publishes. A package
+//// runs it beside the default set the same way:
+////
+//// ```gleam
+//// import gleam/list
+//// import grice
+//// import grice/rules
+////
+//// pub fn main() -> Nil {
+////   grice.run(list.append(rules.default(), rules.library()))
+//// }
+//// ```
 
 import grice/internal/rules/check_then_assert
 import grice/internal/rules/filter_then_length
 import grice/internal/rules/fold_plus
 import grice/internal/rules/ineffective_double_comparison
+import grice/internal/rules/internal_type_in_public_api
 import grice/internal/rules/list_map_then_flatten
 import grice/internal/rules/map_then_flatten
 import grice/internal/rules/no_echo
@@ -356,4 +372,50 @@ pub fn reverse_then_first() -> Rule {
 /// in the rule reference.
 pub fn fold_plus() -> Rule {
   fold_plus.rule()
+}
+
+/// The library pack, an opt-in set that `gleam run -m grice` doesn't run:
+/// every rule below this one, in the order they're listed. Each is about
+/// what a package published to Hex offers its users, and reads only the
+/// modules under `src/`, even when `include` selects `test/` or `dev/`.
+pub fn library() -> List(Rule) {
+  [internal_type_in_public_api()]
+}
+
+/// `grice_rules/internal-type-in-public-api`: a public function, constant
+/// or constructor whose signature, as written, names an internal type of
+/// the package: a public custom type of an internal module or marked
+/// `@internal`, or a type alias that isn't public API (private, marked
+/// `@internal` or in an internal module) whose definition names an internal
+/// type. The type is then part of the package's public API, though the
+/// documentation generated for the package has no entry for it. A type
+/// named through a public alias is fine, whatever the alias stands for, and
+/// an unannotated declaration isn't read. It reads only modules under `src/`
+/// that aren't internal, and knows a package's internal modules from
+/// `name` and `internal_modules` in its `gleam.toml`. The compiler planned
+/// this warning in gleam-lang/gleam#2234, and the rule retires once the
+/// compiler ships it.
+///
+/// Flagged, where `listener` is the internal module
+/// `my_server/internal/listener`:
+///
+/// ```gleam
+/// pub fn start(name: process.Name(listener.Message)) -> Server {
+///   todo
+/// }
+/// ```
+///
+/// Fixed, with `pub type ListenerMessage = listener.Message` in a module
+/// that isn't internal:
+///
+/// ```gleam
+/// pub fn start(name: process.Name(ListenerMessage)) -> Server {
+///   todo
+/// }
+/// ```
+///
+/// [internal-type-in-public-api](https://github.com/alvivi/grice/blob/main/docs/RULES.md#internal-type-in-public-api)
+/// in the rule reference.
+pub fn internal_type_in_public_api() -> Rule {
+  internal_type_in_public_api.rule()
 }

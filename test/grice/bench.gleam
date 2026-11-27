@@ -10,8 +10,8 @@
 //// adds a walk with every hook; `typed` adds girard and a type query at
 //// every expression; `project` adds a project rule's parallel per-module
 //// pass and its evaluation. `built-in` is every built-in rule, the default
-//// set that `gleam run -m grice` runs and the simplify pack, typed, whose
-//// rules report what they find in the corpus. Each scenario runs one
+//// set that `gleam run -m grice` runs and the packs, typed, whose rules
+//// report what they find in the corpus. Each scenario runs one
 //// warm-up pass and then `measured_passes` passes, and reports the median
 //// of each phase: `load` reads the corpus's installed modules once and
 //// loads every package, and `lint` runs the rules over every package.

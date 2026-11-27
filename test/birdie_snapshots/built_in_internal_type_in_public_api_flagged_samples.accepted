@@ -1,0 +1,406 @@
+---
+version: 2.0.2
+title: built-in internal-type-in-public-api: flagged samples
+---
+-- gleam.toml
+target = "erlang"
+name = "grice"
+-- src/grice/internal/rules/samples/hidden.gleam
+//// The internal module the samples of internal-type-in-public-api import.
+//// Its name is under `grice/internal`, so the compiler, building grice's
+//// tests, treats it as internal, as grice does by its default patterns
+//// for a package named `grice`. Nothing here runs.
+
+pub type Message {
+  Message(text: String)
+}
+
+pub type Box(a) {
+  Box(content: a)
+}
+
+pub type Handle {
+  Handle
+}
+
+/// An alias in an internal module that names an internal type, which makes
+/// it internal too.
+pub type Boxed =
+  Box(Message)
+
+/// An alias in an internal module that names only a public type, which
+/// doesn't.
+pub type Count =
+  Int
+-- src/grice/rules/samples/internal_type_in_public_api_flagged.gleam
+//// Each form internal-type-in-public-api reports, linted as a module of
+//// a package named `grice`, under `src/`. These functions never run: the
+//// module is here to be linted, and compiled by every build with
+//// `--warnings-as-errors`, which shows the compiler is silent on it.
+//// `hidden` is internal, and so is every custom type it defines.
+
+import gleam/option.{type Option}
+import grice/internal/rules/samples/hidden.{type Handle}
+
+/// A constant's annotation, before a string with an e-acute, so the spans
+/// after it differ between bytes and UTF-16 code units.
+pub const greeting: hidden.Message = hidden.Message("café")
+
+pub fn parameter(message: hidden.Message) -> Nil {
+  let _ = message
+  Nil
+}
+
+pub fn returned() -> Handle {
+  hidden.Handle
+}
+
+pub fn in_an_argument(boxes: List(hidden.Box(Int))) -> Nil {
+  let _ = boxes
+  Nil
+}
+
+/// An internal type inside the arguments of another: one finding each.
+pub fn in_an_internal_argument(box: hidden.Box(hidden.Message)) -> Nil {
+  let _ = box
+  Nil
+}
+
+pub fn in_a_function(callback: fn(hidden.Message) -> Option(Handle)) -> Nil {
+  let _ = callback
+  Nil
+}
+
+pub fn in_a_tuple(pair: #(Int, hidden.Message)) -> Nil {
+  let _ = pair
+  Nil
+}
+
+/// One type named twice: one finding each.
+pub fn twice(first: hidden.Message, second: hidden.Message) -> Nil {
+  let _ = #(first, second)
+  Nil
+}
+
+/// An alias of the internal module that names an internal type.
+pub fn through_an_internal_alias(boxed: hidden.Boxed) -> Nil {
+  let _ = boxed
+  Nil
+}
+
+/// An external function, with a body for the targets it isn't external on.
+@external(erlang, "gleam_stdlib", "identity")
+pub fn external(handle: hidden.Handle) -> hidden.Handle {
+  handle
+}
+
+/// A constructor's fields.
+pub type Envelope {
+  Envelope(message: hidden.Message, count: Int)
+  Wrapped(hidden.Box(Int))
+}
+
+/// A type of this module marked `@internal`.
+@internal
+pub type State {
+  State(count: Int)
+}
+
+pub fn state() -> State {
+  State(0)
+}
+
+/// A private alias that names an internal type is internal too.
+type Private =
+  hidden.Message
+
+pub fn private_alias(message: Private) -> Private {
+  message
+}
+-- output
+warning[grice_rules/internal-type-in-public-api]: Internal type in the public API
+   ┌─ src/grice/rules/samples/internal_type_in_public_api_flagged.gleam:12:21
+   │
+12 │ pub const greeting: hidden.Message = hidden.Message("café")
+   │                     ^^^^^^^^^^^^^^ `Message` is defined in the internal module `grice/internal/rules/samples/hidden`
+
+The public constant `greeting` names this type in its signature, so the
+type is part of the package's public API, but it's internal: the
+documentation generated for the package has no entry for it.
+
+Hint: Give the type a public name: name a public alias of it here, or add
+one to this module if naming an existing alias would be an import cycle, or
+move the type to a module that isn't internal, without `@internal`. If
+`greeting` isn't meant for users, mark it `@internal` instead.
+
+warning[grice_rules/internal-type-in-public-api]: Internal type in the public API
+   ┌─ src/grice/rules/samples/internal_type_in_public_api_flagged.gleam:14:27
+   │
+14 │ pub fn parameter(message: hidden.Message) -> Nil {
+   │                           ^^^^^^^^^^^^^^ `Message` is defined in the internal module `grice/internal/rules/samples/hidden`
+
+The public function `parameter` names this type in its signature, so the
+type is part of the package's public API, but it's internal: the
+documentation generated for the package has no entry for it.
+
+Hint: Give the type a public name: name a public alias of it here, or add
+one to this module if naming an existing alias would be an import cycle, or
+move the type to a module that isn't internal, without `@internal`. If
+`parameter` isn't meant for users, mark it `@internal` instead.
+
+warning[grice_rules/internal-type-in-public-api]: Internal type in the public API
+   ┌─ src/grice/rules/samples/internal_type_in_public_api_flagged.gleam:19:22
+   │
+19 │ pub fn returned() -> Handle {
+   │                      ^^^^^^ `Handle` is defined in the internal module `grice/internal/rules/samples/hidden`
+
+The public function `returned` names this type in its signature, so the
+type is part of the package's public API, but it's internal: the
+documentation generated for the package has no entry for it.
+
+Hint: Give the type a public name: name a public alias of it here, or add
+one to this module if naming an existing alias would be an import cycle, or
+move the type to a module that isn't internal, without `@internal`. If
+`returned` isn't meant for users, mark it `@internal` instead.
+
+warning[grice_rules/internal-type-in-public-api]: Internal type in the public API
+   ┌─ src/grice/rules/samples/internal_type_in_public_api_flagged.gleam:23:35
+   │
+23 │ pub fn in_an_argument(boxes: List(hidden.Box(Int))) -> Nil {
+   │                                   ^^^^^^^^^^^^^^^ `Box` is defined in the internal module `grice/internal/rules/samples/hidden`
+
+The public function `in_an_argument` names this type in its signature, so
+the type is part of the package's public API, but it's internal: the
+documentation generated for the package has no entry for it.
+
+Hint: Give the type a public name: name a public alias of it here, or add
+one to this module if naming an existing alias would be an import cycle, or
+move the type to a module that isn't internal, without `@internal`. If
+`in_an_argument` isn't meant for users, mark it `@internal` instead.
+
+warning[grice_rules/internal-type-in-public-api]: Internal type in the public API
+   ┌─ src/grice/rules/samples/internal_type_in_public_api_flagged.gleam:29:37
+   │
+29 │ pub fn in_an_internal_argument(box: hidden.Box(hidden.Message)) -> Nil {
+   │                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^ `Box` is defined in the internal module `grice/internal/rules/samples/hidden`
+
+The public function `in_an_internal_argument` names this type in its
+signature, so the type is part of the package's public API, but it's
+internal: the documentation generated for the package has no entry for it.
+
+Hint: Give the type a public name: name a public alias of it here, or add
+one to this module if naming an existing alias would be an import cycle, or
+move the type to a module that isn't internal, without `@internal`. If
+`in_an_internal_argument` isn't meant for users, mark it `@internal`
+instead.
+
+warning[grice_rules/internal-type-in-public-api]: Internal type in the public API
+   ┌─ src/grice/rules/samples/internal_type_in_public_api_flagged.gleam:29:48
+   │
+29 │ pub fn in_an_internal_argument(box: hidden.Box(hidden.Message)) -> Nil {
+   │                                                ^^^^^^^^^^^^^^ `Message` is defined in the internal module `grice/internal/rules/samples/hidden`
+
+The public function `in_an_internal_argument` names this type in its
+signature, so the type is part of the package's public API, but it's
+internal: the documentation generated for the package has no entry for it.
+
+Hint: Give the type a public name: name a public alias of it here, or add
+one to this module if naming an existing alias would be an import cycle, or
+move the type to a module that isn't internal, without `@internal`. If
+`in_an_internal_argument` isn't meant for users, mark it `@internal`
+instead.
+
+warning[grice_rules/internal-type-in-public-api]: Internal type in the public API
+   ┌─ src/grice/rules/samples/internal_type_in_public_api_flagged.gleam:34:35
+   │
+34 │ pub fn in_a_function(callback: fn(hidden.Message) -> Option(Handle)) -> Nil {
+   │                                   ^^^^^^^^^^^^^^ `Message` is defined in the internal module `grice/internal/rules/samples/hidden`
+
+The public function `in_a_function` names this type in its signature, so
+the type is part of the package's public API, but it's internal: the
+documentation generated for the package has no entry for it.
+
+Hint: Give the type a public name: name a public alias of it here, or add
+one to this module if naming an existing alias would be an import cycle, or
+move the type to a module that isn't internal, without `@internal`. If
+`in_a_function` isn't meant for users, mark it `@internal` instead.
+
+warning[grice_rules/internal-type-in-public-api]: Internal type in the public API
+   ┌─ src/grice/rules/samples/internal_type_in_public_api_flagged.gleam:34:61
+   │
+34 │ pub fn in_a_function(callback: fn(hidden.Message) -> Option(Handle)) -> Nil {
+   │                                                             ^^^^^^ `Handle` is defined in the internal module `grice/internal/rules/samples/hidden`
+
+The public function `in_a_function` names this type in its signature, so
+the type is part of the package's public API, but it's internal: the
+documentation generated for the package has no entry for it.
+
+Hint: Give the type a public name: name a public alias of it here, or add
+one to this module if naming an existing alias would be an import cycle, or
+move the type to a module that isn't internal, without `@internal`. If
+`in_a_function` isn't meant for users, mark it `@internal` instead.
+
+warning[grice_rules/internal-type-in-public-api]: Internal type in the public API
+   ┌─ src/grice/rules/samples/internal_type_in_public_api_flagged.gleam:39:32
+   │
+39 │ pub fn in_a_tuple(pair: #(Int, hidden.Message)) -> Nil {
+   │                                ^^^^^^^^^^^^^^ `Message` is defined in the internal module `grice/internal/rules/samples/hidden`
+
+The public function `in_a_tuple` names this type in its signature, so the
+type is part of the package's public API, but it's internal: the
+documentation generated for the package has no entry for it.
+
+Hint: Give the type a public name: name a public alias of it here, or add
+one to this module if naming an existing alias would be an import cycle, or
+move the type to a module that isn't internal, without `@internal`. If
+`in_a_tuple` isn't meant for users, mark it `@internal` instead.
+
+warning[grice_rules/internal-type-in-public-api]: Internal type in the public API
+   ┌─ src/grice/rules/samples/internal_type_in_public_api_flagged.gleam:45:21
+   │
+45 │ pub fn twice(first: hidden.Message, second: hidden.Message) -> Nil {
+   │                     ^^^^^^^^^^^^^^ `Message` is defined in the internal module `grice/internal/rules/samples/hidden`
+
+The public function `twice` names this type in its signature, so the type
+is part of the package's public API, but it's internal: the documentation
+generated for the package has no entry for it.
+
+Hint: Give the type a public name: name a public alias of it here, or add
+one to this module if naming an existing alias would be an import cycle, or
+move the type to a module that isn't internal, without `@internal`. If
+`twice` isn't meant for users, mark it `@internal` instead.
+
+warning[grice_rules/internal-type-in-public-api]: Internal type in the public API
+   ┌─ src/grice/rules/samples/internal_type_in_public_api_flagged.gleam:45:45
+   │
+45 │ pub fn twice(first: hidden.Message, second: hidden.Message) -> Nil {
+   │                                             ^^^^^^^^^^^^^^ `Message` is defined in the internal module `grice/internal/rules/samples/hidden`
+
+The public function `twice` names this type in its signature, so the type
+is part of the package's public API, but it's internal: the documentation
+generated for the package has no entry for it.
+
+Hint: Give the type a public name: name a public alias of it here, or add
+one to this module if naming an existing alias would be an import cycle, or
+move the type to a module that isn't internal, without `@internal`. If
+`twice` isn't meant for users, mark it `@internal` instead.
+
+warning[grice_rules/internal-type-in-public-api]: Internal type in the public API
+   ┌─ src/grice/rules/samples/internal_type_in_public_api_flagged.gleam:51:41
+   │
+51 │ pub fn through_an_internal_alias(boxed: hidden.Boxed) -> Nil {
+   │                                         ^^^^^^^^^^^^ `Boxed` is defined in the internal module `grice/internal/rules/samples/hidden`
+
+The public function `through_an_internal_alias` names this type in its
+signature, so the type is part of the package's public API, but it's
+internal: the documentation generated for the package has no entry for it.
+
+Hint: Give the type a public name: name a public alias of it here, or add
+one to this module if naming an existing alias would be an import cycle, or
+move the type to a module that isn't internal, without `@internal`. If
+`through_an_internal_alias` isn't meant for users, mark it `@internal`
+instead.
+
+warning[grice_rules/internal-type-in-public-api]: Internal type in the public API
+   ┌─ src/grice/rules/samples/internal_type_in_public_api_flagged.gleam:58:25
+   │
+58 │ pub fn external(handle: hidden.Handle) -> hidden.Handle {
+   │                         ^^^^^^^^^^^^^ `Handle` is defined in the internal module `grice/internal/rules/samples/hidden`
+
+The public function `external` names this type in its signature, so the
+type is part of the package's public API, but it's internal: the
+documentation generated for the package has no entry for it.
+
+Hint: Give the type a public name: name a public alias of it here, or add
+one to this module if naming an existing alias would be an import cycle, or
+move the type to a module that isn't internal, without `@internal`. If
+`external` isn't meant for users, mark it `@internal` instead.
+
+warning[grice_rules/internal-type-in-public-api]: Internal type in the public API
+   ┌─ src/grice/rules/samples/internal_type_in_public_api_flagged.gleam:58:43
+   │
+58 │ pub fn external(handle: hidden.Handle) -> hidden.Handle {
+   │                                           ^^^^^^^^^^^^^ `Handle` is defined in the internal module `grice/internal/rules/samples/hidden`
+
+The public function `external` names this type in its signature, so the
+type is part of the package's public API, but it's internal: the
+documentation generated for the package has no entry for it.
+
+Hint: Give the type a public name: name a public alias of it here, or add
+one to this module if naming an existing alias would be an import cycle, or
+move the type to a module that isn't internal, without `@internal`. If
+`external` isn't meant for users, mark it `@internal` instead.
+
+warning[grice_rules/internal-type-in-public-api]: Internal type in the public API
+   ┌─ src/grice/rules/samples/internal_type_in_public_api_flagged.gleam:64:21
+   │
+64 │   Envelope(message: hidden.Message, count: Int)
+   │                     ^^^^^^^^^^^^^^ `Message` is defined in the internal module `grice/internal/rules/samples/hidden`
+
+The public constructor `Envelope` names this type in its signature, so the
+type is part of the package's public API, but it's internal: the
+documentation generated for the package has no entry for it.
+
+Hint: Give the type a public name: name a public alias of it here, or add
+one to this module if naming an existing alias would be an import cycle, or
+move the type to a module that isn't internal, without `@internal`. If
+users shouldn't build or match on `Envelope`, make `Envelope` opaque, or
+mark it `@internal` if no part of it is meant for users.
+
+warning[grice_rules/internal-type-in-public-api]: Internal type in the public API
+   ┌─ src/grice/rules/samples/internal_type_in_public_api_flagged.gleam:65:11
+   │
+65 │   Wrapped(hidden.Box(Int))
+   │           ^^^^^^^^^^^^^^^ `Box` is defined in the internal module `grice/internal/rules/samples/hidden`
+
+The public constructor `Wrapped` names this type in its signature, so the
+type is part of the package's public API, but it's internal: the
+documentation generated for the package has no entry for it.
+
+Hint: Give the type a public name: name a public alias of it here, or add
+one to this module if naming an existing alias would be an import cycle, or
+move the type to a module that isn't internal, without `@internal`. If
+users shouldn't build or match on `Wrapped`, make `Envelope` opaque, or
+mark it `@internal` if no part of it is meant for users.
+
+warning[grice_rules/internal-type-in-public-api]: Internal type in the public API
+   ┌─ src/grice/rules/samples/internal_type_in_public_api_flagged.gleam:74:19
+   │
+74 │ pub fn state() -> State {
+   │                   ^^^^^ `State` is marked `@internal`
+
+The public function `state` names this type in its signature, so the type
+is part of the package's public API, but it's internal: the documentation
+generated for the package has no entry for it.
+
+Hint: Remove `@internal` from the type if users need it. If `state` isn't
+meant for users, mark it `@internal` instead.
+
+warning[grice_rules/internal-type-in-public-api]: Internal type in the public API
+   ┌─ src/grice/rules/samples/internal_type_in_public_api_flagged.gleam:82:31
+   │
+82 │ pub fn private_alias(message: Private) -> Private {
+   │                               ^^^^^^^ `Private` is a private alias that names an internal type
+
+The public function `private_alias` names this type in its signature, so
+the type is part of the package's public API, but it's internal: the
+documentation generated for the package has no entry for it.
+
+Hint: Make `Private` public, so the type has a public name. If
+`private_alias` isn't meant for users, mark it `@internal` instead.
+
+warning[grice_rules/internal-type-in-public-api]: Internal type in the public API
+   ┌─ src/grice/rules/samples/internal_type_in_public_api_flagged.gleam:82:43
+   │
+82 │ pub fn private_alias(message: Private) -> Private {
+   │                                           ^^^^^^^ `Private` is a private alias that names an internal type
+
+The public function `private_alias` names this type in its signature, so
+the type is part of the package's public API, but it's internal: the
+documentation generated for the package has no entry for it.
+
+Hint: Make `Private` public, so the type has a public name. If
+`private_alias` isn't meant for users, mark it `@internal` instead.
+
+19 warnings in 2 modules.
+

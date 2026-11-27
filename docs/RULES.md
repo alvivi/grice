@@ -1,10 +1,10 @@
 # Built-in rules
 
-grice ships a default rule set, which `gleam run -m grice` runs, and an
-opt-in pack, simplify, which a project adds itself. Every built-in rule
-reports a warning, has a code that starts with `grice_rules/`, and is
-offered by the `grice/rules` module, so a project can run it beside rules
-of its own.
+grice ships a default rule set, which `gleam run -m grice` runs, and two
+opt-in packs, simplify and library, which a project adds itself. Every
+built-in rule reports a warning, has a code that starts with
+`grice_rules/`, and is offered by the `grice/rules` module, so a project
+can run it beside rules of its own.
 
 A rule is in the default set only when it passes five tests:
 
@@ -23,12 +23,15 @@ A rule is in the default set only when it passes five tests:
    recorded with its reason.
 5. **It finds real problems.** Real Gleam code makes the mistake.
 
-A pack's rules pass tests 1, 2 and 4, but no Gleam source calls the code
-they flag wrong (test 3), so a project opts in to them. The simplify pack
-flags code that is correct but takes the long way round, where one standard
-library function does the same: each rewrite it suggests gives the same
+A pack's rules pass tests 1, 2 and 4, and a project opts in to them. The
+simplify pack's rules flag code that no Gleam source calls wrong (test 3):
+code that is correct but takes the long way round, where one standard
+library function does the same. Each rewrite it suggests gives the same
 result, and calls any function passed to it the same way, fold-plus's on
-the target grice lints for (see [fold-plus](#fold-plus)).
+the target grice lints for (see [fold-plus](#fold-plus)). The library
+pack's rules are about what a package published to Hex offers its users,
+so they matter to a library and not to every project, and they read only
+the modules under `src/`, which is what a package publishes.
 
 A rule that is cited but sometimes wrong to apply doesn't belong in any
 built-in set: write it as a rule of your own.
@@ -53,8 +56,9 @@ pub fn main() -> Nil {
 }
 ```
 
-`rules.simplify()` is the simplify pack. No rule is in two sets, so add it
-to the default set in the same entry module:
+`rules.simplify()` is the simplify pack, and `rules.library()` the library
+pack. No rule is in two sets, so add a pack to the default set in the same
+entry module:
 
 ```gleam
 import gleam/list
@@ -162,6 +166,34 @@ without depending on grice, through the library API or by an entry module
 built elsewhere, may have an older stdlib: `list.count`, which
 filter-then-length recommends, is in stdlib 0.40.0 and later, and every
 other function the hints name in 0.31.0 and later.
+
+### The library pack
+
+| Code | What it flags |
+|---|---|
+| [`grice_rules/internal-type-in-public-api`](#internal-type-in-public-api) | A public function, constant or constructor whose written signature names an internal type of the package. |
+
+A package published to Hex runs it beside the default set from an entry
+module of its own:
+
+```gleam
+import gleam/list
+import grice
+import grice/rules
+
+pub fn main() -> Nil {
+  grice.run(list.append(rules.default(), rules.library()))
+}
+```
+
+Its rules read only the modules under `src/`, even when `include` in
+`gleam.toml` selects `test/` or `dev/`, since tests and development tools
+aren't published. They know which modules are internal from the package's
+`gleam.toml`: `internal_modules`, or, when that key is absent and `name` is
+set, `<name>/internal` and the modules under it.
+[Configuration](https://github.com/alvivi/grice/blob/main/docs/CONFIGURATION.md#name-and-internal_modules)
+says which patterns grice reads, and where its TOML reader differs from
+the compiler's.
 
 ## no-echo
 
@@ -668,3 +700,122 @@ pub fn total(prices: List(Int)) -> Int {
 **Suppressing it.** The rewrite gives the same sum, so a finding is worth
 fixing. To keep the fold, put
 `// grice-ignore grice_rules/fold-plus: <reason>` on the line above it.
+
+## internal-type-in-public-api
+
+`grice_rules/internal-type-in-public-api` reports a type name, written in
+the signature of a public declaration of the package, that stands for an
+internal type. It reads, in a module under `src/` that isn't internal, the
+public declarations not marked `@internal`: each annotated parameter and
+the return annotation of a function, external ones included, the
+annotation of a constant, and the fields of each constructor of a custom
+type that isn't opaque. Within an annotation it reads every named type, at
+any depth: in type arguments, in the parameters and return of a function
+type, and in the elements of a tuple. Each internal one is a finding, at
+the name, so a signature that names two internal types, or one twice,
+gets a finding for each.
+
+A type is internal when it's a public custom type of an internal module,
+or one marked `@internal`, or a type alias that isn't public API, because
+it's private, marked `@internal` or in an internal module, and that names
+an internal type. A type name resolves as the compiler resolves it, from
+the module's imports and the types it defines, so an import's alias or an
+unqualified import doesn't hide a type.
+
+**Why.** The gleam.toml reference says "An internal module is a module
+that is not part of the public API of the package", and `@internal` marks a
+single definition the same way. A public signature that names an internal
+type makes it part of the public API all the same: users get values of it
+and write code against it, though the package marked it as outside its
+public API, and the documentation generated for the package has no entry
+for it. The compiler planned this warning in
+[gleam-lang/gleam#2234](https://github.com/gleam-lang/gleam/issues/2234):
+it was added in the v1.1 release candidates and reverted, and waits on how
+the compiler handles type aliases. As the issue asks, a type named through
+a public alias is fine.
+
+Flagged, where `listener` is the internal module
+`my_server/internal/listener`:
+
+```gleam
+import gleam/erlang/process
+import my_server/internal/listener
+
+pub fn start(name: process.Name(listener.Message)) -> Server {
+  todo
+}
+```
+
+Fixed, with a public alias the module can import:
+
+```gleam
+import gleam/erlang/process
+import my_server/internal/listener
+
+pub type ListenerMessage =
+  listener.Message
+
+pub fn start(name: process.Name(ListenerMessage)) -> Server {
+  todo
+}
+```
+
+Each finding's hint offers the fixes in turn: give the type a public name,
+with a public alias or by moving it to a module that isn't internal; for a
+type marked `@internal`, remove the attribute if users need the type; for a
+private alias, make it public. When the module that defines a public alias
+of the type imports the flagged module, naming that alias would be an
+import cycle, so the hint offers adding a public alias to the flagged
+module instead. If the declaration isn't meant for users, mark it
+`@internal` instead. A constructor can't be marked `@internal`, so for one
+the hint offers making its type opaque, or marking the whole type
+`@internal`.
+
+**What it leaves alone.**
+
+- A type named through a public alias, a public type alias in a module
+  that isn't internal and not marked `@internal`, whatever it stands for:
+  the package chose a public name for it. That holds for a private alias
+  of a public alias too, though the documentation can print the private
+  alias's name. The written arguments of a public alias still count:
+  `a.BoxAlias(thing.Thing)` names `thing.Thing`.
+- Type alias definitions themselves: a public alias is how a package gives
+  an internal type a public name.
+- A declaration with no annotation, whose inferred type the rule doesn't
+  read, since inference can't tell a public alias from the type it names.
+- Private declarations, declarations marked `@internal`, the constructors
+  of an opaque type, and annotations inside a function's body.
+- Internal modules themselves, and every module outside `src/`.
+- A dependency's types, whatever its `gleam.toml` says: grice doesn't read
+  a dependency's configuration.
+- A type grice can't see: one of a module that doesn't parse, or one it
+  didn't load because no linted module imports its module.
+- Declarations and imports for the other target, as the rest of grice
+  leaves them out.
+
+**What the documentation shows.** `gleam docs build` prints a signature's
+inferred type, not the one written. Where that type holds an internal type,
+it prints an alias of it instead, if one with the same parameters is
+registered, which depends on aliases elsewhere in the package and on the
+order its modules compile in. So a page can print a public name for a type
+the rule reports, and an internal type for an alias the rule accepts. The
+rule follows the written signature, which the package controls, and its
+message claims nothing about the page.
+
+**Internal modules.** The rule knows them from `name` and
+`internal_modules` in `gleam.toml`. grice reads only literal characters,
+`*` and `?` in a pattern there, and any other glob syntax stops the run.
+[Configuration](https://github.com/alvivi/grice/blob/main/docs/CONFIGURATION.md#module-patterns)
+gives the syntax, the rewrites the compiler reads the same way for a few
+common patterns, what to do for the others, and the spellings grice's TOML
+reader reads differently from the compiler's. A project with no `name` has
+no default internal modules.
+
+**Suppressing it.** The fix is usually one name, so a finding is worth
+fixing. To keep a signature as it is, put
+`// grice-ignore grice_rules/internal-type-in-public-api: <reason>` on the
+line above the type's name, or ignore the code in `gleam.toml` for the
+paths it covers.
+
+**Retirement.** The rule retires when the compiler ships gleam#2234, which
+would report the same code.

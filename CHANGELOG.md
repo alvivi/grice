@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The library pack.** `rules.library()` in `grice/rules` is an opt-in
+  set of built-in rules for a package published to Hex, about what it
+  offers its users. `gleam run -m grice` still runs the default set alone;
+  add the pack in an entry module of your own with
+  `grice.run(list.append(rules.default(), rules.library()))`. Its rules
+  read only the modules under `src/`, and report a warning.
+  [Built-in rules](https://github.com/alvivi/grice/blob/main/docs/RULES.md)
+  describes it:
+  - `grice_rules/internal-type-in-public-api`: a public function, constant
+    or constructor whose signature, as written, names an internal type of
+    the package: a public custom type of an internal module or marked
+    `@internal`, or a type alias that isn't public API (private, marked
+    `@internal` or in an internal module) whose definition names an
+    internal type. A type named through a public alias is fine, and an
+    unannotated declaration isn't read. The compiler
+    planned this warning in gleam-lang/gleam#2234, and the rule retires
+    once it ships.
 - **Internal modules and types in facts.** `facts.is_internal_module`
   tells every rule whether a module of the project is internal: under
   `src/`, `test/` or `dev/`, with a name that a pattern of
