@@ -53,9 +53,11 @@
 //// ```
 ////
 //// `library` is the library pack, another opt-in set: rules for a package
-//// published to Hex, about what it offers its users. Its rules read only
-//// the modules under `src/`, which is what a package publishes. A package
-//// runs it beside the default set the same way:
+//// published to Hex, about what it offers its users. Its rules report only
+//// on the modules under `src/`, which is what a package publishes, though
+//// `needlessly_public_function` reads every module of the project for the
+//// uses it looks for. A package runs it beside the default set the same
+//// way:
 ////
 //// ```gleam
 //// import gleam/list
@@ -74,6 +76,7 @@ import grice/internal/rules/ineffective_double_comparison
 import grice/internal/rules/internal_type_in_public_api
 import grice/internal/rules/list_map_then_flatten
 import grice/internal/rules/map_then_flatten
+import grice/internal/rules/needlessly_public_function
 import grice/internal/rules/no_echo
 import grice/internal/rules/no_length_for_emptiness
 import grice/internal/rules/reverse_then_first
@@ -376,10 +379,10 @@ pub fn fold_plus() -> Rule {
 
 /// The library pack, an opt-in set that `gleam run -m grice` doesn't run:
 /// every rule below this one, in the order they're listed. Each is about
-/// what a package published to Hex offers its users, and reads only the
-/// modules under `src/`, even when `include` selects `test/` or `dev/`.
+/// what a package published to Hex offers its users, and reports only on
+/// the modules under `src/`, even when `include` selects `test/` or `dev/`.
 pub fn library() -> List(Rule) {
-  [internal_type_in_public_api()]
+  [internal_type_in_public_api(), needlessly_public_function()]
 }
 
 /// `grice_rules/internal-type-in-public-api`: a public function, constant
@@ -418,4 +421,32 @@ pub fn library() -> List(Rule) {
 /// in the rule reference.
 pub fn internal_type_in_public_api() -> Rule {
   internal_type_in_public_api.rule()
+}
+
+/// `grice_rules/needlessly-public-function`: a public function that isn't
+/// part of the package's public API, since its module is internal or it's
+/// marked `@internal`, which no other Gleam module of the project refers to,
+/// tests included. It reads the whole project.
+///
+/// Flagged, where `my_app/internal/parser` is an internal module whose
+/// `parse_line` no other module refers to:
+///
+/// ```gleam
+/// pub fn parse_line(line: String) -> Result(Entry, Nil) {
+///   todo
+/// }
+/// ```
+///
+/// Fixed:
+///
+/// ```gleam
+/// fn parse_line(line: String) -> Result(Entry, Nil) {
+///   todo
+/// }
+/// ```
+///
+/// [needlessly-public-function](https://github.com/alvivi/grice/blob/main/docs/RULES.md#needlessly-public-function)
+/// in the rule reference.
+pub fn needlessly_public_function() -> Rule {
+  needlessly_public_function.rule()
 }

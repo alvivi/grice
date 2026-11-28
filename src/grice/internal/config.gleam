@@ -1,11 +1,14 @@
-//// grice's configuration, read from a project's `gleam.toml`: three of the
-//// compiler's keys, `target`, `name` and `internal_modules`, and the
-//// `[tools.grice]` table.
+//// grice's configuration, read from a project's `gleam.toml`: four of the
+//// compiler's keys, `target`, `name`, `internal_modules` and `[erlang]`'s
+//// `application_start_module`, and the `[tools.grice]` table.
 ////
 //// ```toml
 //// name = "my_app"
 //// target = "erlang"
 //// internal_modules = ["my_app/internal", "my_app/internal/*"]
+////
+//// [erlang]
+//// application_start_module = "my_app/application"
 ////
 //// [tools.grice]
 //// include = ["src/"]
@@ -18,7 +21,9 @@
 //// ```
 ////
 //// `name` and `internal_modules` say which modules the compiler treats as
-//// internal. `include` and `exclude` choose the modules rules run on. Each
+//// internal, and `application_start_module` names the module whose `start`
+//// function the Erlang runtime calls. `include` and `exclude` choose the
+//// modules rules run on. Each
 //// `[[tools.grice.ignore]]` entry hides the diagnostics of its `rules` in
 //// the files its `paths` match, only inside the top-level definitions its
 //// optional `definitions` name, and says why in `reason`.
@@ -58,6 +63,13 @@ pub type Config {
     /// of `internal_modules`, or, when it's absent and the package has a
     /// name, `<name>/internal` and `<name>/internal/*`.
     internal_modules: List(ModulePattern),
+    /// `[erlang]`'s `application_start_module`, as written, when
+    /// `gleam.toml` sets it: the module whose `start` function the Erlang
+    /// runtime calls when the application starts. The compiler writes it in
+    /// the application file with each `/` turned into `@`, without checking
+    /// it, so it may be a Gleam module's name, its Erlang name, or the name
+    /// of a module of Erlang code.
+    application_start_module: Option(String),
     /// The modules to lint, before `exclude`. Defaults to `src/`.
     include: List(Glob),
     /// The modules not to lint, even when an `include` selects them.
@@ -85,12 +97,14 @@ pub type Ignore {
 
 /// Read the configuration from the text of a `gleam.toml`. Missing keys get
 /// their defaults: the Erlang target, no name, the compiler's default
-/// `internal_modules`, `include = ["src/"]`, no exclusions, no ignores and
-/// suppression comments on.
+/// `internal_modules`, no application start module, `include = ["src/"]`,
+/// no exclusions, no ignores and suppression comments on.
 ///
 /// Every problem is reported, in a fixed order: `target`, `name`,
-/// `internal_modules`, the top-level keys written with a `\` in
-/// alphabetical order, then `include`, `exclude`, `ignore` (entry by entry:
+/// `internal_modules`, `erlang` and its `application_start_module`, then
+/// the keys of `[erlang]` written with a `\` and the top-level keys written
+/// with one, each in alphabetical order, then `include`, `exclude`,
+/// `ignore` (entry by entry:
 /// `paths`, `definitions`, `rules`, `reason`, then its unknown keys in
 /// alphabetical order) and `suppression_comments`, then unknown keys in
 /// alphabetical order. A file that isn't valid TOML gives one diagnostic
@@ -164,12 +178,14 @@ pub fn describe_toml_error(error: tom.ParseError) -> String {
 // subject: the dotted key in backticks, or a phrase that names an ignore
 // entry's key.
 
-// The compiler's keys grice reads, at the top level of `gleam.toml`.
+// The compiler's keys grice reads, at the top level of `gleam.toml` and in
+// its `[erlang]` table.
 type Package {
   Package(
     target: Target,
     name: Option(String),
     internal_modules: List(ModulePattern),
+    application_start_module: Option(String),
   )
 }
 
@@ -198,10 +214,10 @@ fn table_at(
 }
 
 // The compiler's keys. grice's TOML reader keeps the escapes of a quoted key
-// as they're written, so a top-level key written with a `\` can't be told
-// apart from the key it stands for, which may be one of these: it's an
-// error, rather than a key grice reads as unset. No key the compiler reads
-// holds a `\`.
+// as they're written, so a top-level key, or a key of `[erlang]`, written
+// with a `\` can't be told apart from the key it stands for, which may be
+// one of these: it's an error, rather than a key grice reads as unset. No
+// key the compiler reads holds a `\`.
 fn parse_package(
   toml: Dict(String, Toml),
 ) -> Result(Package, List(Diagnostic)) {
@@ -209,24 +225,42 @@ fn parse_package(
   let name = parse_name(dict.get(toml, "name"))
   let internal_modules =
     parse_internal_modules(dict.get(toml, "internal_modules"), name)
+  let erlang = table_at(toml, "erlang", "erlang")
+  let application_start_module =
+    result.try(erlang, fn(erlang) {
+      parse_application_start_module(dict.get(
+        erlang,
+        "application_start_module",
+      ))
+    })
   let escaped =
-    dict.keys(toml)
-    |> list.filter(string.contains(_, "\\"))
-    |> list.sort(string.compare)
-    |> list.map(escaped_key)
-  case target, name, internal_modules, escaped {
-    Ok(target), Ok(name), Ok(internal_modules), [] ->
-      Ok(Package(target:, name:, internal_modules:))
-    _, _, _, _ ->
+    list.append(
+      escaped_keys(result.unwrap(erlang, dict.new()), "erlang."),
+      escaped_keys(toml, ""),
+    )
+  case target, name, internal_modules, application_start_module, escaped {
+    Ok(target), Ok(name), Ok(internal_modules), Ok(application_start_module), []
+    -> Ok(Package(target:, name:, internal_modules:, application_start_module:))
+    _, _, _, _, _ ->
       Error(
         list.flatten([
           problems(target),
           problems(name),
           problems(internal_modules),
+          problems(application_start_module),
           escaped,
         ]),
       )
   }
+}
+
+// A problem for each key of `table` written with a `\`, in alphabetical
+// order, each named with `prefix` before it.
+fn escaped_keys(table: Dict(String, Toml), prefix: String) -> List(Diagnostic) {
+  dict.keys(table)
+  |> list.filter(string.contains(_, "\\"))
+  |> list.sort(string.compare)
+  |> list.map(fn(key) { escaped_key(prefix <> key) })
 }
 
 fn parse_grice(
@@ -254,7 +288,7 @@ fn parse_grice(
       unknown_key(quoted("tools.grice." <> key), grice_keys)
     })
   case package, include, exclude, ignore, suppression_comments, unknown {
-    Ok(Package(target:, name:, internal_modules:)),
+    Ok(Package(target:, name:, internal_modules:, application_start_module:)),
       Ok(include),
       Ok(exclude),
       Ok(ignore),
@@ -265,6 +299,7 @@ fn parse_grice(
         target:,
         name:,
         internal_modules:,
+        application_start_module:,
         include:,
         exclude:,
         ignore:,
@@ -309,6 +344,22 @@ fn parse_name(
         False -> Error([invalid_name(name)])
       }
     Ok(other) -> Error([wrong_type(quoted("name"), "a string", other)])
+  }
+}
+
+// The module whose `start` function the Erlang runtime calls, read as the
+// compiler reads it: any string, which it writes in the application file
+// without checking, as the Erlang name it gets by turning each `/` into `@`.
+fn parse_application_start_module(
+  value: Result(Toml, Nil),
+) -> Result(Option(String), List(Diagnostic)) {
+  case value {
+    Error(Nil) -> Ok(None)
+    Ok(tom.String(module)) -> Ok(Some(module))
+    Ok(other) ->
+      Error([
+        wrong_type(quoted("erlang.application_start_module"), "a string", other),
+      ])
   }
 }
 

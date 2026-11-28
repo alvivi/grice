@@ -31,7 +31,8 @@ the default configuration, which lints `src/` on Erlang.
 `testing.project(files)` takes the files of a project, each a
 `#(path, source)` with a path relative to the project root. `gleam.toml` is
 the configuration: grice reads its `target`, its `name` and
-`internal_modules`, and its `[tools.grice]` table. Without a `name`, no
+`internal_modules`, the `application_start_module` of its `[erlang]`
+table, and its `[tools.grice]` table. Without a `name`, no
 module is internal unless `internal_modules` says so. Every other file is a
 module under `src/`, `test/` or `dev/`, or a foreign source there: one of
 the compiler's native files, ending in `.erl`, `.hrl`, `.ex`, `.js`,

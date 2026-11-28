@@ -1,0 +1,48 @@
+---
+version: 2.0.2
+title: built-in needlessly-public-function: wording
+file: ./test/grice/rules/needlessly_public_function_test.gleam
+test_name: needlessly_public_function_wording_test
+---
+-- gleam.toml
+target = "erlang"
+name = "app"
+-- src/app.gleam
+@internal
+pub fn helper() -> Int {
+  1
+}
+-- src/app/internal/parser.gleam
+pub fn parse() -> Int {
+  1
+}
+-- output
+warning[grice_rules/needlessly-public-function]: Public function no other Gleam module refers to
+  ┌─ src/app.gleam:2:8
+  │
+2 │ pub fn helper() -> Int {
+  │        ^^^^^^ no other Gleam module refers to `helper`
+
+The public function `helper` is marked `@internal`, so it isn't part of the
+package's public API, and no other Gleam module of the project refers to
+it. Unless foreign code uses it, it doesn't need to be public.
+
+Hint: If no foreign code uses it, make it private. If `app` doesn't use it
+either, the compiler will then report it as unused.
+
+warning[grice_rules/needlessly-public-function]: Public function no other Gleam module refers to
+  ┌─ src/app/internal/parser.gleam:1:8
+  │
+1 │ pub fn parse() -> Int {
+  │        ^^^^^ no other Gleam module refers to `parse`
+
+The public function `parse` is in the internal module
+`app/internal/parser`, so it isn't part of the package's public API, and no
+other Gleam module of the project refers to it. Unless foreign code uses
+it, it doesn't need to be public.
+
+Hint: If no foreign code uses it, make it private. If `app/internal/parser`
+doesn't use it either, the compiler will then report it as unused.
+
+2 warnings in 2 modules.
+

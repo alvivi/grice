@@ -30,8 +30,8 @@ library function does the same. Each rewrite it suggests gives the same
 result, and calls any function passed to it the same way, fold-plus's on
 the target grice lints for (see [fold-plus](#fold-plus)). The library
 pack's rules are about what a package published to Hex offers its users,
-so they matter to a library and not to every project, and they read only
-the modules under `src/`, which is what a package publishes.
+so they matter to a library and not to every project, and they report only
+on the modules under `src/`, which is what a package publishes.
 
 A rule that is cited but sometimes wrong to apply doesn't belong in any
 built-in set: write it as a rule of your own.
@@ -172,6 +172,7 @@ other function the hints name in 0.31.0 and later.
 | Code | What it flags |
 |---|---|
 | [`grice_rules/internal-type-in-public-api`](#internal-type-in-public-api) | A public function, constant or constructor whose written signature names an internal type of the package. |
+| [`grice_rules/needlessly-public-function`](#needlessly-public-function) | A public function that isn't public API, which no other Gleam module of the project refers to. |
 
 A package published to Hex runs it beside the default set from an entry
 module of its own:
@@ -186,11 +187,14 @@ pub fn main() -> Nil {
 }
 ```
 
-Its rules read only the modules under `src/`, even when `include` in
+Its rules report only on the modules under `src/`, even when `include` in
 `gleam.toml` selects `test/` or `dev/`, since tests and development tools
-aren't published. They know which modules are internal from the package's
-`gleam.toml`: `internal_modules`, or, when that key is absent and `name` is
-set, `<name>/internal` and the modules under it.
+aren't published. needlessly-public-function still reads `test/` and
+`dev/`, for the uses it looks for, so a run with the pack reads every
+module of the project and its foreign sources. They know which modules are
+internal from the package's `gleam.toml`: `internal_modules`, or, when that
+key is absent and `name` is set, `<name>/internal` and the modules under
+it.
 [Configuration](https://github.com/alvivi/grice/blob/main/docs/CONFIGURATION.md#name-and-internal_modules)
 says which patterns grice reads, and where its TOML reader differs from
 the compiler's.
@@ -819,3 +823,112 @@ paths it covers.
 
 **Retirement.** The rule retires when the compiler ships gleam#2234, which
 would report the same code.
+
+## needlessly-public-function
+
+`grice_rules/needlessly-public-function` reports a public function that
+isn't part of the package's public API and that no other Gleam module of
+the project refers to. It reads the public
+functions, external ones included, of each linted module under `src/`, as
+compiled for the target, that are in an internal module or marked
+`@internal`, and reports each one nothing else uses, at its name.
+
+A use is read in every module of the project, under `src/`, `test/` and
+`dev/`, linted or not, and in its code for every target, so a function
+that only the JavaScript build, or only a test, calls is used. It's any of:
+
+- `q.f`, in a function or a constant of another module, where `q`
+  qualifies an import of the function's module: the import's alias, or
+  the module's last segment.
+- An unqualified import of the function, `import m.{f}` or
+  `import m.{f as g}`, whether or not it's used.
+- An `@external` that names the module and the function, by the module's
+  Erlang name, such as `@external(erlang, "my_app@internal@parser", "f")`,
+  or by its JavaScript file, such as
+  `@external(javascript, "./internal/parser.mjs", "f")`, in any module,
+  the function's own included: there the compiler still calls it as an
+  export. A JavaScript module that isn't a relative path to a `.mjs`
+  file, such as a subpath of the package's own name,
+  `@external(javascript, "my_app/parser-api", "f")`, which `package.json`
+  may lead to any module, makes it a use of every candidate with that
+  function's name.
+- A foreign source that names the module and the function as written:
+  one of the compiler's native files under `src/`, `test/` or `dev/`,
+  ending in `.erl`, `.hrl`, `.ex`, `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`,
+  `.mts`, `.cts` or `.tsx`, that holds the module's Erlang name as a word,
+  or its JavaScript file name, such as `parser.mjs`, with no directory, and
+  the function's name as a word.
+
+A plain call in the function's own module doesn't count: once the function
+is private, the compiler reports it if its module doesn't use it either.
+
+**Why.** The gleam.toml reference says "An internal module is a module
+that is not part of the public API of the package", and `@internal` marks a
+single definition the same way. The compiler warns about a private function
+nothing uses, and says nothing about a public one. A public function
+that isn't public API and that no other module uses doesn't need `pub`,
+which only hides it from that warning. Making it private hands it back to
+the compiler. Other public functions are left alone: they're the package's
+public API, which users call though no module of the package does.
+
+Flagged, where `my_app/internal/parser` is an internal module and no other
+module refers to `parse_line`:
+
+```gleam
+pub fn parse_line(line: String) -> Result(Entry, Nil) {
+  todo
+}
+```
+
+Fixed:
+
+```gleam
+fn parse_line(line: String) -> Result(Entry, Nil) {
+  todo
+}
+```
+
+**Foreign code.** The foreign check keeps the rule silent where a foreign
+file plainly names the function, so most FFI uses don't show. It reads
+names only as they're written in one file: it doesn't resolve escapes,
+such as JavaScript's `\u0065` or Erlang's `\x{61}`, includes or macros,
+module aliases such as an import map in `package.json`, or names built at
+run time, as Erlang's `apply` does with an atom made from a string. So the
+finding claims only that no other Gleam module refers to the function,
+and asks you to check that no foreign code uses it, re-exports included,
+before making it private.
+
+**How it reads.** A name the compiler accepts means one thing, so the rule
+reads the syntax tree and needs no types. Where it can't tell, it counts a
+use: a parameter named like a qualifier, as in `fn(parser) { parser.parse }`,
+or the names anywhere in a foreign source, even in a comment.
+
+**What it leaves alone.**
+
+- `main`, which `gleam run -m` runs, and `start` in the module that
+  `application_start_module` in `gleam.toml`'s `[erlang]` table names,
+  which the Erlang runtime calls when the application starts.
+  [Configuration](https://github.com/alvivi/grice/blob/main/docs/CONFIGURATION.md#application_start_module)
+  says how grice reads that key.
+- Functions of a module that isn't internal, unless they're marked
+  `@internal`, private functions, and functions for the other target.
+- Modules outside `src/`, and modules `exclude` leaves out of the lint
+  set: their functions aren't read, though their uses are.
+- Reachability: functions that only call each other, none called from
+  outside, count as used.
+
+**A whole-project rule.** It reads every module of the project and its
+foreign sources, which grice loads only for a rule like it. A file under
+`src/`, `test/` or `dev/` that grice can't list, such as a dangling link,
+or a module of the lint set and what it imports that can't be read, stops
+the run, as in every run. When any other module or foreign source can't
+be read, a `.gleam` file there isn't one grice can name as a module, or
+any module of the project doesn't parse, the lint set's included, the
+rule doesn't run, since a use there could make a finding false, and a
+`grice/incomplete-project` note lists the files. A package published to Hex ships no
+`test/`, so linted from its Hex tarball rather than its repository, a
+function only its tests use reads as unused.
+
+**Suppressing it.** To keep a function public, put
+`// grice-ignore grice_rules/needlessly-public-function: <reason>` on the
+line above it, or ignore the code in `gleam.toml` for the paths it covers.

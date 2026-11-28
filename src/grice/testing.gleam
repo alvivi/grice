@@ -89,8 +89,9 @@ pub fn module(source: String) -> Fixture {
 /// path relative to the project root.
 ///
 /// `gleam.toml` is the project's configuration: grice reads its
-/// `[tools.grice]` table, its `target`, and the `name` and
-/// `internal_modules` that say which modules are internal. Without one the
+/// `[tools.grice]` table, its `target`, the `name` and `internal_modules`
+/// that say which modules are internal, and the `application_start_module`
+/// of its `[erlang]` table. Without one the
 /// defaults apply, which lint `src/` on Erlang, and with no `name` no
 /// module is internal unless `internal_modules` says so. Every other file
 /// is a module or a foreign source. A module's path is under `src/`,

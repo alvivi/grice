@@ -33,6 +33,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/pair
 import gleam/result
 import gleam/set.{type Set}
+import gleam/string
 import glexer
 import glexer/token.{type Token}
 import grice/internal/config
@@ -63,6 +64,8 @@ pub opaque type ModuleFacts(kind) {
     every_target: Option(glance.Module),
     // The words of the project's foreign sources that name the module.
     foreign_mentions: Set(String),
+    // Whether `[erlang]`'s `application_start_module` names the module.
+    application_start: Bool,
     // What girard found for the module: `None` when no rule asked for
     // types, or girard returned nothing for the module.
     types: Option(ModuleTypes),
@@ -205,6 +208,14 @@ pub fn new(
         dict.get(foreign_mentions, module.name) |> result.unwrap(set.new())
       loader.LintSet -> set.new()
     },
+    // grice's TOML reader leaves a `\` escape as written, so with one in the
+    // value, any module may be the one it names.
+    application_start: case project.config.application_start_module {
+      Some(start) ->
+        string.contains(start, "\\")
+        || loader.erlang_name(start) == loader.erlang_name(module.name)
+      None -> False
+    },
     types:,
   )
 }
@@ -215,6 +226,18 @@ pub fn new(
 @internal
 pub fn module_for_every_target(facts: ModuleFacts(kind)) -> glance.Module {
   option.unwrap(facts.every_target, facts.module)
+}
+
+/// Whether `application_start_module` in the `[erlang]` table of
+/// `gleam.toml` names the module, so the Erlang runtime calls its `start`
+/// function when the application starts. The names are compared as the
+/// compiler writes them in the application file, with each `/` turned into
+/// `@`, so `my_app/application` and `my_app@application` both name the
+/// module `my_app/application`. A value written with a `\` may name any
+/// module, as far as grice can tell, so then every module may be it.
+@internal
+pub fn is_application_start_module(facts: ModuleFacts(kind)) -> Bool {
+  facts.application_start
 }
 
 /// The words of the project's foreign sources that name the module, by its

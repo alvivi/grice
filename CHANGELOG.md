@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   offers its users. `gleam run -m grice` still runs the default set alone;
   add the pack in an entry module of your own with
   `grice.run(list.append(rules.default(), rules.library()))`. Its rules
-  read only the modules under `src/`, and report a warning.
+  report only on the modules under `src/`, with a warning.
   [Built-in rules](https://github.com/alvivi/grice/blob/main/docs/RULES.md)
   describes it:
   - `grice_rules/internal-type-in-public-api`: a public function, constant
@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     unannotated declaration isn't read. The compiler
     planned this warning in gleam-lang/gleam#2234, and the rule retires
     once it ships.
+  - `grice_rules/needlessly-public-function`: a public function that isn't
+    public API, since its module is internal or it's marked `@internal`,
+    that no other Gleam module of the project refers to, tests included.
+    It sees the whole project, so a run with the pack reads the whole
+    project and its foreign sources.
 - **Internal modules and types in facts.** `facts.is_internal_module`
   tells every rule whether a module of the project is internal: under
   `src/`, `test/` or `dev/`, with a name that a pattern of
@@ -68,6 +73,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   package name, or a top-level key written with a `\`, which grice's TOML
   reader can't decode, stops the run with a `grice/invalid-config` error. A
   project with no `name` still runs, with no default internal modules.
+- **grice reads `application_start_module`.** The `[erlang]` table's
+  `application_start_module` names the module whose `start` function the
+  Erlang runtime calls, which needlessly-public-function leaves alone, and
+  grice reads it as the compiler does, without checking it
+  ([Configuration](https://github.com/alvivi/grice/blob/main/docs/CONFIGURATION.md#application_start_module)).
+  A value that isn't a string, an `[erlang]` that isn't a table, or a key
+  of `[erlang]` written with a `\`, which grice's TOML reader can't decode,
+  stops the run with a `grice/invalid-config` error, even with the default
+  rule set alone.
 - **Patterns in `internal_modules` use `*` and `?` only.** grice reads a
   module pattern as the compiler does when it holds only literal
   characters, `*` and `?`, and stops the run on one that holds `[`, `]`,
