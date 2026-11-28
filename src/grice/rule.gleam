@@ -99,6 +99,19 @@
 //// }
 //// ```
 ////
+//// A project rule that needs to see the whole project, such as one that
+//// asks whether any module uses a function, says so with `whole_project`.
+//// Its `per_module` function then gets every module of the project under
+//// `src/`, `test/` and `dev/`, linted or not, and `facts.is_linted` tells
+//// which are linted. Its reports on a module that isn't linted are
+//// dropped. grice reads those modules, and the project's foreign sources,
+//// only when such a rule runs. A file it can't list, or a module of the
+//// lint set and what it imports that can't be read, fails the load, as in
+//// every run. When any other of those files can't be read or isn't a
+//// module grice can name, or any module of the project doesn't parse, the
+//// rule doesn't run, and a `grice/incomplete-project` note says why, since
+//// a claim about the whole project can't rest on part of it.
+////
 //// A rule's title and its reports' labels, message and hint are plain text
 //// that marks code with backticks, as the compiler's diagnostics do, such
 //// as the title `` Leftover `echo` ``. The backticks are printed as they
@@ -136,6 +149,7 @@ pub opaque type Rule {
     title: String,
     severity: Severity,
     typed: Bool,
+    whole_project: Bool,
     check: Check,
   )
 }
@@ -176,6 +190,14 @@ pub fn is_typed(rule: Rule) -> Bool {
   rule.typed
 }
 
+/// Whether the rule was built with `whole_project`, so it sees every module
+/// of the project rather than only the lint set. A tool that loads a project
+/// itself checks its rules with this to choose between
+/// `grice.load_project` and `grice.load_whole_project`.
+pub fn is_whole_project(rule: Rule) -> Bool {
+  rule.whole_project
+}
+
 /// What running the rule does.
 @internal
 pub fn check(rule: Rule) -> Check {
@@ -213,11 +235,12 @@ fn is_word(word: String, rest allowed: String) -> Bool {
 
 // Schemas
 //
-// A rule of either kind starts as a schema: its code and title, and
-// whether it needs types. The phantom `form` keeps module and project
-// schemas apart, and the phantom `kind` is the kind of facts the rule will
-// get. `typed` takes a `Syntax` schema, so it can't be applied twice, and
-// the context or summary comes after it.
+// A rule of either kind starts as a schema: its code and title, whether it
+// needs types and, for a project rule, whether it sees the whole project.
+// The phantom `form` keeps module and project schemas apart, and the
+// phantom `kind` is the kind of facts the rule will get. `typed` takes a
+// `Syntax` schema, so it can't be applied twice, and the context or summary
+// comes after it.
 
 /// A rule that has a code and a title, but nothing to run yet. `form` is
 /// `ModuleForm` for a module rule, which takes its context with
@@ -225,7 +248,7 @@ fn is_word(word: String, rest allowed: String) -> Bool {
 /// summary with `per_module`. `kind` is the kind of facts the rule gets:
 /// `Syntax`, or `Typed` once `typed` has been applied.
 pub opaque type Schema(form, kind) {
-  Schema(code: String, title: String, typed: Bool)
+  Schema(code: String, title: String, typed: Bool, whole_project: Bool)
 }
 
 /// The form of a module rule's schema, made by `module`.
@@ -238,14 +261,46 @@ pub type ProjectForm
 /// module, as well as everything `Syntax` facts hold. Apply it right after
 /// `module` or `project`.
 pub fn typed(schema: Schema(form, Syntax)) -> Schema(form, Typed) {
-  Schema(code: schema.code, title: schema.title, typed: True)
+  let Schema(code:, title:, whole_project:, ..) = schema
+  Schema(code:, title:, typed: True, whole_project:)
+}
+
+/// Give the project rule every module of the project under `src/`, `test/`
+/// and `dev/`, linted or not, rather than only the lint set's. Its
+/// `per_module` function is called for each of them, in the order of
+/// their paths, and `facts.is_linted` tells which are linted. Its reports
+/// on a module that isn't linted are dropped, so it only reports on the
+/// lint set.
+///
+/// grice reads the rest of the project, and its foreign sources (the
+/// compiler's native files under those directories, ending in `.erl`,
+/// `.hrl`, `.ex`, `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`, `.mts`, `.cts` or
+/// `.tsx`), only when a rule of the run needs it. A file grice can't list,
+/// such as a dangling link, or a module of the lint set and what it
+/// imports that can't be read, fails the load, as in every run. When any
+/// other module or foreign source can't be read, a `.gleam` file isn't a
+/// module grice can name, or any module of the project doesn't parse, the
+/// lint set's included, the rule doesn't run, and a
+/// `grice/incomplete-project` note says why. With `typed`, in either
+/// order, the rule gets types for every module of the project.
+pub fn whole_project(
+  schema: Schema(ProjectForm, kind),
+) -> Schema(ProjectForm, kind) {
+  Schema(..schema, whole_project: True)
 }
 
 // The rule a schema becomes once it has something to run, reporting
 // warnings until `with_severity` says otherwise.
 fn from_schema(schema: Schema(form, kind), check: Check) -> Rule {
-  let Schema(code:, title:, typed:) = schema
-  Rule(code:, title:, severity: diagnostic.Warning, typed:, check:)
+  let Schema(code:, title:, typed:, whole_project:) = schema
+  Rule(
+    code:,
+    title:,
+    severity: diagnostic.Warning,
+    typed:,
+    whole_project:,
+    check:,
+  )
 }
 
 // Module rules
@@ -277,7 +332,7 @@ type Walk(context, kind) {
 
 /// Start a module rule with its code and title.
 pub fn module(code: String, title title: String) -> Schema(ModuleForm, Syntax) {
-  Schema(code:, title:, typed: False)
+  Schema(code:, title:, typed: False, whole_project: False)
 }
 
 /// Give a module rule the context its hooks thread through a module, and
@@ -467,11 +522,12 @@ pub fn project(
   code: String,
   title title: String,
 ) -> Schema(ProjectForm, Syntax) {
-  Schema(code:, title:, typed: False)
+  Schema(code:, title:, typed: False, whole_project: False)
 }
 
-/// Summarise each linted module. The modules are summarised in parallel, so
-/// `summarise` sees one module and nothing else.
+/// Summarise each linted module, or with `whole_project` each module of the
+/// project. The modules are summarised in parallel, so `summarise` sees one
+/// module and nothing else.
 pub fn per_module(
   schema: Schema(ProjectForm, kind),
   summarise: fn(ModuleFacts(kind)) -> summary,
@@ -482,7 +538,9 @@ pub fn per_module(
 /// Make the project rule a `Rule` that reports with `evaluate`. It gets
 /// every module's summary, keyed by module name in the order of the
 /// modules' paths, and returns each report keyed by the name of the module
-/// it's about, which must be one of the modules it was given.
+/// it's about, which must be one of the modules it was given. A report on a
+/// module that isn't linted, which only a `whole_project` rule is given,
+/// is dropped.
 pub fn final(
   rule: ProjectRule(summary, kind),
   evaluate: fn(List(#(String, summary))) -> List(#(String, Report)),

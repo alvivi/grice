@@ -87,6 +87,10 @@ pub fn missing_package_test() {
   snap_from_showcase("grice/missing-package", located: False)
 }
 
+pub fn incomplete_project_test() {
+  snap_from_showcase("grice/incomplete-project", located: False)
+}
+
 // Suppressions
 //
 // Suppressions that can't do their job.
@@ -145,10 +149,10 @@ pub fn the_showcase_shows_each_code_once_test() {
     |> list.sort(by: string.compare)
   assert codes
     == [
-      "grice/invalid-suppression", "grice/missing-package", "grice/parse-error",
-      "grice/unavailable-import", "grice/unavailable-import",
-      "grice/uninferred-module", "grice/untyped-definition",
-      "grice/unused-suppression",
+      "grice/incomplete-project", "grice/invalid-suppression",
+      "grice/missing-package", "grice/parse-error", "grice/unavailable-import",
+      "grice/unavailable-import", "grice/uninferred-module",
+      "grice/untyped-definition", "grice/unused-suppression",
     ]
 }
 

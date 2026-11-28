@@ -10,7 +10,7 @@ test_name: a_run_with_every_kind_of_gap_test
   "summary": {
     "errors": 1,
     "warnings": 3,
-    "notes": 5,
+    "notes": 6,
     "hidden": 1
   },
   "coverage": {
@@ -52,6 +52,16 @@ test_name: a_run_with_every_kind_of_gap_test
       {
         "kind": "missing-package",
         "package": "hexdep"
+      },
+      {
+        "kind": "incomplete-project",
+        "rules": [
+          "fixture/whole-project-view"
+        ],
+        "paths": [
+          "src/broken.gleam",
+          "test/app_test.gleam"
+        ]
       }
     ]
   },
@@ -85,6 +95,16 @@ test_name: a_run_with_every_kind_of_gap_test
         "The package `hexdep` is in `manifest.toml`, but `build/packages/hexdep/src` isn't a directory, so girard, the type inference grice uses, can't read its modules. Types that come from them may be incomplete."
       ],
       "hint": "Run `gleam deps download`."
+    },
+    {
+      "code": "grice/incomplete-project",
+      "severity": "note",
+      "title": "Can't see the whole project",
+      "location": null,
+      "message": [
+        "The rule `fixture/whole-project-view` sees every module of the project, but grice couldn't read all of it, so it didn't run: `src/broken.gleam` doesn't parse and `test/app_test.gleam` couldn't be read (No such file). A claim about the whole project can't rest on part of it."
+      ],
+      "hint": "If `gleam build` accepts a module that doesn't parse, glance, which grice reads Gleam code with, doesn't support its syntax yet, so please report it to glance. Check that each file that couldn't be read is there and that you can read it; a Gleam module must also be UTF-8."
     },
     {
       "code": "fixture/no-echo",

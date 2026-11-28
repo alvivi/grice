@@ -5,7 +5,9 @@
 //// `load_project` does the IO and hands what it found to `load`, which reads
 //// only through the `read` function it's given, so tests can pass a
 //// dictionary and an editor integration its unsaved buffers. Of the
-//// project's own sources, only the load set is read.
+//// project's own sources, only the load set is read, unless the scope is
+//// the whole project: then every module and foreign source under `src/`,
+//// `test/` and `dev/` is read too.
 ////
 //// A project also knows which of its modules and types are internal, from
 //// `internal_modules` in `gleam.toml`, the compiler's default patterns and
@@ -22,6 +24,7 @@ import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/pair
 import gleam/result
 import gleam/set.{type Set}
 import gleam/string
@@ -47,7 +50,11 @@ pub type Project {
     /// The project directory, as given to `load_project`.
     root: String,
     config: Config,
-    /// The load set, by module name.
+    /// How much of the project was read, and with the whole project, what
+    /// reading it found beyond the load set.
+    scope: Scope,
+    /// The load set, by module name: with `WholeProject`, every module of
+    /// the project that could be read.
     modules: Dict(String, Module),
     /// The names of the modules to lint, sorted by path.
     lint_set: List(String),
@@ -63,8 +70,44 @@ pub type Project {
     internal_modules: Set(String),
     /// The internal types of the load set's modules that parse, as they're
     /// compiled for the target, each `#(module, name)`: what
-    /// `type_names.internal_types` finds.
+    /// `type_names.internal_types` finds. Only the load set's, with either
+    /// scope.
     internal_types: Set(#(String, String)),
+  )
+}
+
+/// How much of the project `load` reads.
+pub type Load {
+  /// The lint set and the project modules it imports, transitively: the
+  /// load set. Nothing else of the project is opened.
+  LoadLintSet
+  /// The load set, then every other module under `src/`, `test/` and
+  /// `dev/`, and the project's foreign sources, for a rule that sees the
+  /// whole project. A file outside the load set that can't be read is
+  /// recorded in `WholeProject`'s `unread` rather than failing the load, a
+  /// `.gleam` file there that grice doesn't take for a module in its
+  /// `unnamed`, and a module there that doesn't parse keeps its error in
+  /// `parsed`, as an excluded module does.
+  LoadWholeProject
+}
+
+/// How much of the project a load read, as `Load` asked.
+pub type Scope {
+  /// The load set alone.
+  LintSet
+  /// The whole project, and what reading it found beyond the load set.
+  WholeProject(
+    /// Each module and foreign source outside the load set that couldn't
+    /// be read, as its root-relative path and why, sorted by path.
+    unread: List(#(String, String)),
+    /// Each `.gleam` file under the source directories that grice doesn't
+    /// take for a module, which the compiler might, as its spelling isn't
+    /// one grice reads or another path gives its name, sorted.
+    unnamed: List(String),
+    /// The words of the project's foreign sources that name each module,
+    /// by module name: see `foreign_mentions`. A module no foreign source
+    /// names has no entry.
+    foreign_mentions: Dict(String, Set(String)),
   )
 }
 
@@ -116,15 +159,19 @@ pub type LoadError {
 /// `paths` are the root-relative paths of the files under `src/`, `test/`
 /// and `dev/`. Those that aren't module paths are skipped, and when two
 /// paths give one module name, which the compiler rejects, the first is
-/// kept. `read` gives the source at a root-relative path and is
-/// called for load-set modules only.
+/// kept. `read` gives the bytes of the file at a root-relative path, or why
+/// it can't. With `LoadLintSet` it's called for load-set modules only; with
+/// `LoadWholeProject`, also for every other module and for each foreign source
+/// among `paths`. A module must be UTF-8, while a foreign source is read
+/// only for its ASCII words, in whatever encoding it's in.
 pub fn load(
   root root: String,
   config config: Config,
   paths paths: List(String),
-  read read: fn(String) -> Result(String, String),
+  read read: fn(String) -> Result(BitArray, String),
   dependencies dependencies: Dict(String, String),
   missing_dependencies missing_dependencies: List(Package),
+  scope requested: Load,
 ) -> Result(Project, LoadError) {
   let table = module_table(paths)
   use lint_set <- result.try(
@@ -137,18 +184,14 @@ pub fn load(
     config.target,
     dict.new(),
   ))
-  let lint_set = list.map(lint_set, fn(entry) { entry.0 })
-  let diagnostics =
-    list.filter_map(lint_set, fn(name) {
-      use module <- result.try(dict.get(modules, name))
-      parse_error(module)
-    })
   let internal_modules =
     dict.keys(table)
     |> list.filter(fn(name) {
       list.any(config.internal_modules, glob.matches_module(_, name))
     })
     |> set.from_list
+  // Only the load set's types, whatever the scope, so every rule gets the
+  // same answers as from a load of the lint set.
   let internal_types =
     dict.values(modules)
     |> list.filter_map(fn(module) {
@@ -156,9 +199,20 @@ pub fn load(
       #(module.name, for_target(syntax, config.target))
     })
     |> type_names.internal_types(internal_modules)
+  let #(modules, scope) = case requested {
+    LoadLintSet -> #(modules, LintSet)
+    LoadWholeProject -> load_rest(modules, table, paths, read, config.target)
+  }
+  let lint_set = list.map(lint_set, fn(entry) { entry.0 })
+  let diagnostics =
+    list.filter_map(lint_set, fn(name) {
+      use module <- result.try(dict.get(modules, name))
+      parse_error(module)
+    })
   Ok(Project(
     root:,
     config:,
+    scope:,
     modules:,
     lint_set:,
     dependencies:,
@@ -399,6 +453,18 @@ pub fn for_target(
   )
 }
 
+/// The module with the definitions of every target, each list in source
+/// order: `for_target` with nothing left out.
+pub fn for_every_target(module: glance.Module) -> glance.Module {
+  glance.Module(
+    imports: list.reverse(module.imports),
+    custom_types: list.reverse(module.custom_types),
+    type_aliases: list.reverse(module.type_aliases),
+    constants: list.reverse(module.constants),
+    functions: list.reverse(module.functions),
+  )
+}
+
 // The definitions compiled for `target`, put back in source order: glance
 // builds every list in reverse.
 fn on_target(
@@ -415,7 +481,7 @@ fn on_target(
 fn load_modules(
   queue: List(#(String, String)),
   table: Dict(String, String),
-  read: fn(String) -> Result(String, String),
+  read: fn(String) -> Result(BitArray, String),
   target: config.Target,
   loaded: Dict(String, Module),
 ) -> Result(Dict(String, Module), LoadError) {
@@ -426,7 +492,7 @@ fn load_modules(
         load_modules(rest, table, read, target, loaded)
       })
       use source <- result.try(
-        read(path) |> result.map_error(CannotRead(path, _)),
+        read_source(read, path) |> result.map_error(CannotRead(path, _)),
       )
       let module = parse_module(name, path, source, target)
       let imported =
@@ -443,6 +509,17 @@ fn load_modules(
       )
     }
   }
+}
+
+// The text of the module at `path`, or why it can't be read: `read` failed,
+// or the module isn't UTF-8.
+fn read_source(
+  read: fn(String) -> Result(BitArray, String),
+  path: String,
+) -> Result(String, String) {
+  use bytes <- result.try(read(path))
+  line_index.decode(bytes)
+  |> result.replace_error(simplifile.describe_error(simplifile.NotUtf8))
 }
 
 // The tree is corrected before anything reads it, so the target view,
@@ -511,6 +588,159 @@ fn is_on_target(
     }
   })
 }
+
+// The whole project
+//
+// After the load set, every other module of the table is read and parsed,
+// in path order, and every foreign source is read for the words it holds.
+// A file that can't be read is recorded rather than failing the load: it
+// limits what a whole-project rule can see, not the run.
+
+/// The file extensions of the foreign sources a whole-project load reads:
+/// the compiler's native files, which it compiles or copies beside the
+/// project's own (`is_native_file_extension` in the compiler's
+/// `compiler-core/src/io.rs`, at v1.19.2).
+const foreign_extensions = [
+  ".erl", ".hrl", ".ex", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".mts", ".cts",
+  ".tsx",
+]
+
+/// Whether the root-relative `path` is a foreign source of the project: a
+/// file under `src/`, `test/` or `dev/` ending in `.erl`, `.hrl`, `.ex`,
+/// `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`, `.mts`, `.cts` or `.tsx`.
+pub fn is_foreign_source(path: String) -> Bool {
+  is_in_source_directory(path)
+  && list.any(foreign_extensions, string.ends_with(path, _))
+}
+
+fn is_in_source_directory(path: String) -> Bool {
+  case path {
+    "src/" <> _ | "test/" <> _ | "dev/" <> _ -> True
+    _ -> False
+  }
+}
+
+/// The module's Erlang name, as the compiler writes it: its name with each
+/// `/` turned into `@`, such as `app@internal@parser`.
+pub fn erlang_name(module: String) -> String {
+  string.replace(module, "/", "@")
+}
+
+/// The name of the module's JavaScript file, such as `parser.mjs` for
+/// `app/internal/parser`: what an import from beside it names it by.
+pub fn javascript_file(module: String) -> String {
+  { string.split(module, "/") |> list.last |> result.unwrap(module) } <> ".mjs"
+}
+
+// Every module of `table` that `modules` doesn't hold yet, read and
+// parsed in path order, and the foreign sources among `paths`: the
+// modules, and the `WholeProject` scope with what couldn't be read and the
+// `.gleam` files that aren't modules of the table, each sorted by path,
+// and the foreign mentions, among the names of every loaded module's
+// functions.
+fn load_rest(
+  modules: Dict(String, Module),
+  table: Dict(String, String),
+  paths: List(String),
+  read: fn(String) -> Result(BitArray, String),
+  target: config.Target,
+) -> #(Dict(String, Module), Scope) {
+  let #(loaded, unread_modules) =
+    dict.to_list(table)
+    |> list.filter(fn(entry) { !dict.has_key(modules, entry.0) })
+    |> list.sort(fn(left, right) { string.compare(left.1, right.1) })
+    |> list.map(fn(entry) {
+      let #(name, path) = entry
+      read_source(read, path)
+      |> result.map(fn(source) {
+        #(name, parse_module(name, path, source, target))
+      })
+      |> result.map_error(pair.new(path, _))
+    })
+    |> result.partition
+  let modules = dict.merge(modules, dict.from_list(loaded))
+  let #(sources, unread_sources) =
+    paths
+    |> list.filter(is_foreign_source)
+    |> list.unique
+    |> list.sort(string.compare)
+    |> list.map(fn(path) { read(path) |> result.map_error(pair.new(path, _)) })
+    |> result.partition
+  // A `.gleam` file under the source directories that isn't a module of the
+  // table, as its name has a spelling grice doesn't read, or another path
+  // gives it, may still be one the compiler builds.
+  let unnamed =
+    paths
+    |> list.filter(fn(path) {
+      string.ends_with(path, ".gleam")
+      && is_in_source_directory(path)
+      && result.try(module_name(path), dict.get(table, _)) != Ok(path)
+    })
+    |> list.sort(string.compare)
+  let unread =
+    list.append(unread_modules, unread_sources)
+    |> list.sort(fn(left, right) { string.compare(left.0, right.0) })
+  let functions =
+    dict.values(modules)
+    |> list.flat_map(fn(module) {
+      case module.parsed {
+        Ok(syntax) ->
+          list.map(syntax.functions, fn(function) { function.definition.name })
+        Error(_) -> []
+      }
+    })
+    |> set.from_list
+  #(
+    modules,
+    WholeProject(
+      unread:,
+      unnamed:,
+      foreign_mentions: foreign_mentions(sources, dict.keys(table), functions),
+    ),
+  )
+}
+
+/// For each of `modules`, the words of the foreign sources among `sources`,
+/// each the bytes of one, that name it and that are among `names`, by
+/// module name. A source names the module `a/b/c` when it holds its Erlang
+/// name, `a@b@c`, as a word, or its JavaScript file name, `c.mjs`, with no
+/// directory, since an import from beside it carries none. A word is a
+/// longest run of ASCII letters, digits, `_` and `@`, so an Erlang module
+/// name is one word, and a Gleam function's name is a word wherever foreign
+/// code calls it. A module no source names has no entry.
+pub fn foreign_mentions(
+  sources: List(BitArray),
+  modules: List(String),
+  names: Set(String),
+) -> Dict(String, Set(String)) {
+  // Modules in different directories can share a JavaScript file name.
+  let by_erlang_name =
+    list.map(modules, fn(module) { #(erlang_name(module), module) })
+    |> dict.from_list
+  let by_file = list.group(modules, javascript_file)
+  use mentions, source <- list.fold(sources, dict.new())
+  let #(words, before_mjs) = foreign_words(source)
+  let named =
+    list.append(
+      list.filter_map(words, dict.get(by_erlang_name, _)),
+      list.flat_map(before_mjs, fn(word) {
+        dict.get(by_file, word <> ".mjs") |> result.unwrap([])
+      }),
+    )
+  use <- bool.guard(when: named == [], return: mentions)
+  let found = list.filter(words, set.contains(names, _)) |> set.from_list
+  use mentions, module <- list.fold(named, mentions)
+  dict.upsert(mentions, module, fn(earlier) {
+    set.union(option.unwrap(earlier, set.new()), found)
+  })
+}
+
+// Each longest run of ASCII letters, digits, `_` and `@` in `source`, and
+// each one of them that `.mjs` follows, each once. Every byte of a word is
+// ASCII, so any other byte ends one, whatever the source's encoding.
+@external(erlang, "grice_ffi", "foreign_words")
+@external(javascript, "../../grice_ffi.mjs", "foreign_words")
+fn foreign_words(source: BitArray) -> #(List(String), List(String))
 
 // Parse errors
 //
@@ -632,9 +862,9 @@ fn token_span(source: LineIndex, text: String, offset: Int) -> diagnostic.Span {
 
 /// Load the project in the directory `root`: read its configuration and
 /// manifest, read every dependency's sources, walk `src/`, `test/` and
-/// `dev/`, and `load` the result, reading files under `root`.
-pub fn load_project(root: String) -> Result(Project, LoadError) {
-  load_project_with(root, installed: fn() { installed(root) })
+/// `dev/`, and `load` the result with `scope`, reading files under `root`.
+pub fn load_project(root: String, scope: Load) -> Result(Project, LoadError) {
+  load_project_with(root, scope, installed: fn() { installed(root) })
 }
 
 /// Load the project in the directory `root` as `load_project` does, with
@@ -644,6 +874,7 @@ pub fn load_project(root: String) -> Result(Project, LoadError) {
 @internal
 pub fn load_project_with(
   root: String,
+  scope: Load,
   installed installed: fn() ->
     Result(#(Dict(String, String), List(Package)), LoadError),
 ) -> Result(Project, LoadError) {
@@ -662,11 +893,12 @@ pub fn load_project_with(
     config:,
     paths:,
     read: fn(path) {
-      read_text(join(root, path))
+      simplifile.read_bits(join(root, path))
       |> result.map_error(simplifile.describe_error)
     },
     dependencies:,
     missing_dependencies:,
+    scope:,
   )
 }
 

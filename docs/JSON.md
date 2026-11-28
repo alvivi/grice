@@ -18,7 +18,10 @@ time or on the working directory, unless `--stats` adds its `stats`.
 
 This is version 1 of the schema, in the document's `version`. Within
 version 1, fields are only ever added, so a consumer should ignore fields
-it doesn't know. Removing or changing a field means a new version.
+it doesn't know. Removing or changing a field means a new version. Kinds of
+coverage gap are added the same way: a gap of a kind a consumer doesn't
+know is still a gap, so `complete` is `false`, and its diagnostic says what
+it is.
 
 ## The document
 
@@ -59,7 +62,7 @@ The top-level keys come in this order:
 | `modules` | The number of modules in the lint set. |
 | `parsed` | How many of them parse. |
 | `types` | `{"requested": false}` when no rule of the run needs types. Otherwise `{"requested": true, "full", "partial", "none"}`: how many parsed modules [girard](https://hexdocs.pm/girard) typed completely, with gaps, or not at all. |
-| `gaps` | Everything the run couldn't analyse, each matching one diagnostic. |
+| `gaps` | Everything the run couldn't analyse, each matching one diagnostic. The `types` counts are the lint set's, but with a typed rule that sees the whole project, a type gap can name a module outside it. |
 
 Each gap has a `kind` and the fields of that kind:
 
@@ -70,8 +73,14 @@ Each gap has a `kind` and the fields of that kind:
 | `uninferred-module` | `path` | `grice/uninferred-module` |
 | `unavailable-import` | `path`, `module`, `cause` | `grice/unavailable-import` |
 | `missing-package` | `package` | `grice/missing-package` |
+| `incomplete-project` | `rules`, `paths` | `grice/incomplete-project` |
 
-The `cause` of an unavailable import is `project-module-unparsable`,
+Every field is a string, except those of an incomplete project, which are
+lists of strings: `rules`, the codes of the rules that see the whole
+project, which didn't run, and `paths`, the files of the project they
+needed that couldn't be read, don't parse, or are `.gleam` files grice
+can't take for a module, sorted. The `cause` of an
+unavailable import is `project-module-unparsable`,
 `project-module-unusable`, `dependency-unparsable` or `no-such-module`.
 
 ## Diagnostics
@@ -145,7 +154,8 @@ goes to standard error as text, since the format may be what's wrong.
 ```
 
 `modules.loaded` counts the project modules read, which is the lint set and
-every project module it imports, and `modules.dependencies` the dependency
+every project module it imports, or every module of the project when a rule
+sees the whole project, and `modules.dependencies` the dependency
 modules. `types` says whether [girard](https://hexdocs.pm/girard) inferred
 types. `load` runs from before reading the project to after it, `lint` from
 there to after the rules ran, and `total` from the start of the run to after

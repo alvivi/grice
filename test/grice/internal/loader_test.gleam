@@ -1,11 +1,13 @@
-//// Tests for loading a project. Discovery, the load set, parse errors, the
-//// internal modules and types, and the manifest are tested in memory, through `load` with a dictionary as
-//// the file system. The IO tests then write small projects to disk and load
+//// Tests for loading a project. Discovery, the load set, the whole
+//// project, parse errors, the internal modules and types, and the manifest
+//// are tested in memory, through `load` with a dictionary as the file
+//// system. The IO tests then write small projects to disk and load
 //// them with `load_project`: the main project, then the directory walk with
 //// its links and odd source directories. The manifests Gleam wrote, used by
 //// the dependency tests, are at the end.
 
 import glance
+import gleam/bit_array
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -180,6 +182,162 @@ pub fn load_fails_on_an_imported_module_it_cant_read_test() {
       ["src/app/unread.gleam"],
     )
     == Error(CannotRead("src/app/unread.gleam", "No such file"))
+}
+
+// The whole project
+
+// A project with a module of each source directory, an excluded module
+// nothing imports, a module the lint set imports, foreign sources and a
+// file that's neither: what a whole-project load reads, and a load of the
+// lint set never opens.
+const every_file = [
+  #("dev/tool.gleam", "pub fn main() { 1 }\n"),
+  #("src/app.gleam", "import app/imported\npub fn main() { imported.f() }\n"),
+  #("src/app/imported.gleam", "pub fn f() { 1 }\n"),
+  #("src/app/excluded.gleam", "pub fn g() { 2 }\n"),
+  #(
+    "src/app_ffi.erl",
+    "-module(app_ffi).\n-export([call/0]).\ncall() -> app@excluded:g().\n",
+  ),
+  #("src/notes.txt", "Not a source."),
+  #("test/app_test.gleam", "pub fn main_test() { 1 }\n"),
+  #("test/helper.mjs", "import { g } from \"../app/excluded.mjs\";\n"),
+]
+
+const exclude_both =
+  "[tools.grice]\nexclude = [\"src/app/excluded.gleam\", \"src/app/imported.gleam\"]\n"
+
+pub fn load_of_the_lint_set_reads_only_the_load_set_test() {
+  let load_set = ["src/app.gleam", "src/app/imported.gleam"]
+  let #(result, reads) = load_reading(loader.LoadLintSet, load_set)
+  let assert Ok(project) = result
+  assert reads == 2
+  assert project.scope == loader.LintSet
+  assert loaded(project) == ["app", "app/imported"]
+}
+
+// Every module and foreign source, once each. The Erlang source names
+// `app/excluded` by its Erlang name, and the JavaScript one by its file
+// name; the directory in its import holds `app`, the Erlang name of the
+// module `app`.
+pub fn load_of_the_whole_project_reads_every_module_and_foreign_source_test() {
+  let sources =
+    list.map(every_file, fn(file) { file.0 })
+    |> list.filter(fn(path) { path != "src/notes.txt" })
+  let #(result, reads) = load_reading(loader.LoadWholeProject, sources)
+  let assert Ok(project) = result
+  assert reads == 7
+  let assert loader.WholeProject(unread:, unnamed:, foreign_mentions:) =
+    project.scope
+  assert project.lint_set == ["app"]
+  assert loaded(project)
+    == ["app", "app/excluded", "app/imported", "app_test", "tool"]
+  assert unread == []
+  assert unnamed == []
+  assert project.diagnostics == []
+  // Of their words, only the project's function names are kept: `g`, and
+  // not the Erlang function `call`.
+  assert foreign_mentions
+    == dict.from_list([
+      #("app", set.from_list(["g"])),
+      #("app/excluded", set.from_list(["g"])),
+    ])
+}
+
+// A module or foreign source outside the load set that can't be read is
+// recorded, and a module that doesn't parse there keeps its error with no
+// diagnostic, as an excluded module does. What the lint set needs fails
+// the load as before.
+pub fn load_of_the_whole_project_records_what_it_cant_read_test() {
+  // A `.gleam` file grice doesn't take for a module may be one the
+  // compiler builds, which a load of the lint set doesn't care about.
+  let files = [
+    #("src/app.gleam", "pub fn main() { 1 }\n"),
+    #("test/broken_test.gleam", "pub fn ("),
+    #("test/extra\\client.gleam", "pub fn main() { 1 }\n"),
+  ]
+  let assert Ok(project) =
+    load_scoped(
+      "",
+      files,
+      ["test/gone_test.gleam", "src/app_ffi.erl"],
+      loader.LoadWholeProject,
+    )
+  let assert loader.WholeProject(unread:, unnamed:, ..) = project.scope
+  assert unread
+    == [
+      #("src/app_ffi.erl", "No such file"),
+      #("test/gone_test.gleam", "No such file"),
+    ]
+  assert unnamed == ["test/extra\\client.gleam"]
+  let assert Ok(lint_set) = load_scoped("", files, [], loader.LoadLintSet)
+  assert lint_set.scope == loader.LintSet
+  assert loaded(project) == ["app", "broken_test"]
+  let assert Ok(Module(parsed: Error(_), ..)) =
+    dict.get(project.modules, "broken_test")
+  assert project.diagnostics == []
+  assert load_scoped(
+      "",
+      [#("src/app.gleam", "import app/gone\n")],
+      ["src/app/gone.gleam"],
+      loader.LoadWholeProject,
+    )
+    == Error(CannotRead("src/app/gone.gleam", "No such file"))
+}
+
+// The compiler's native files.
+pub fn foreign_sources_are_erlang_and_javascript_files_test() {
+  let foreign = [
+    "src/a.erl", "src/a.hrl", "src/a.ex", "src/a.js", "src/a.mjs", "src/a.cjs",
+    "test/a.jsx", "test/a.ts", "dev/a.mts", "dev/a.cts", "dev/deep/a.tsx",
+  ]
+  let other = [
+    "src/a.gleam", "src/a.exs", "src/a.json", "priv/a.mjs", "a.erl", "src/a.d",
+  ]
+  assert list.all(foreign, loader.is_foreign_source)
+  assert !list.any(other, loader.is_foreign_source)
+}
+
+// A source names a module by its Erlang name as a whole word, or by its
+// JavaScript file name with no directory, and gives it the words it holds
+// that are function names. A name inside a longer word names nothing, and
+// a word that's the Erlang name of a module of one segment, such as `app`
+// in a path, names that module.
+pub fn foreign_mentions_read_whole_words_test() {
+  let modules = ["app/internal/parser", "app/view", "app", "app/other"]
+  let names =
+    set.from_list(["call", "parse_line", "render", "one", "two", "unnamed"])
+  let mentions =
+    loader.foreign_mentions(
+      [
+        <<"call() -> 'app@internal@parser':parse_line(<<\"é\">>).">>,
+        <<"import { render$ } from \"../../app/view.mjs\";">>,
+        <<"my_app@other is no name, nor is xview.mjs or appendix">>,
+        // A byte that isn't UTF-8 ends a word like any other.
+        <<"call", 255, "app@other">>,
+      ],
+      modules,
+      names,
+    )
+  let words = fn(module) {
+    let assert Ok(found) = dict.get(mentions, module)
+    set.to_list(found) |> list.sort(string.compare)
+  }
+  assert dict.keys(mentions) |> list.sort(string.compare)
+    == ["app", "app/internal/parser", "app/other", "app/view"]
+  assert words("app/internal/parser") == ["call", "parse_line"]
+  assert words("app/view") == ["render"]
+  assert words("app") == ["render"]
+  assert words("app/other") == ["call"]
+  // The words of every source that names a module are gathered.
+  let assert Ok(both) =
+    loader.foreign_mentions(
+      [<<"app@view one">>, <<"two view.mjs">>],
+      modules,
+      names,
+    )
+    |> dict.get("app/view")
+  assert set.to_list(both) |> list.sort(string.compare) == ["one", "two"]
 }
 
 // Parse errors
@@ -657,7 +815,7 @@ pub fn load_project_loads_the_main_project_test() {
   // Excluded and imported by nothing, so it's never read.
   support.write_not_utf8(directory <> "/app/src/app/generated/blob.gleam")
   let assert Ok(root) = simplifile.resolve(directory <> "/app")
-  let assert Ok(project) = loader.load_project(root)
+  let assert Ok(project) = loader.load_project(root, loader.LoadLintSet)
   assert project.root == root
   assert project.lint_set == ["app"]
   assert loaded(project) == ["app", "app/generated/schema"]
@@ -693,7 +851,8 @@ pub fn load_project_reads_an_absolute_local_dependency_test() {
         <> path
         <> "\" },\n]\n",
     )
-  let assert Ok(project) = loader.load_project(directory <> "/app")
+  let assert Ok(project) =
+    loader.load_project(directory <> "/app", loader.LoadLintSet)
   assert project.dependencies == dict.from_list([#("absdep", localdep_source)])
   assert project.missing_dependencies == []
   support.cleanup(directory)
@@ -712,7 +871,7 @@ pub fn load_project_reads_a_drive_like_local_path_under_the_root_test() {
     #("src/app.gleam", module_source),
     #("C:/dep/src/dep.gleam", localdep_source),
   ])
-  let assert Ok(project) = loader.load_project(directory)
+  let assert Ok(project) = loader.load_project(directory, loader.LoadLintSet)
   assert project.dependencies == dict.from_list([#("dep", localdep_source)])
   assert project.missing_dependencies == []
   support.cleanup(directory)
@@ -724,7 +883,7 @@ pub fn load_project_needs_a_manifest_test() {
     #("gleam.toml", "name = \"app\"\n"),
     #("src/app.gleam", ""),
   ])
-  assert loader.load_project(directory)
+  assert loader.load_project(directory, loader.LoadLintSet)
     == Error(CannotRead("manifest.toml", "No such file or directory"))
   support.cleanup(directory)
 }
@@ -772,7 +931,7 @@ pub fn load_project_follows_links_and_enters_each_directory_once_test() {
   let assert Ok(listed) = simplifile.read_directory(directory <> "/src")
   let assert Ok(first) =
     list.find(listed, fn(entry) { entry == "x" || entry == "y" })
-  let assert Ok(project) = loader.load_project(directory)
+  let assert Ok(project) = loader.load_project(directory, loader.LoadLintSet)
   assert project.lint_set
     == ["a/one", "a/two", "app", "shared/lib", first <> "/b"]
   support.cleanup(directory)
@@ -799,7 +958,7 @@ pub fn load_project_enters_a_directory_through_its_shallowest_link_test() {
       #("src/z/far/deep", "../../../elsewhere/t"),
     ],
   )
-  let assert Ok(project) = loader.load_project(directory)
+  let assert Ok(project) = loader.load_project(directory, loader.LoadLintSet)
   assert project.lint_set == ["a/near/t", "app", "z/near/u"]
   support.cleanup(directory)
 }
@@ -821,7 +980,7 @@ pub fn load_project_walks_each_source_directory_separately_test() {
     ],
     [#("src/up", "..")],
   )
-  let assert Ok(project) = loader.load_project(directory)
+  let assert Ok(project) = loader.load_project(directory, loader.LoadLintSet)
   assert project.lint_set == ["app", "up/test/app_test", "app_test"]
   support.cleanup(directory)
 }
@@ -833,7 +992,7 @@ pub fn load_project_treats_source_directories_that_arent_directories_as_empty_te
     [#("dev", "a regular file\n"), ..minimal],
     [#("test", "nowhere")],
   )
-  let assert Ok(project) = loader.load_project(directory)
+  let assert Ok(project) = loader.load_project(directory, loader.LoadLintSet)
   assert project.lint_set == ["app"]
   support.cleanup(directory)
 }
@@ -843,7 +1002,7 @@ pub fn load_project_fails_on_a_dangling_link_test() {
   support.write_linked_fixture(directory, minimal, [
     #("src/.#app.gleam", "nowhere"),
   ])
-  assert loader.load_project(directory)
+  assert loader.load_project(directory, loader.LoadLintSet)
     == Error(CannotRead("src/.#app.gleam", "No such file or directory"))
   support.cleanup(directory)
 }
@@ -857,7 +1016,7 @@ pub fn load_project_fails_on_a_directory_it_cant_read_test() {
     ..minimal
   ])
   support.with_directory_mode(directory <> "/src/locked", 0o000, fn() {
-    assert loader.load_project(directory)
+    assert loader.load_project(directory, loader.LoadLintSet)
       == Error(CannotRead("src/locked", "Permission denied"))
   })
   support.cleanup(directory)
@@ -889,18 +1048,45 @@ fn load_files_with_unreadable(
   files: List(#(String, String)),
   unreadable: List(String),
 ) -> Result(Project, LoadError) {
-  let assert Ok(parsed) = config.parse(toml)
-  let sources = dict.from_list(files)
-  loader.load(
-    root: "app",
-    config: parsed,
-    paths: list.append(list.map(files, fn(file) { file.0 }), unreadable),
-    read: fn(path) {
-      dict.get(sources, path) |> result.replace_error("No such file")
-    },
-    dependencies: dict.new(),
-    missing_dependencies: [],
-  )
+  load_scoped(toml, files, unreadable, loader.LoadLintSet)
+}
+
+// Load `every_file`, with its two excluded modules, with `scope`, and how
+// many reads it made. Reading a path not in `allowed` panics.
+fn load_reading(
+  scope: loader.Load,
+  allowed: List(String),
+) -> #(Result(Project, LoadError), Int) {
+  let assert Ok(parsed) = config.parse(exclude_both)
+  let sources = dict.from_list(every_file)
+  let reads = support.new_counter()
+  let loaded =
+    loader.load(
+      root: "app",
+      config: parsed,
+      paths: list.map(every_file, fn(file) { file.0 }),
+      read: fn(path) {
+        support.increment(reads)
+        let assert True = list.contains(allowed, path) as { "read " <> path }
+        dict.get(sources, path)
+        |> result.map(bit_array.from_string)
+        |> result.replace_error("No such file")
+      },
+      dependencies: dict.new(),
+      missing_dependencies: [],
+      scope:,
+    )
+  #(loaded, support.count(reads))
+}
+
+// Load as `load_files_with_unreadable` does, with `scope`.
+fn load_scoped(
+  toml: String,
+  files: List(#(String, String)),
+  unreadable: List(String),
+  scope: loader.Load,
+) -> Result(Project, LoadError) {
+  support.load_with(toml, files, [], scope:, unreadable:)
 }
 
 // The names of the loaded modules, sorted.

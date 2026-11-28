@@ -1,7 +1,8 @@
 //// The command line: a whole run as a pure function of its inputs.
 ////
-//// `execute` parses the arguments, loads the project at the root, lints
-//// it, renders the result and picks the exit code, with every effect
+//// `execute` parses the arguments, loads the project at the root, as much
+//// of it as the rules need, lints it, renders the result and picks the
+//// exit code, with every effect
 //// passed in: the environment as a value, the loader and the clock as
 //// functions. `grice.run` gathers them, prints the outcome and exits, and
 //// tests pass a project in memory and a clock that counts.
@@ -20,7 +21,7 @@ import gleam/set.{type Set}
 import gleam/string
 import grice/coverage
 import grice/diagnostic.{type Diagnostic}
-import grice/internal/loader.{type LoadError, type Project}
+import grice/internal/loader.{type Load, type LoadError, type Project}
 import grice/internal/path
 import grice/internal/render/human.{type RenderError}
 import grice/internal/render/json
@@ -55,12 +56,13 @@ pub type Outcome {
 }
 
 /// Run grice with `arguments` and `rules`. `load` reads the project at a
-/// root, and `sample` reads the clock and the reduction count: at the
+/// root, with the whole project when a rule sees it all and the load set
+/// otherwise, and `sample` reads the clock and the reduction count: at the
 /// start, before and after loading, and after linting, for `--stats`.
 pub fn execute(
   arguments: List(String),
   environment: Environment,
-  load: fn(String) -> Result(Project, LoadError),
+  load: fn(String, Load) -> Result(Project, LoadError),
   rules: List(Rule),
   sample: fn() -> Sample,
 ) -> Outcome {
@@ -106,7 +108,7 @@ type Failure {
 fn run(
   options: Options,
   environment: Environment,
-  load load: fn(String) -> Result(Project, LoadError),
+  load load: fn(String, Load) -> Result(Project, LoadError),
   rules rules: List(Rule),
   sample sample: fn() -> Sample,
   start start: Sample,
@@ -135,7 +137,7 @@ fn complete(
   options: Options,
   environment: Environment,
   format: Format,
-  load load: fn(String) -> Result(Project, LoadError),
+  load load: fn(String, Load) -> Result(Project, LoadError),
   rules rules: List(Rule),
   sample sample: fn() -> Sample,
   start start: Sample,
@@ -146,7 +148,7 @@ fn complete(
   )
   let before_load = sample()
   use project <- result.try(
-    load(root)
+    load(root, runner.scope(rules))
     |> result.map_error(fn(error) { Failure(Some(root), load_error(error)) }),
   )
   let after_load = sample()

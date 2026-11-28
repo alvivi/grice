@@ -52,7 +52,8 @@ pub fn order_walks_the_lint_set_in_order_and_skips_what_girard_cant_get_test() {
 
 pub fn infer_types_project_modules_without_the_resolver_test() {
   let project = support.project(chain_toml, chain, [#("dep/thing", thing)])
-  let types = typing.infer(project, dependencies_only(project))
+  let types =
+    typing.infer(project, dependencies_only(project), project.lint_set)
   assert dict.keys(types) |> list.sort(string.compare) == ["a", "c"]
   let thing_type = girard.Named("dep/thing", "Thing", [])
   let assert Ok(a) = dict.get(types, "a")
@@ -87,7 +88,8 @@ pub fn resolver_answers_for_dependency_modules_only_test() {
 pub fn imports_that_cross_on_different_targets_type_on_erlang_test() {
   let project = support.project("", support.crossed, [])
   assert order(project) == ["b", "a"]
-  let types = typing.infer(project, dependencies_only(project))
+  let types =
+    typing.infer(project, dependencies_only(project), project.lint_set)
   let assert Ok(a) = dict.get(types, "a")
   let assert Ok(b) = dict.get(types, "b")
   assert scheme_of(a, "from_other") == girard.Fn([], girard.Named("b", "B", []))
@@ -100,7 +102,8 @@ pub fn imports_that_cross_on_different_targets_type_on_javascript_test() {
   let project =
     support.project("target = \"javascript\"\n", support.crossed, [])
   assert order(project) == ["a", "b"]
-  let types = typing.infer(project, dependencies_only(project))
+  let types =
+    typing.infer(project, dependencies_only(project), project.lint_set)
   let assert Ok(a) = dict.get(types, "a")
   let assert Ok(b) = dict.get(types, "b")
   assert scheme_of(b, "from_other") == girard.Fn([], girard.Named("a", "A", []))
@@ -197,7 +200,7 @@ pub fn skipped_definitions_are_located_in_source_order_test() {
 
 // The names of the modules in the order girard gets them.
 fn order(project: Project) -> List(String) {
-  list.map(typing.order(project), fn(entry) { entry.0 })
+  list.map(typing.order(project, project.lint_set), fn(entry) { entry.0 })
 }
 
 // The project's resolver, failing the test when it's asked for a project
@@ -216,7 +219,8 @@ fn dependencies_only(project: Project) -> girard.Resolver {
 fn app_types(toml: String, files: List(#(String, String))) -> ModuleTypes {
   let project = support.project(toml, files, [])
   let assert Ok(app) =
-    typing.infer(project, dependencies_only(project)) |> dict.get("app")
+    typing.infer(project, dependencies_only(project), project.lint_set)
+    |> dict.get("app")
   app
 }
 

@@ -33,7 +33,11 @@ the default configuration, which lints `src/` on Erlang.
 the configuration: grice reads its `target`, its `name` and
 `internal_modules`, and its `[tools.grice]` table. Without a `name`, no
 module is internal unless `internal_modules` says so. Every other file is a
-module under `src/`, `test/` or `dev/`. This test
+module under `src/`, `test/` or `dev/`, or a foreign source there: one of
+the compiler's native files, ending in `.erl`, `.hrl`, `.ex`, `.js`,
+`.mjs`, `.cjs`, `.jsx`, `.ts`, `.mts`, `.cts` or `.tsx`, which grice reads
+only in a run with a rule built with
+`rule.whole_project`, and no public fact shows. This test
 checks that an excluded module isn't linted, even though the linted module
 imports it:
 
@@ -50,12 +54,17 @@ pub fn no_echo_skips_generated_code_test() {
 ```
 
 A path grice would skip panics, so a typo can't leave code that no rule
-sees. That's a path outside `src/`, `test/` and `dev/`, one that isn't a
-valid module name, a path given twice, or two paths that give one module
-name, such as `src/app.gleam` and `test/app.gleam`.
+sees. That's a path outside `src/`, `test/` and `dev/`, one that is neither
+a valid module name nor a foreign source, a path given twice, or two paths
+that give one module name, such as `src/app.gleam` and `test/app.gleam`.
 
 `testing.run(fixture, rules)` runs the rules over the fixture. A rule that
-panics panics through `run`.
+panics panics through `run`. When a rule of the run is built with
+`rule.whole_project`, the whole fixture is loaded, as `gleam run` loads a
+project for one: that rule also gets the modules outside the lint set, such
+as those under `test/` and `dev/`. A module that doesn't parse there stops
+that rule with a `grice/incomplete-project` note rather than failing the
+run.
 
 ## Checking a run
 

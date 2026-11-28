@@ -2,7 +2,7 @@
 -module(grice_ffi).
 
 -export([parallel_map/2, variable/1, stdout_is_terminal/0, milliseconds/0,
-         reductions/0, exit/1, counts_code_units/0]).
+         reductions/0, exit/1, counts_code_units/0, foreign_words/1]).
 
 %% Parallel map
 %%
@@ -153,3 +153,40 @@ exit(Code) ->
 %% glexer counts bytes on Erlang.
 counts_code_units() ->
     false.
+
+%% Foreign sources
+%%
+%% The words of a foreign source, for `grice/internal/loader', split by the
+%% runtime rather than byte by byte in Gleam: a source is often as large as
+%% the project's Gleam code.
+
+%% `{Words, Names}': each longest run of ASCII letters, digits, `_' and `@'
+%% in the bytes of `Source', and each such run that `.mjs' follows, each
+%% once. Any other byte ends a run, whatever the source's encoding.
+foreign_words(Source) ->
+    Separators = [<<Byte>> || Byte <- lists:seq(0, 255), not is_word_byte(Byte)],
+    Words = binary:split(Source, binary:compile_pattern(Separators),
+                         [global, trim_all]),
+    Names = [Name || {Position, _} <- binary:matches(Source, <<".mjs">>),
+                     Name <- [word_before(Source, Position, Position)],
+                     Name =/= <<>>],
+    {unique(Words), unique(Names)}.
+
+%% Each item once, in no particular order: a map's keys, which is cheaper
+%% than sorting a list that still holds every repeated word.
+unique(Items) ->
+    maps:keys(maps:from_keys(Items, [])).
+
+%% The run of word bytes that ends at `End', found by walking back from it.
+word_before(Source, Start, End) when Start > 0 ->
+    case is_word_byte(binary:at(Source, Start - 1)) of
+        true -> word_before(Source, Start - 1, End);
+        false -> binary:part(Source, Start, End - Start)
+    end;
+word_before(Source, Start, End) ->
+    binary:part(Source, Start, End - Start).
+
+is_word_byte(Byte) ->
+    (Byte >= $a andalso Byte =< $z) orelse (Byte >= $A andalso Byte =< $Z)
+        orelse (Byte >= $0 andalso Byte =< $9) orelse Byte =:= $_
+        orelse Byte =:= $@.

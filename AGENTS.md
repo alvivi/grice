@@ -65,23 +65,23 @@ notice.
 
 | File | Responsibility |
 |---|---|
-| `src/grice.gleam` | **Exists:** entry points: `main()`, which runs `rules.default()`, `run(rules)` for a client's own set, and the library API: `load_project`, `lint`, `diagnostics`, `coverage` and `render` |
-| `src/grice/coverage.gleam` | **Exists:** the coverage of a run and its gaps, public so tools can pattern-match on them |
-| `src/grice/rule.gleam` | **Exists:** module and project rule builders, reports and severities |
+| `src/grice.gleam` | **Exists:** entry points: `main()`, which runs `rules.default()`, `run(rules)` for a client's own set, and the library API: `load_project`, `load_whole_project`, `lint`, `diagnostics`, `coverage` and `render` |
+| `src/grice/coverage.gleam` | **Exists:** the coverage of a run and its gaps, an incomplete whole project among them, public so tools can pattern-match on them |
+| `src/grice/rule.gleam` | **Exists:** module and project rule builders, the `typed` and `whole_project` flags, reports and severities |
 | `src/grice/rules.gleam` | **Exists:** the built-in rules: `default()`, the set `main()` runs, `simplify()` and `library()`, the opt-in packs, and one function per rule |
-| `src/grice/facts.gleam` | **Exists:** per-module facts: name, path, source, imports, comments, the project's target and the syntax tree as compiled for it, which of the project's modules and types are internal, and for typed rules the type queries and the `Unknown` type |
+| `src/grice/facts.gleam` | **Exists:** per-module facts: name, path, source, imports, comments, the project's target and the syntax tree as compiled for it, which of the project's modules and types are internal, whether the module is linted, and for typed rules the type queries and the `Unknown` type |
 | `src/grice/types.gleam` | Type predicates over girard's `Type` |
 | `src/grice/visit.gleam` | **Exists:** the glance syntax tree walk, in source order, with a hook per kind of node |
 | `src/grice/diagnostic.gleam` | **Exists:** the diagnostic model (`Diagnostic`, `Severity`, `Location`, `Label`, `Span`, `Fix`, `Edit`). Planned: report, label and fix builders |
 | `src/grice/testing.gleam` | **Exists:** the testing kit for rule authors: fixtures built in memory, with installed dependencies for typed runs, a run's render for snapshots, and assertions on its codes |
 | `src/grice/internal/glob.gleam` | **Exists:** the glob syntax of `include`, `exclude` and the `paths` of ignores, and path matching; the name patterns of their `definitions`; the module patterns of `internal_modules` |
 | `src/grice/internal/config.gleam` | **Exists:** `[tools.grice]`, `target`, `name` and `internal_modules` parsing and validation, with the `[[tools.grice.ignore]]` entries and the `suppression_comments` switch |
-| `src/grice/internal/loader.gleam` | **Exists:** discovery, the load set, reading, parsing and dependency sources, and the project's internal modules and types |
+| `src/grice/internal/loader.gleam` | **Exists:** discovery, the load set or the whole project with its foreign sources, reading, parsing and dependency sources, and the project's internal modules and types |
 | `src/grice/internal/type_names.gleam` | **Exists:** what a written type name resolves to, from the module's imports and types, and the index of the project's internal types |
 | `src/grice/internal/glance_spans.gleam` | **Exists:** the workaround for glance's string ends on JavaScript (lpil/glance#47): each parsed module's tree, corrected before anything reads it |
 | `src/grice/internal/line_index.gleam` | **Exists:** byte offset to line and column, line ranges, span checks, glance's offsets to bytes, and UTF-8 decoding that keeps every byte |
 | `src/grice/internal/typing.gleam` | **Exists:** girard integration: the order modules are typed in, the in-memory resolver and each module's type index |
-| `src/grice/internal/runner.gleam` | **Exists:** checking the rule set, planning which facts the rules need, running rules over the lint set, resolving reports, dropping what ignores and suppressions hide, and the coverage record with its notes |
+| `src/grice/internal/runner.gleam` | **Exists:** checking the rule set, planning which facts the rules need, running rules over the lint set and whole-project rules over every module, resolving reports, dropping what ignores and suppressions hide, and the coverage record with its notes |
 | `src/grice/internal/rules/` | **Exists:** one module per built-in rule, with its matching and its diagnostic text; `int_literal.gleam`, which reads glance's Int literals in every spelling for the rules that compare with one; and `call.gleam`, which reads a call of a module function however it's written, nested or piped, for the simplify pack |
 | `src/grice/internal/suppress.gleam` | **Exists:** applying ignores and suppression comments, and the unused- and invalid-suppression warnings |
 | `src/grice/internal/render/human.gleam` | **Exists:** human output in a layout modelled on the compiler's, and a run's summary and stats |
@@ -101,11 +101,15 @@ notice.
 3. **Load.** Parse the lint set, then follow its in-package imports (filtered
    for the configured target) to add every module it needs. That is the
    **load set**: excluded code is still loaded when linted code imports it.
-   Each file is read, parsed with glance, lexed with glexer for comments, and
-   given a line index.
+   When a rule is built with `rule.whole_project`, every other module under
+   `src/`, `test/` and `dev/` is loaded too, and the foreign sources there
+   are read only for the words that name modules and functions. Each module
+   is read, parsed with glance, lexed with glexer for comments, and given a
+   line index.
 4. **Plan.** Collect the facts the enabled rules need. If none needs types,
    girard never runs.
-5. **Types.** Call girard once over the whole load set, passing the same parsed
+5. **Types.** Call girard once over the lint set and what it imports, or the
+   whole project for a typed whole-project rule, passing the same parsed
    modules the rules see (so spans agree) in dependency-first order (so no
    module is inferred twice).
 6. **Run.** Module rules run in parallel per module. Project rules run a

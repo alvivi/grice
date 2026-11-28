@@ -26,6 +26,10 @@ all of the code.
 No diagnostics in 9 modules.
 Coverage is incomplete: 2 modules don't parse, 2 definitions in 2 modules
 couldn't be typed, 2 modules got no types, 2 modules can't use the types of
-modules they import and 2 packages are missing their sources, so rules
-didn't see all of the code.
+modules they import, 2 packages are missing their sources and 2 rules that
+see the whole project didn't run, so rules didn't see all of the code.
+
+1 note in 4 modules.
+Coverage is incomplete: 1 rule that sees the whole project didn't run, so
+rules didn't see all of the code.
 

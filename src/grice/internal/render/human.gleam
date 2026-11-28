@@ -491,16 +491,17 @@ fn counts(diagnostics: List(Diagnostic)) -> String {
     clause(count(diagnostic.Warning), "warning", "warnings"),
     clause(count(diagnostic.Note), "note", "notes"),
   ])
-  |> enumerate
+  |> runner.enumerate
   |> string.to_option
   |> option.unwrap("No diagnostics")
 }
 
 // One sentence naming each kind of gap present, in the order of `Gap`'s
 // variants, or nothing when coverage is complete. A module that doesn't
-// parse is one no rule saw; every other gap only limits typed rules.
+// parse is one no rule saw, and an incomplete project leaves rules that
+// see all of it unrun; every other gap only limits typed rules.
 fn coverage_sentence(gaps: List(Gap)) -> List(String) {
-  let tally = list.fold(gaps, Tally(0, [], 0, [], 0), count_gap)
+  let tally = list.fold(gaps, Tally(0, [], 0, [], 0, 0), count_gap)
   let in_modules = fn(definitions) {
     definitions
     <> " in "
@@ -523,16 +524,21 @@ fn coverage_sentence(gaps: List(Gap)) -> List(String) {
         "package is missing its sources",
         "packages are missing their sources",
       ),
+      clause(
+        tally.unrun,
+        "rule that sees the whole project didn't run",
+        "rules that see the whole project didn't run",
+      ),
     ])
-  let reach = case tally.unparsed {
-    0 -> "typed rules"
-    _ -> "rules"
+  let reach = case tally.unparsed, tally.unrun {
+    0, 0 -> "typed rules"
+    _, _ -> "rules"
   }
   case clauses {
     [] -> []
     [_, ..] -> [
       "Coverage is incomplete: "
-      <> enumerate(clauses)
+      <> runner.enumerate(clauses)
       <> ", so "
       <> reach
       <> " didn't see all of the code.",
@@ -549,6 +555,7 @@ type Tally {
     uninferred: Int,
     unavailable: List(String),
     missing: Int,
+    unrun: Int,
   )
 }
 
@@ -562,6 +569,8 @@ fn count_gap(tally: Tally, gap: Gap) -> Tally {
     coverage.UnavailableImport(path:, ..) ->
       Tally(..tally, unavailable: [path, ..tally.unavailable])
     coverage.MissingPackage(..) -> Tally(..tally, missing: tally.missing + 1)
+    coverage.IncompleteProject(rules:, ..) ->
+      Tally(..tally, unrun: tally.unrun + list.length(rules))
   }
 }
 
@@ -584,15 +593,6 @@ fn plural(count: Int, one: String, many: String) -> String {
   <> case count {
     1 -> one
     _ -> many
-  }
-}
-
-// "a", "a and b", "a, b and c".
-fn enumerate(items: List(String)) -> String {
-  case list.reverse(items) {
-    [] -> ""
-    [only] -> only
-    [last, ..rest] -> string.join(list.reverse(rest), ", ") <> " and " <> last
   }
 }
 

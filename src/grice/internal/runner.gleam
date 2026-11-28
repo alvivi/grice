@@ -6,7 +6,11 @@
 //// infers the project's types, once for every rule. Rules run on the lint
 //// set's modules that parse, and only on those: module rules as one task
 //// per module, in parallel, and each project rule by summarising every
-//// module in parallel and evaluating the summaries once. Each report is
+//// module in parallel and evaluating the summaries once. A project rule
+//// that sees the whole project summarises every module of it that parses,
+//// linted or not, and its reports on modules that aren't linted are
+//// dropped; when some of the project couldn't be read, it doesn't run, and
+//// a note says why. Each report is
 //// checked against the source of the module it's about before it becomes
 //// a diagnostic, so a rule with a bad span is reported on its own and
 //// every other finding still comes through. What the ignores in
@@ -29,9 +33,9 @@ import gleam/set.{type Set}
 import gleam/string
 import grice/coverage.{
   type Cause, type Coverage, type Gap, type TypeCoverage, Coverage,
-  DependencyUnparsable, MissingPackage, NoSuchModule, NotRequested,
-  ProjectModuleUnparsable, ProjectModuleUnusable, Requested, UnavailableImport,
-  UninferredModule, UnparsedModule, UntypedDefinition,
+  DependencyUnparsable, IncompleteProject, MissingPackage, NoSuchModule,
+  NotRequested, ProjectModuleUnparsable, ProjectModuleUnusable, Requested,
+  UnavailableImport, UninferredModule, UnparsedModule, UntypedDefinition,
 }
 import grice/diagnostic.{type Diagnostic, type Label, Diagnostic}
 import grice/facts.{type ModuleFacts, type Syntax}
@@ -60,29 +64,48 @@ pub type Linted {
 
 /// Run `rules` over the project. `Error` holds every problem with the rule
 /// set and with the rule codes the ignores in `gleam.toml` name, and means
-/// no rule ran.
+/// no rule ran. A rule built with `rule.whole_project` over a project
+/// loaded with `loader.LoadLintSet` is such a problem.
 pub fn run(
   project: Project,
   rules: List(Rule),
 ) -> Result(Linted, List(Diagnostic)) {
-  run_with(project, rules, infer: fn(project) {
-    typing.infer(project, typing.resolver(project))
+  run_with(project, rules, infer: fn(project, modules) {
+    typing.infer(project, typing.resolver(project), modules)
   })
 }
 
 /// Run `rules` as `run` does, with `infer` standing in for girard: it's
-/// called once when a rule of the set is typed, and never otherwise, and
-/// gives the types of the lint-set modules it inferred.
+/// called once when a rule of the set is typed, and never otherwise, with
+/// the names of the modules whose types the rules need, and gives the types
+/// of those it inferred. They're the lint set, or every module of the
+/// project when a typed rule sees the whole project, in path order.
 @internal
 pub fn run_with(
   project: Project,
   rules: List(Rule),
-  infer infer: fn(Project) -> Dict(String, ModuleTypes),
+  infer infer: fn(Project, List(String)) -> Dict(String, ModuleTypes),
 ) -> Result(Linted, List(Diagnostic)) {
   let codes = set.from_list(list.map(rules, rule.code))
-  case list.append(check_rules(rules), check_ignores(project.config, codes)) {
+  case
+    list.flatten([
+      check_rules(rules),
+      check_scope(project, rules),
+      check_ignores(project.config, codes),
+    ])
+  {
     [] -> Ok(lint(project, rules, codes, infer))
     problems -> Error(problems)
+  }
+}
+
+/// How much of a project `rules` need loaded: the whole project when a rule
+/// of the set is built with `rule.whole_project`, and the lint set's load
+/// set otherwise.
+pub fn scope(rules: List(Rule)) -> loader.Load {
+  case list.any(rules, rule.is_whole_project) {
+    True -> loader.LoadWholeProject
+    False -> loader.LoadLintSet
   }
 }
 
@@ -107,39 +130,72 @@ pub fn error(
 //
 // girard runs only when a rule needs types, and then once for all of them.
 // Facts are built once per module, with the module's types when they were
-// inferred, and shared by every rule, typed or not. A module task gets only
-// the module's facts, which hold everything its reports are resolved
-// against. Ignores and suppressions apply once every rule has reported,
-// before the diagnostics are sorted.
+// inferred, and shared by every rule, typed or not: for the lint set, and
+// for every other module of the project only when a rule sees the whole
+// project. A module task gets only the module's facts, which hold
+// everything its reports are resolved against. Ignores and suppressions
+// apply once every rule has reported, before the diagnostics are sorted.
 
 fn lint(
   project: Project,
   rules: List(Rule),
   codes: Set(String),
-  infer: fn(Project) -> Dict(String, ModuleTypes),
+  infer: fn(Project, List(String)) -> Dict(String, ModuleTypes),
 ) -> Linted {
-  let types = case list.any(rules, rule.is_typed) {
-    True -> Some(infer(project))
+  // Every whole-project rule is skipped when some of the project couldn't
+  // be read or parsed, so it costs nothing, and only the others run.
+  let whole = list.filter(rules, rule.is_whole_project)
+  let incomplete = case whole {
+    [] -> []
+    [_, ..] -> incomplete_paths(project)
+  }
+  let running = case incomplete {
+    [] -> rules
+    [_, ..] ->
+      list.filter(rules, fn(lint_rule) { !rule.is_whole_project(lint_rule) })
+  }
+  let viewed_names = case list.any(running, rule.is_whole_project) {
+    True -> every_module(project)
+    False -> project.lint_set
+  }
+  // A typed whole-project rule needs types for every module it sees.
+  let types_whole =
+    list.any(running, fn(lint_rule) {
+      rule.is_typed(lint_rule) && rule.is_whole_project(lint_rule)
+    })
+  let typed_names = case types_whole {
+    True -> viewed_names
+    False -> project.lint_set
+  }
+  let types = case list.any(running, rule.is_typed) {
+    True -> Some(infer(project, typed_names))
     False -> None
   }
-  let linted =
-    list.filter_map(project.lint_set, fn(name) {
+  let in_lint_set = set.from_list(project.lint_set)
+  let viewed =
+    list.filter_map(viewed_names, fn(name) {
       use module <- result.try(dict.get(project.modules, name))
       let module_types =
         option.then(types, fn(types) {
           option.from_result(dict.get(types, name))
         })
-      facts.new(module, project, module_types)
+      facts.new(
+        module,
+        project,
+        module_types,
+        linted: set.contains(in_lint_set, name),
+      )
     })
+  let linted = list.filter(viewed, facts.is_linted)
   let module_rules =
-    list.filter_map(rules, fn(lint_rule) {
+    list.filter_map(running, fn(lint_rule) {
       case rule.check(lint_rule) {
         ModuleCheck(run:) -> Ok(#(lint_rule, run))
         ProjectCheck(..) -> Error(Nil)
       }
     })
   let project_rules =
-    list.filter_map(rules, fn(lint_rule) {
+    list.filter_map(running, fn(lint_rule) {
       case rule.check(lint_rule) {
         ProjectCheck(run:) -> Ok(#(lint_rule, run))
         ModuleCheck(..) -> Error(Nil)
@@ -155,35 +211,77 @@ fn lint(
       })
       |> list.flatten
   }
+  // A project rule's report on a linted module is resolved. One on a module
+  // it was given that isn't linted, which only a whole-project rule is, is
+  // dropped, and one on any other module is an invalid report.
   let by_name =
     linted
     |> list.map(fn(module_facts) {
       #(facts.module_name(module_facts), module_facts)
     })
     |> dict.from_list
+  let unlinted =
+    viewed
+    |> list.filter(fn(module_facts) { !facts.is_linted(module_facts) })
+    |> list.map(facts.module_name)
+    |> set.from_list
   let from_project_rules = {
     use #(lint_rule, run) <- list.flat_map(project_rules)
-    use #(name, report) <- list.map(run(linted))
-    case dict.get(by_name, name) {
-      Ok(module_facts) -> resolve(lint_rule, module_facts, report)
-      Error(Nil) -> not_linted(lint_rule, name)
+    let sees_whole = rule.is_whole_project(lint_rule)
+    let given = case sees_whole {
+      True -> viewed
+      False -> linted
+    }
+    use #(name, report) <- list.filter_map(run(given))
+    case dict.get(by_name, name), sees_whole && set.contains(unlinted, name) {
+      Ok(module_facts), _ -> Ok(resolve(lint_rule, module_facts, report))
+      Error(Nil), True -> Error(Nil)
+      Error(Nil), False -> Ok(not_linted(lint_rule, name))
     }
   }
-  let #(covered, type_gaps) = type_coverage(project, linted, types)
+  let typed = case types_whole {
+    True -> viewed
+    False -> linted
+  }
+  let #(covered, type_gaps) = type_coverage(project, linted, typed, types)
   let #(type_gaps, notes) = list.unzip(type_gaps)
+  let #(project_gaps, project_notes) = case incomplete {
+    [] -> #([], [])
+    [_, ..] -> {
+      let #(gap, note) =
+        incomplete_project(list.map(whole, rule.code), incomplete)
+      #([gap], [note])
+    }
+  }
   let #(diagnostics, hidden) =
-    [project.diagnostics, notes, from_module_rules, from_project_rules]
+    [
+      project.diagnostics,
+      notes,
+      project_notes,
+      from_module_rules,
+      from_project_rules,
+    ]
     |> list.flatten
-    |> suppress.apply(linted, project.config, codes)
+    |> suppress.apply(linted, project.config, codes, skipped: case incomplete {
+      [] -> set.new()
+      [_, ..] -> set.from_list(list.map(whole, rule.code))
+    })
   let diagnostics = list.sort(diagnostics, compare)
   let coverage =
     Coverage(
       modules: list.length(project.lint_set),
       parsed: list.length(linted),
       types: covered,
-      gaps: list.append(unparsed_modules(project), type_gaps),
+      gaps: list.flatten([unparsed_modules(project), type_gaps, project_gaps]),
     )
   Linted(diagnostics:, coverage:, hidden:)
+}
+
+// The name of every loaded module of the project, in path order.
+fn every_module(project: Project) -> List(String) {
+  dict.values(project.modules)
+  |> list.sort(fn(left, right) { string.compare(left.path, right.path) })
+  |> list.map(fn(module) { module.name })
 }
 
 fn compare(left: Diagnostic, right: Diagnostic) -> Order {
@@ -210,8 +308,9 @@ fn compare(left: Diagnostic, right: Diagnostic) -> Order {
 // What the run couldn't analyse. A lint-set module that doesn't parse is a
 // gap in every run, reported by the loader's `grice/parse-error`. Gaps in
 // the types are reported only when a rule asked for types, and only for
-// the lint set: an excluded module's own gaps reach the modules that
-// import it as a use girard couldn't type or a module it couldn't use.
+// the lint set, or for every module a typed whole-project rule saw: an
+// excluded module's own gaps reach the modules that import it as a use
+// girard couldn't type or a module it couldn't use.
 // Each is a note, since it's a limit of grice's analysis rather than a
 // problem in the code.
 
@@ -223,12 +322,14 @@ fn unparsed_modules(project: Project) -> List(Gap) {
   }
 }
 
-// How much of the lint set girard typed, and the gaps in its types, each
-// with its note: each module's in lint-set order, then each missing
-// package's.
+// How much of the lint set girard typed, and the gaps in the types of the
+// modules of `typed`, the lint set or every module a typed whole-project
+// rule saw, each with its note: each module's in path order, then each
+// missing package's.
 fn type_coverage(
   project: Project,
   linted: List(ModuleFacts(Syntax)),
+  typed: List(ModuleFacts(Syntax)),
   types: Option(Dict(String, ModuleTypes)),
 ) -> #(TypeCoverage, List(#(Gap, Diagnostic))) {
   case types {
@@ -246,7 +347,7 @@ fn type_coverage(
           none: list.count(complete, fn(state) { state == Error(Nil) }),
         )
       let gaps =
-        list.flat_map(linted, module_gaps(project, _, types))
+        list.flat_map(typed, module_gaps(project, _, types))
         |> list.append(list.map(project.missing_dependencies, missing_package))
       #(coverage, gaps)
     }
@@ -462,6 +563,109 @@ fn stop(source: LineIndex, error: glance.Error) -> String {
   let line_index.Position(line:, column:) =
     line_index.position(source, loader.error_label(source, error).span.start)
   "line " <> int.to_string(line) <> ", column " <> int.to_string(column)
+}
+
+// Why a whole-project rule couldn't use a file of the project.
+type Unusable {
+  Unparsed(error: loader.ParseError)
+  Unread(reason: String)
+  Unnamed
+}
+
+// The project's files a whole-project rule needs that grice couldn't use,
+// sorted by path: every loaded module that doesn't parse, lint set
+// included, every module and foreign source the loader couldn't read, and
+// every `.gleam` file it couldn't name as a module.
+fn incomplete_paths(project: Project) -> List(#(String, Unusable)) {
+  let unparsed =
+    dict.values(project.modules)
+    |> list.filter_map(fn(module) {
+      case module.parsed {
+        Ok(_) -> Error(Nil)
+        Error(error) -> Ok(#(module.path, Unparsed(error)))
+      }
+    })
+  let rest = case project.scope {
+    loader.WholeProject(unread:, unnamed:, ..) ->
+      list.append(
+        list.map(unread, fn(entry) { #(entry.0, Unread(entry.1)) }),
+        list.map(unnamed, fn(path) { #(path, Unnamed) }),
+      )
+    loader.LintSet -> []
+  }
+  list.append(unparsed, rest)
+  |> list.sort(fn(left, right) { string.compare(left.0, right.0) })
+}
+
+fn incomplete_project(
+  rules: List(String),
+  paths: List(#(String, Unusable)),
+) -> #(Gap, Diagnostic) {
+  let #(subject, verb, pronoun) = case rules {
+    [only] -> #("The rule `" <> only <> "`", "sees", "it")
+    _ -> #(
+      "The rules "
+        <> enumerate(list.map(rules, fn(code) { "`" <> code <> "`" })),
+      "see",
+      "they",
+    )
+  }
+  let problems =
+    list.map(paths, fn(entry) {
+      case entry {
+        #(path, Unparsed(_)) -> "`" <> path <> "` doesn't parse"
+        #(path, Unread(reason:)) ->
+          "`" <> path <> "` couldn't be read (" <> reason <> ")"
+        #(path, Unnamed) ->
+          "`"
+          <> path
+          <> "` couldn't be included, as grice can't name it as a module"
+      }
+    })
+  // A sentence for each kind of problem the paths have, each once.
+  let hints =
+    list.map(paths, fn(entry) {
+      case entry {
+        #(_, Unread(_)) -> unread_hint
+        #(_, Unnamed) -> unnamed_hint
+        #(_, Unparsed(loader.Unexpected(_))) -> unparsed_hint
+        #(path, Unparsed(loader.OutOfStack)) -> loader.out_of_stack_hint(path)
+      }
+    })
+    |> list.unique
+  note(
+    IncompleteProject(rules:, paths: list.map(paths, fn(entry) { entry.0 })),
+    code: "grice/incomplete-project",
+    title: "Can't see the whole project",
+    at: None,
+    message: subject
+      <> " "
+      <> verb
+      <> " every module of the project, but grice couldn't read all of it, so "
+      <> pronoun
+      <> " didn't run: "
+      <> enumerate(problems)
+      <> ". A claim about the whole project can't rest on part of it.",
+    hint: string.join(hints, " "),
+  )
+}
+
+const unread_hint =
+  "Check that each file that couldn't be read is there and that you can read it; a Gleam module must also be UTF-8."
+
+const unnamed_hint =
+  "Rename each file grice couldn't include to a path that names a module: segments of a lowercase letter followed by lowercase letters, digits and `_`, each module at one path."
+
+const unparsed_hint =
+  "If `gleam build` accepts a module that doesn't parse, glance, which grice reads Gleam code with, doesn't support its syntax yet, so please report it to glance."
+
+/// The items as a list in prose: "a", "a and b", "a, b and c".
+pub fn enumerate(items: List(String)) -> String {
+  case list.reverse(items) {
+    [] -> ""
+    [only] -> only
+    [last, ..rest] -> string.join(list.reverse(rest), ", ") <> " and " <> last
+  }
 }
 
 fn missing_package(package: loader.Package) -> #(Gap, Diagnostic) {
@@ -732,6 +936,29 @@ fn invalid_rule(
   hint hint: String,
 ) -> Diagnostic {
   error("grice/invalid-rule", title, [message], hint)
+}
+
+// A rule that sees the whole project needs a project loaded whole: over the
+// load set alone it would see part of the project and report as if it saw
+// all of it.
+fn check_scope(project: Project, rules: List(Rule)) -> List(Diagnostic) {
+  case project.scope {
+    loader.WholeProject(..) -> []
+    loader.LintSet ->
+      rules
+      |> list.filter(rule.is_whole_project)
+      |> list.map(fn(lint_rule) { lint_set_only(rule.code(lint_rule)) })
+  }
+}
+
+fn lint_set_only(code: String) -> Diagnostic {
+  invalid_rule(
+    title: "Rule needs the whole project",
+    message: "The rule `"
+      <> code
+      <> "` sees the whole project, but the project was loaded with `grice.load_project`, which reads only the modules to lint and those they import.",
+    hint: "Load the project with `grice.load_whole_project` to run this rule.",
+  )
 }
 
 // Ignored codes

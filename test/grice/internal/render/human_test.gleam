@@ -509,6 +509,14 @@ pub fn summary_sentences_test() {
         coverage.UnavailableImport("src/h.gleam", "gone", gone),
         coverage.MissingPackage("hexdep"),
         coverage.MissingPackage("gitdep"),
+        coverage.IncompleteProject(rules: ["app/one", "app/two"], paths: [
+          "src/a.gleam",
+        ]),
+      ]),
+      #(4, [diagnostic.Note], 0, [
+        coverage.IncompleteProject(rules: ["app/one"], paths: [
+          "test/a_test.gleam",
+        ]),
       ]),
     ]
     |> list.map(fn(entry) {

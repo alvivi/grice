@@ -44,6 +44,7 @@
 //// [Testing rules](https://github.com/alvivi/grice/blob/main/docs/TESTING.md)
 //// covers each way to check a run, with examples.
 
+import gleam/bit_array
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/list
@@ -92,12 +93,17 @@ pub fn module(source: String) -> Fixture {
 /// `internal_modules` that say which modules are internal. Without one the
 /// defaults apply, which lint `src/` on Erlang, and with no `name` no
 /// module is internal unless `internal_modules` says so. Every other file
-/// is a module: its path is under `src/`, `test/` or `dev/` and ends in
-/// `.gleam`, and each of its segments is a lowercase letter followed by
-/// lowercase letters, digits and `_`, as the compiler requires. This panics
-/// on any other path, on a path given twice, and on two paths that give one
-/// module name, such as `src/app.gleam` and `test/app.gleam`: grice would
-/// skip those files, so no rule would see them.
+/// is a module or a foreign source. A module's path is under `src/`,
+/// `test/` or `dev/` and ends in `.gleam`, and each of its segments is a
+/// lowercase letter followed by lowercase letters, digits and `_`, as the
+/// compiler requires. A foreign source's path is under one of those
+/// directories and ends in one of the compiler's native file extensions,
+/// `.erl`, `.hrl`, `.ex`, `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`, `.mts`,
+/// `.cts` or `.tsx`; only a run with a rule built with `rule.whole_project`
+/// reads it. This panics on any other path, on a path given twice, and on
+/// two paths that give one module name, such as `src/app.gleam` and
+/// `test/app.gleam`: grice would skip those files, so no rule would see
+/// them.
 ///
 /// ```gleam
 /// testing.project([
@@ -158,16 +164,16 @@ fn check_path(
   file: #(String, String),
 ) -> Dict(String, String) {
   let path = file.0
-  let key = case path {
-    "gleam.toml" -> Ok(path)
-    _ -> loader.module_name(path)
+  let key = case path, loader.is_foreign_source(path) {
+    "gleam.toml", _ | _, True -> Ok(path)
+    _, False -> loader.module_name(path)
   }
   case key, result.try(key, dict.get(seen, _)) {
     Error(Nil), _ ->
       panic as {
         "The fixture path `"
         <> path
-        <> "` is neither `gleam.toml` nor a module path. A module path is under `src/`, `test/` or `dev/` and ends in `.gleam`, and each of its segments is a lowercase letter followed by lowercase letters, digits and `_`. grice would skip this file, so no rule would see it."
+        <> "` is neither `gleam.toml`, a module path nor a foreign source. A module path is under `src/`, `test/` or `dev/` and ends in `.gleam`, and each of its segments is a lowercase letter followed by lowercase letters, digits and `_`. A foreign source is under one of those directories and ends in `.erl`, `.hrl`, `.ex`, `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`, `.mts`, `.cts` or `.tsx`. grice would skip this file, so no rule would see it."
       }
     Ok(_), Ok(other) if other == path ->
       panic as {
@@ -192,7 +198,8 @@ fn check_path(
 // Running
 //
 // A fixture runs through the same loader and runner as a project on disk,
-// and only a typed run reads anything: the installed dependencies.
+// with the whole fixture loaded when a rule sees the whole project, and
+// only a typed run reads anything: the installed dependencies.
 
 /// What running rules over a fixture found.
 pub opaque type Run {
@@ -202,7 +209,10 @@ pub opaque type Run {
 /// Run `rules` over the fixture, as grice runs them over a project.
 ///
 /// A typed rule in `rules` makes the run read the installed dependencies
-/// from the working directory, as the module docs describe. This panics,
+/// from the working directory, as the module docs describe. A rule built
+/// with `rule.whole_project` makes it load the whole fixture, so its
+/// modules outside the lint set, such as those under `test/` and `dev/`,
+/// and its foreign sources reach that rule. This panics,
 /// showing the problem as grice shows it, when `gleam.toml` is invalid or
 /// selects no module to lint, a module to lint doesn't parse, the rule
 /// set is invalid, or a typed run can't read the installed dependencies.
@@ -241,10 +251,12 @@ pub fn run_with(
       paths: list.map(fixture.files, fn(file) { file.0 }),
       read: fn(path) {
         dict.get(sources, path)
+        |> result.map(bit_array.from_string)
         |> result.replace_error("The fixture has no file at this path")
       },
       dependencies:,
       missing_dependencies:,
+      scope: runner.scope(rules),
     )
   }
   let project = case loaded {

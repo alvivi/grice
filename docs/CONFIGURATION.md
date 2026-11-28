@@ -226,7 +226,9 @@ unnoticed:
 
 - `grice/unused-suppression`: it hides nothing, because no diagnostic of
   its rule is left where it reaches, or because no rule of the run has its
-  code;
+  code. A suppression of a rule that didn't run, such as one that sees the
+  whole project in a run where some of the project couldn't be read, isn't
+  reported, since nothing showed whether it's used;
 - `grice/invalid-suppression`: it can't be used. It names no rule, gives no
   reason, names something that isn't a rule code or is one of grice's own,
   comes after code, or starts with `grice-ignore` but is neither form, such

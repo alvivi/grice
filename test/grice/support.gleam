@@ -9,6 +9,7 @@
 
 import girard
 import glance
+import gleam/bit_array
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -42,20 +43,59 @@ pub fn project(
   files: List(#(String, String)),
   dependencies: List(#(String, String)),
 ) -> Project {
+  project_with(
+    toml,
+    files,
+    dependencies,
+    scope: loader.LoadLintSet,
+    unreadable: [],
+  )
+}
+
+/// The project of `files`, with the `gleam.toml` text `toml`, loaded whole,
+/// as a run with a rule built with `rule.whole_project` loads it.
+pub fn whole_project(toml: String, files: List(#(String, String))) -> Project {
+  project_with(toml, files, [], scope: loader.LoadWholeProject, unreadable: [])
+}
+
+/// The project as `project` loads it, with `scope`, and with each path of
+/// `unreadable` among the project's files, but one that can't be read.
+pub fn project_with(
+  toml: String,
+  files: List(#(String, String)),
+  dependencies: List(#(String, String)),
+  scope scope: loader.Load,
+  unreadable unreadable: List(String),
+) -> Project {
+  let assert Ok(project) =
+    load_with(toml, files, dependencies, scope:, unreadable:)
+  project
+}
+
+/// What `loader.load` gives for the project `project_with` describes, a
+/// failure included.
+pub fn load_with(
+  toml: String,
+  files: List(#(String, String)),
+  dependencies: List(#(String, String)),
+  scope scope: loader.Load,
+  unreadable unreadable: List(String),
+) -> Result(Project, loader.LoadError) {
   let assert Ok(parsed) = config.parse(toml)
   let sources = dict.from_list(files)
-  let assert Ok(project) =
-    loader.load(
-      root: "app",
-      config: parsed,
-      paths: list.map(files, fn(file) { file.0 }),
-      read: fn(path) {
-        dict.get(sources, path) |> result.replace_error("No such file")
-      },
-      dependencies: dict.from_list(dependencies),
-      missing_dependencies: [],
-    )
-  project
+  loader.load(
+    root: "app",
+    config: parsed,
+    paths: list.append(list.map(files, fn(file) { file.0 }), unreadable),
+    read: fn(path) {
+      dict.get(sources, path)
+      |> result.map(bit_array.from_string)
+      |> result.replace_error("No such file")
+    },
+    dependencies: dict.from_list(dependencies),
+    missing_dependencies: [],
+    scope:,
+  )
 }
 
 /// The diagnostics of a run of `rules` over the project of `files`, with
@@ -153,11 +193,19 @@ pub fn main() {
 /// completed run can: `fixture/no-echo` findings, one of them hidden, both
 /// suppression warnings, a parse error, a definition girard couldn't type,
 /// a module it returned nothing for, an import it couldn't use directly
-/// and one reached through a dependency, and a missing package.
+/// and one reached through a dependency, a missing package, and a
+/// whole-project rule that didn't run, since a module doesn't parse and a
+/// test module can't be read.
 pub fn showcase() -> #(Project, Linted) {
   let project =
     loader.Project(
-      ..project("", showcase_files, showcase_dependencies),
+      ..project_with(
+        "",
+        showcase_files,
+        showcase_dependencies,
+        scope: loader.LoadWholeProject,
+        unreadable: ["test/app_test.gleam"],
+      ),
       missing_dependencies: [
         loader.Package("hexdep", loader.Hex, "build/packages/hexdep"),
       ],
@@ -165,9 +213,14 @@ pub fn showcase() -> #(Project, Linted) {
   let assert Ok(linted) =
     runner.run_with(
       project,
-      [fixture_rules.no_echo(), fixture_rules.discarded_result()],
-      infer: fn(project) {
-        typing.infer(project, typing.resolver(project)) |> dict.delete("lonely")
+      [
+        fixture_rules.no_echo(),
+        fixture_rules.discarded_result(),
+        whole_project_view(),
+      ],
+      infer: fn(project, modules) {
+        typing.infer(project, typing.resolver(project), modules)
+        |> dict.delete("lonely")
       },
     )
   #(project, linted)
@@ -319,6 +372,39 @@ pub fn module_order() -> Rule {
       [first, ..] -> [#(first, at_start(string.join(names, ", ")))]
       [] -> []
     }
+  })
+}
+
+/// Reports, on each module it's given, every module it was given, in the
+/// order its summaries came in, each as its name followed by
+/// ` (not linted)` when it isn't linted. It's built with
+/// `rule.whole_project`, so its reports on modules that aren't linted are
+/// dropped.
+pub fn whole_project_view() -> Rule {
+  rule.project("fixture/whole-project-view", title: "Made in a test")
+  |> rule.whole_project
+  |> view
+}
+
+/// Reports as `whole_project_view` does, without `rule.whole_project`.
+pub fn project_view() -> Rule {
+  rule.project("fixture/project-view", title: "Made in a test")
+  |> view
+}
+
+fn view(schema: rule.Schema(rule.ProjectForm, Syntax)) -> Rule {
+  schema
+  |> rule.per_module(facts.is_linted)
+  |> rule.final(fn(summaries) {
+    let names =
+      list.map(summaries, fn(summary) {
+        case summary.1 {
+          True -> summary.0
+          False -> summary.0 <> " (not linted)"
+        }
+      })
+      |> string.join(", ")
+    list.map(summaries, fn(summary) { #(summary.0, at_start(names)) })
   })
 }
 
@@ -590,13 +676,33 @@ pub fn write_bytes(path: String, bytes: BitArray) -> Nil {
 /// directory can still be listed: a process that reads past the mode, as
 /// root does, proves nothing.
 pub fn with_directory_mode(path: String, mode: Int, check: fn() -> Nil) -> Nil {
+  with_mode(path, mode, 0o755, simplifile.read_directory, check)
+}
+
+/// Run `check` with the file at `path` set to `mode`, a mode that denies
+/// reading it, then restore mode `0o644`. `check` is skipped where the file
+/// can still be read: a process that reads past the mode, as root does,
+/// proves nothing.
+pub fn with_file_mode(path: String, mode: Int, check: fn() -> Nil) -> Nil {
+  with_mode(path, mode, 0o644, simplifile.read_bits, check)
+}
+
+// Run `check` with `path` set to `mode`, unless `read` still reads it, then
+// set it to `restore`.
+fn with_mode(
+  path: String,
+  mode: Int,
+  restore: Int,
+  read: fn(String) -> Result(a, simplifile.FileError),
+  check: fn() -> Nil,
+) -> Nil {
   let assert Ok(Nil) = simplifile.set_permissions_octal(path, mode)
     as { "can't change the mode of " <> path }
-  case simplifile.read_directory(path) {
+  case read(path) {
     Error(_) -> check()
     Ok(_) -> Nil
   }
-  let assert Ok(Nil) = simplifile.set_permissions_octal(path, 0o755)
+  let assert Ok(Nil) = simplifile.set_permissions_octal(path, restore)
     as { "can't restore the mode of " <> path }
   Nil
 }

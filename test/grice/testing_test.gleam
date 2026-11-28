@@ -10,6 +10,7 @@ import gleam/bool
 import gleam/dict
 import gleam/list
 import gleam/option.{Some}
+import gleam/set
 import gleam/string
 import grice/diagnostic.{Diagnostic}
 import grice/facts
@@ -60,7 +61,7 @@ pub fn project_takes_modules_under_src_test_and_dev_test() {
 
 pub fn a_path_outside_the_source_directories_panics_test() {
   assert panic_of(fn() { testing.project([#("scr/app.gleam", echo_in_main)]) })
-    == "The fixture path `scr/app.gleam` is neither `gleam.toml` nor a module path. A module path is under `src/`, `test/` or `dev/` and ends in `.gleam`, and each of its segments is a lowercase letter followed by lowercase letters, digits and `_`. grice would skip this file, so no rule would see it."
+    == "The fixture path `scr/app.gleam` is neither `gleam.toml`, a module path nor a foreign source. A module path is under `src/`, `test/` or `dev/` and ends in `.gleam`, and each of its segments is a lowercase letter followed by lowercase letters, digits and `_`. A foreign source is under one of those directories and ends in `.erl`, `.hrl`, `.ex`, `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`, `.mts`, `.cts` or `.tsx`. grice would skip this file, so no rule would see it."
 }
 
 pub fn an_invalid_module_name_panics_test() {
@@ -73,7 +74,7 @@ pub fn an_invalid_module_name_panics_test() {
     })
   assert string.starts_with(
     message,
-    "The fixture path `src/Bad.gleam` is neither `gleam.toml` nor a module path.",
+    "The fixture path `src/Bad.gleam` is neither `gleam.toml`, a module path nor a foreign source.",
   )
 }
 
@@ -170,6 +171,48 @@ pub fn an_excluded_module_that_doesnt_parse_is_no_failure_test() {
   ])
   |> testing.run([fixture_rules.discarded_result()])
   |> testing.expect_codes(["grice/unavailable-import"])
+}
+
+// A rule that sees the whole project gets the fixture's modules outside
+// the lint set, and its foreign sources, which a rule reads through the
+// module's facts. A test module that doesn't parse stops only that rule,
+// with its note, rather than failing the run.
+pub fn a_whole_project_rule_sees_the_whole_fixture_test() {
+  let foreign =
+    rule.project("fixture/foreign", title: "Made in a test")
+    |> rule.whole_project
+    |> rule.per_module(fn(module_facts) {
+      facts.foreign_mentions(module_facts)
+      |> set.to_list
+      |> list.sort(string.compare)
+      |> string.join(" ")
+    })
+    |> rule.final(fn(summaries) {
+      list.map(summaries, fn(summary) {
+        #(summary.0, support.at_start(summary.1))
+      })
+    })
+  let files = [
+    #("src/app.gleam", quiet_main),
+    #("src/app_ffi.mjs", "export function call() { return app$main(); }\n"),
+    #("test/app_test.gleam", "pub fn main_test() {\n  1\n}\n"),
+    #("dev/tool.gleam", quiet_main),
+  ]
+  let diagnostics =
+    testing.project(files)
+    |> testing.run([support.whole_project_view(), foreign])
+    |> testing.diagnostics
+  assert support.describe(diagnostics)
+    == [
+      "fixture/foreign src/app.gleam: main",
+      "fixture/whole-project-view src/app.gleam: tool (not linted), app, app_test (not linted)",
+    ]
+  testing.project([
+    #("src/app.gleam", quiet_main),
+    #("test/app_test.gleam", "pub fn ("),
+  ])
+  |> testing.run([support.whole_project_view()])
+  |> testing.expect_codes(["grice/incomplete-project"])
 }
 
 // Installed dependencies

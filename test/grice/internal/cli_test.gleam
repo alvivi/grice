@@ -231,6 +231,55 @@ pub fn stats_count_the_load_set_dependencies_and_rules_test() {
   )
 }
 
+// A whole-project rule's finding, hidden by a suppression, then the same
+// project with a test module that doesn't parse, and a typed one with a
+// test module girard can't type. A skipped rule's suppression is unchecked
+// rather than unused, and the incomplete project's note and the test
+// module's type gap fail the run only under `--strict`.
+pub fn a_whole_project_run_fails_only_on_its_gaps_under_strict_test() {
+  let app =
+    "// grice-ignore-file fixture/whole-project-view: The test hides it.\npub fn main() { 1 }\n"
+  let typed =
+    rule.project("fixture/typed-whole", title: "Made in a test")
+    |> rule.typed
+    |> rule.whole_project
+    |> rule.per_module(fn(_facts) { Nil })
+    |> rule.final(fn(_summaries) { [] })
+  let view = support.whole_project_view()
+  let cases = [
+    #(app, "pub fn main_test() { 1 }\n", view, ["No diagnostics"], [0, 0, 0]),
+    #(app, "pub fn (", view, ["grice/incomplete-project"], [0, 0, 1]),
+    #(
+      "pub fn main() { 1 }\n",
+      "pub fn bad() { 1 + \"one\" }\n",
+      typed,
+      ["grice/untyped-definition"],
+      [0, 0, 1],
+    ),
+  ]
+  list.each(cases, fn(entry) {
+    let #(app, test_module, whole_rule, codes, exit_codes) = entry
+    let project =
+      support.whole_project("", [
+        #("src/app.gleam", app),
+        #("test/app_test.gleam", test_module),
+      ])
+    let outcomes =
+      list.map(
+        [["--stats"], ["--warnings-as-errors"], ["--strict"]],
+        fn(arguments) {
+          execute_in(environment(), arguments, Ok(project), [whole_rule])
+        },
+      )
+    assert list.map(outcomes, fn(outcome) { outcome.exit_code }) == exit_codes
+    let assert [outcome, ..] = outcomes
+    assert list.all(codes, string.contains(outcome.stdout, _))
+    assert !string.contains(outcome.stdout, "unused-suppression")
+    // The stats count every module the whole-project load read.
+    assert string.contains(outcome.stdout, "\n  2 project modules,")
+  })
+}
+
 // Exit codes
 //
 // Which runs exit with 0, 1 or 2.
@@ -442,7 +491,7 @@ pub fn leading_byte_order_marks_are_kept_test() {
       assert outcome.exit_code == exit_code
       assert outcome.stderr == ""
       // The source is every byte of the file.
-      case loader.load_project(root) {
+      case loader.load_project(root, loader.LoadLintSet) {
         Ok(project) -> {
           let assert Ok(loaded) = dict.get(project.modules, "app")
           assert bit_array.from_string(line_index.source(loaded.source))
@@ -504,8 +553,16 @@ fn execute_with(
   rules: List(Rule),
   clock: fn() -> stats.Sample,
 ) -> cli.Outcome {
-  let load = fn(root) {
-    result.map(loaded, fn(project) { loader.Project(..project, root:) })
+  // The command line loads as much of the project as the rules need, which
+  // is how much of it `loaded` holds.
+  let load = fn(root, scope) {
+    use project <- result.map(loaded)
+    let loaded = case project.scope {
+      loader.LintSet -> loader.LoadLintSet
+      loader.WholeProject(..) -> loader.LoadWholeProject
+    }
+    assert scope == loaded
+    loader.Project(..project, root:)
   }
   cli.execute(arguments, environment, load, rules, clock)
 }

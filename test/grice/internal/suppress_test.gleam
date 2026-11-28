@@ -494,9 +494,15 @@ fn apply_counting(
   let modules =
     list.filter_map(project.lint_set, fn(name) {
       use module <- result.try(dict.get(project.modules, name))
-      facts.new(module, project, None)
+      facts.new(module, project, None, linted: True)
     })
-  suppress.apply(diagnostics, modules, project.config, set.from_list(codes))
+  suppress.apply(
+    diagnostics,
+    modules,
+    project.config,
+    set.from_list(codes),
+    skipped: set.new(),
+  )
 }
 
 // A diagnostic of `code` on `src/app.gleam` at `span`, with a secondary

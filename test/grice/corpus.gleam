@@ -124,12 +124,19 @@ pub fn installed() -> Installed {
 }
 
 /// Load the downloaded `package` with the corpus's `installed` modules as
-/// its dependencies, less its own modules, so no module has two sources.
-pub fn load(package: String, installed: Installed) -> loader.Project {
+/// its dependencies, less its own modules, so no module has two sources,
+/// as much of it as `rules` need.
+pub fn load(
+  package: String,
+  installed: Installed,
+  rules: List(Rule),
+) -> loader.Project {
   let loaded =
-    loader.load_project_with(directory(package), installed: fn() {
-      Ok(installed)
-    })
+    loader.load_project_with(
+      directory(package),
+      runner.scope(rules),
+      installed: fn() { Ok(installed) },
+    )
   case loaded {
     Ok(project) ->
       loader.Project(

@@ -2,7 +2,8 @@
 //// `loader.load`, where a test needs what the testing kit doesn't offer: a
 //// fixture that doesn't parse, an invalid rule set, a replaced `infer` or
 //// the coverage record. What rules report is tested with the kit, in
-//// `rules_test`. First which modules rules run on, then typed runs: queries
+//// `rules_test`. First which modules rules run on, the lint set or the
+//// whole project, then typed runs: queries
 //// on modules girard couldn't fully type, when girard runs, a typed run
 //// from a project on disk, and the coverage notes. Then where rules run,
 //// how diagnostics are sorted and rendered, invalid reports, the checks of
@@ -58,6 +59,286 @@ pub fn rules_run_on_parsed_lint_set_modules_only_test() {
     ]
 }
 
+// The whole project
+
+// A module of each source directory, and a module of `src/` that isn't
+// linted, so the whole project is four modules and the lint set two.
+const every_directory = [
+  #("dev/tool.gleam", "pub fn main() { 1 }\n"),
+  #("src/app.gleam", "pub fn main() { 1 }\n"),
+  #("src/app/gen/a.gleam", "pub fn g() { 2 }\n"),
+  #("test/app_test.gleam", "pub fn main_test() { 1 }\n"),
+]
+
+const exclude_gen = "[tools.grice]\nexclude = [\"src/app/gen/\"]\n"
+
+// Each rule reports on every module it's given, the whole-project rule's
+// reports on the modules that aren't linted are dropped, and the other
+// rule sees the lint set alone, all of it linted.
+pub fn a_whole_project_rule_sees_every_module_in_path_order_test() {
+  let project = support.whole_project(exclude_gen, every_directory)
+  let assert Ok(runner.Linted(diagnostics:, coverage:, ..)) =
+    runner.run(project, [support.whole_project_view(), support.project_view()])
+  assert support.describe(diagnostics)
+    == [
+      "fixture/project-view src/app.gleam: app",
+      "fixture/whole-project-view src/app.gleam: tool (not linted), app, app/gen/a (not linted), app_test (not linted)",
+    ]
+  assert coverage.gaps == []
+}
+
+// Loaded whole or not, a run with no whole-project rule gives what it gave
+// before: only the lint set is seen, every module of it is linted, a type
+// of a module only the whole load reads isn't known to be internal, and a
+// report on such a module is an invalid report. Beside a whole-project
+// rule, the other rules still give the same.
+pub fn a_rule_without_the_flag_sees_the_lint_set_test() {
+  let files = [
+    #("test/app_test.gleam", "@internal\npub type Hidden {\n  Hidden\n}\n"),
+    ..list.filter(every_directory, fn(file) { file.0 != "test/app_test.gleam" })
+  ]
+  let hidden =
+    support.on_module_end("fixture/hidden", fn(module_facts) {
+      let known =
+        facts.is_internal_type(module_facts, module: "app_test", name: "Hidden")
+      [support.at_start("Hidden internal: " <> string.inspect(known))]
+    })
+  let excluded =
+    rule.project("fixture/excluded", title: "Made in a test")
+    |> rule.per_module(fn(_facts) { Nil })
+    |> rule.final(fn(_summaries) {
+      [#("app/gen/a", rule.report(at: glance.Span(0, 0), label: "app/gen/a"))]
+    })
+  let rules = [support.project_view(), support.module_order(), hidden, excluded]
+  let assert Ok(lint_set) =
+    runner.run(support.project(exclude_gen, files, []), rules)
+  let assert Ok(whole) =
+    runner.run(support.whole_project(exclude_gen, files), rules)
+  let expected = [
+    "grice/invalid-report",
+    "fixture/hidden src/app.gleam: Hidden internal: False",
+    "fixture/module-order src/app.gleam: app",
+    "fixture/project-view src/app.gleam: app",
+  ]
+  assert support.describe(whole.diagnostics) == expected
+  assert whole == lint_set
+  let assert Ok(mixed) =
+    runner.run(support.whole_project(exclude_gen, files), [
+      support.whole_project_view(),
+      ..rules
+    ])
+  assert list.filter(support.describe(mixed.diagnostics), fn(found) {
+      !string.starts_with(found, "fixture/whole-project-view")
+    })
+    == expected
+}
+
+// A report on a module the rule was given that isn't linted is dropped
+// without a word, before its span is checked and before anything could
+// hide it; one on a module it wasn't given is an invalid report.
+pub fn a_whole_project_rule_report_off_the_lint_set_test() {
+  let elsewhere =
+    rule.project("fixture/elsewhere", title: "Made in a test")
+    |> rule.whole_project
+    |> rule.per_module(fn(_facts) { Nil })
+    |> rule.final(fn(_summaries) {
+      list.map(["app/gen/a", "app_test", "tool", "nowhere", "app"], fn(name) {
+        let span = case name {
+          "app" | "nowhere" -> glance.Span(0, 0)
+          _ -> glance.Span(0, 999)
+        }
+        #(name, rule.report(at: span, label: name))
+      })
+    })
+  let assert Ok(runner.Linted(diagnostics:, hidden:, ..)) =
+    runner.run(support.whole_project(exclude_gen, every_directory), [elsewhere])
+  assert support.describe(diagnostics)
+    == ["grice/invalid-report", "fixture/elsewhere src/app.gleam: app"]
+  assert hidden == 0
+  let assert [Diagnostic(message: [message], ..), ..] = diagnostics
+  assert string.contains(message, "the module `nowhere`")
+}
+
+// A whole-project rule needs a project loaded whole, and no rule runs
+// over one loaded for the lint set.
+pub fn a_whole_project_rule_needs_the_whole_project_loaded_test() {
+  let project = support.project("", every_directory, [])
+  let assert Error([problem]) =
+    runner.run(project, [support.whole_project_view(), panics_if_run()])
+  assert problem.code == "grice/invalid-rule"
+  assert problem.message
+    == [
+      "The rule `fixture/whole-project-view` sees the whole project, but the project was loaded with `grice.load_project`, which reads only the modules to lint and those they import.",
+    ]
+  assert runner.scope([support.project_view(), support.whole_project_view()])
+    == loader.LoadWholeProject
+  assert runner.scope([support.project_view()]) == loader.LoadLintSet
+}
+
+// A test module that doesn't parse and a foreign source that can't be
+// read: the whole-project rule doesn't run, the other rule does, and one
+// note and one gap say why, which fails the run only under `--strict`.
+// The control, with every file read, runs both.
+pub fn an_incomplete_project_skips_whole_project_rules_test() {
+  let files = [
+    #("src/app.gleam", "pub fn main() { 1 }\n"),
+    #("test/app_test.gleam", "pub fn ("),
+    #("test/extra\\client.gleam", "pub fn main() { 1 }\n"),
+  ]
+  let rules = [support.whole_project_view(), support.project_view()]
+  let project =
+    support.project_with(
+      "",
+      files,
+      [],
+      scope: loader.LoadWholeProject,
+      unreadable: [
+        "src/app_ffi.mjs",
+      ],
+    )
+  let assert Ok(runner.Linted(diagnostics:, coverage:, ..)) =
+    runner.run(project, rules)
+  assert support.describe(diagnostics)
+    == [
+      "grice/incomplete-project",
+      "fixture/project-view src/app.gleam: app",
+    ]
+  assert coverage.gaps
+    == [
+      coverage.IncompleteProject(rules: ["fixture/whole-project-view"], paths: [
+        "src/app_ffi.mjs",
+        "test/app_test.gleam",
+        "test/extra\\client.gleam",
+      ]),
+    ]
+  let assert [Diagnostic(severity:, location: None, message:, hint:, ..), ..] =
+    diagnostics
+  assert severity == diagnostic.Note
+  assert message
+    == [
+      "The rule `fixture/whole-project-view` sees every module of the project, but grice couldn't read all of it, so it didn't run: `src/app_ffi.mjs` couldn't be read (No such file), `test/app_test.gleam` doesn't parse and `test/extra\\client.gleam` couldn't be included, as grice can't name it as a module. A claim about the whole project can't rest on part of it.",
+    ]
+  let assert Some(hint) = hint
+  assert string.contains(
+    hint,
+    "Rename each file grice couldn't include to a path that names a module",
+  )
+  let complete =
+    support.whole_project("", [
+      #("test/app_test.gleam", "pub fn main_test() { 1 }\n"),
+      ..list.take(files, 1)
+    ])
+  let assert Ok(runner.Linted(diagnostics:, coverage:, ..)) =
+    runner.run(complete, rules)
+  assert support.describe(diagnostics)
+    == [
+      "fixture/project-view src/app.gleam: app",
+      "fixture/whole-project-view src/app.gleam: app, app_test (not linted)",
+    ]
+  assert coverage.gaps == []
+}
+
+// A linted module that doesn't parse leaves the view incomplete too,
+// beside its parse error, and the note names every rule it stopped.
+// The skipped rules never run, and girard doesn't type for a typed one.
+pub fn a_linted_module_that_doesnt_parse_skips_every_whole_project_rule_test() {
+  let skipped =
+    rule.project("fixture/whole-project-view", title: "Made in a test")
+    |> rule.whole_project
+    |> rule.per_module(fn(_facts) { panic as "a skipped rule ran" })
+    |> rule.final(fn(_summaries) { panic as "a skipped rule ran" })
+  let other =
+    rule.project("fixture/other-view", title: "Made in a test")
+    |> rule.typed
+    |> rule.whole_project
+    |> rule.per_module(fn(_facts) { panic as "a skipped rule ran" })
+    |> rule.final(fn(_summaries) { panic as "a skipped rule ran" })
+  let project =
+    support.whole_project("", [
+      #("src/app.gleam", "pub fn main() { 1 }\n"),
+      #("src/broken.gleam", "pub fn ("),
+    ])
+  let assert Ok(runner.Linted(diagnostics:, coverage:, ..)) =
+    runner.run_with(project, [skipped, other], infer: never_infer)
+  assert support.describe(diagnostics)
+    == [
+      "grice/incomplete-project",
+      "grice/parse-error src/broken.gleam: glance didn't expect this",
+    ]
+  assert coverage.gaps
+    == [
+      coverage.UnparsedModule("src/broken.gleam"),
+      coverage.IncompleteProject(
+        rules: ["fixture/whole-project-view", "fixture/other-view"],
+        paths: ["src/broken.gleam"],
+      ),
+    ]
+  let assert [Diagnostic(message: [message], ..), ..] = diagnostics
+  assert string.starts_with(
+    message,
+    "The rules `fixture/whole-project-view` and `fixture/other-view` see every module of the project, but grice couldn't read all of it, so they didn't run: `src/broken.gleam` doesn't parse.",
+  )
+}
+
+// girard types a test module for a typed whole-project rule, and only the
+// lint set when the typed rules see only the lint set.
+pub fn a_typed_whole_project_rule_gets_types_for_every_module_test() {
+  let signatures =
+    rule.project("fixture/signatures", title: "Made in a test")
+    |> rule.typed
+    |> rule.whole_project
+    |> rule.per_module(fn(module_facts) {
+      let module = facts.module(module_facts)
+      list.map(module.functions, fn(function) {
+        let name = function.definition.name
+        case facts.signature(module_facts, name) {
+          Ok(scheme) -> name <> ": " <> girard.type_to_string(scheme.type_)
+          Error(unknown) -> name <> ": " <> support.describe_unknown(unknown)
+        }
+      })
+    })
+    |> rule.final(fn(summaries) {
+      let found = list.flat_map(summaries, fn(summary) { summary.1 })
+      [#("app", support.at_start(string.join(found, "; ")))]
+    })
+  let files = [
+    #("src/app.gleam", "pub fn main() { 1 }\n"),
+    #("test/app_test.gleam", "pub fn helper() { \"one\" }\n"),
+  ]
+  let project = support.whole_project("", files)
+  let assert Ok(runner.Linted(diagnostics:, ..)) =
+    runner.run_with(project, [signatures], infer: fn(project, modules) {
+      assert modules == ["app", "app_test"]
+      typing.infer(project, typing.resolver(project), modules)
+    })
+  assert support.labels(diagnostics)
+    == ["main: fn() -> Int; helper: fn() -> String"]
+  // girard's gaps in a module only the typed whole-project rule saw are
+  // gaps too, which `--strict` counts, while the totals stay the lint
+  // set's.
+  let assert Ok(runner.Linted(diagnostics:, coverage:, ..)) =
+    runner.run_with(project, [signatures], infer: fn(project, modules) {
+      typing.infer(project, typing.resolver(project), modules)
+      |> dict.delete("app_test")
+    })
+  assert support.describe(diagnostics)
+    == [
+      "grice/uninferred-module",
+      "fixture/signatures src/app.gleam: main: fn() -> Int; helper: NotInferred",
+    ]
+  assert coverage.types == coverage.Requested(full: 1, partial: 0, none: 0)
+  assert coverage.gaps == [coverage.UninferredModule("test/app_test.gleam")]
+  let assert Ok(_) =
+    runner.run_with(
+      project,
+      [support.whole_project_view(), support.typed_calls()],
+      infer: fn(project, modules) {
+        assert modules == ["app"]
+        typing.infer(project, typing.resolver(project), modules)
+      },
+    )
+}
+
 // Unknown
 
 pub fn queries_on_a_module_girard_returned_nothing_for_test() {
@@ -67,8 +348,9 @@ pub fn queries_on_a_module_girard_returned_nothing_for_test() {
   ]
   let project = support.project("", files, [])
   let assert Ok(linted) =
-    runner.run_with(project, [every_query()], infer: fn(project) {
-      typing.infer(project, typing.resolver(project)) |> dict.delete("app")
+    runner.run_with(project, [every_query()], infer: fn(project, _modules) {
+      typing.infer(project, typing.resolver(project), project.lint_set)
+      |> dict.delete("app")
     })
   // The module's rules still run.
   let assert [note, ..reports] = linted.diagnostics
@@ -108,7 +390,8 @@ pub fn no_query_answers_in_a_module_with_an_unavailable_import_test() {
   ]
   let project = support.project("", files, [#("dep/box", support.box)])
   let assert Ok(app) =
-    typing.infer(project, typing.resolver(project)) |> dict.get("app")
+    typing.infer(project, typing.resolver(project), project.lint_set)
+    |> dict.get("app")
   assert dict.get(app.resolutions, support.glance_span(source, "box.shout"))
     == Ok(girard.ModuleFn("dep/box", "shout"))
   let assert Ok(linted) = runner.run(project, [every_query()])
@@ -172,9 +455,9 @@ pub fn a_run_infers_once_for_every_typed_rule_test() {
           })
           |> rule.final(fn(_summaries) { [] }),
       ],
-      infer: fn(project) {
+      infer: fn(project, _modules) {
         support.increment(inferences)
-        typing.infer(project, typing.resolver(project))
+        typing.infer(project, typing.resolver(project), project.lint_set)
       },
     )
   assert support.count(inferences) == 1
@@ -205,7 +488,7 @@ pub fn typed_runs_dont_depend_on_the_working_directory_test() {
   let assert Ok(absolute) = simplifile.resolve(directory)
   let runs =
     list.map([directory, absolute], fn(root) {
-      let assert Ok(project) = loader.load_project(root)
+      let assert Ok(project) = loader.load_project(root, loader.LoadLintSet)
       let assert Ok(linted) = runner.run(project, [support.typed_calls()])
       linted
     })
@@ -1229,7 +1512,10 @@ fn run_typed(project: Project) -> runner.Linted {
 }
 
 // An inference function that fails the test when it's called.
-fn never_infer(_project: Project) -> Dict(String, ModuleTypes) {
+fn never_infer(
+  _project: Project,
+  _modules: List(String),
+) -> Dict(String, ModuleTypes) {
   panic as "girard ran although no rule needs types"
 }
 

@@ -1,12 +1,12 @@
 //// The types of a project's modules, inferred by girard.
 ////
-//// girard runs once, over every parsed load-set module, in an order that
-//// puts each module after the project modules it imports, so girard finds
-//// each of those in its cache and never parses one again. The resolver it
-//// gets answers only for dependency modules, from the sources the loader
-//// read, so girard never reads from disk. Each lint-set module girard
-//// returns gets an index of its types, built once here and handed to the
-//// module's facts.
+//// girard runs once, over the parsed project modules the rules need and
+//// those they import, in an order that puts each module after the project
+//// modules it imports, so girard finds each of those in its cache and
+//// never parses one again. The resolver it gets answers only for
+//// dependency modules, from the sources the loader read, so girard never
+//// reads from disk. Each module the rules need that girard returns gets an
+//// index of its types, built once here and handed to the module's facts.
 
 import girard
 import glance
@@ -21,10 +21,10 @@ import grice/internal/loader.{type Project, Project}
 
 // Inference
 //
-// One call to girard over the whole load set, and an index per lint-set
-// module of what it found, so a query is a dictionary lookup. An index
-// holds its own module's data only, since a copy goes to every task that
-// lints the module.
+// One call to girard over the modules the rules need and what they import,
+// and an index per module the rules need of what it found, so a query is a
+// dictionary lookup. An index holds its own module's data only, since a
+// copy goes to every task that lints the module.
 
 /// What girard found for one module, indexed by span and by name.
 pub type ModuleTypes {
@@ -63,13 +63,17 @@ pub type Skipped {
   )
 }
 
-/// Infer the types of the project's parsed load-set modules, in `order`,
-/// with `resolver` answering for the modules they import from outside the
-/// project, and index those of the lint set. A lint-set module that doesn't
-/// parse, or that girard returned nothing for, has no entry.
+/// Infer the types of the project's parsed modules named in `modules`, and
+/// of the project modules they import, in `order`, with `resolver`
+/// answering for the modules they import from outside the project, and
+/// index those of `modules`: the lint set, or every module of a project
+/// loaded whole for a typed rule that sees all of it. A module of
+/// `modules` that doesn't parse, or that girard returned nothing for, has
+/// no entry.
 pub fn infer(
   project: Project,
   resolver: girard.Resolver,
+  modules: List(String),
 ) -> Dict(String, ModuleTypes) {
   let target = project.config.target
   let options =
@@ -79,8 +83,8 @@ pub fn infer(
       config.Erlang -> girard.Erlang
       config.JavaScript -> girard.JavaScript
     })
-  let results = girard.annotate_package(order(project), options)
-  project.lint_set
+  let results = girard.annotate_package(order(project, modules), options)
+  modules
   |> list.filter_map(fn(name) {
     use module <- result.try(dict.get(project.modules, name))
     use syntax <- result.try(result.replace_error(module.parsed, Nil))
@@ -148,13 +152,17 @@ fn locate_skipped(
 // the same graph the loader followed, which has no cycle on either target
 // even where the imports of both targets together would.
 
-/// The parsed load-set modules, each after the parsed load-set modules it
-/// imports for the target: a depth-first walk from each lint-set module in
-/// turn. Each comes with its whole syntax tree, since girard leaves out
-/// the other target's definitions itself and reports them as dropped.
-pub fn order(project: Project) -> List(#(String, glance.Module)) {
+/// The parsed project modules of `modules`, and the parsed project modules
+/// they import, each after the parsed project modules it imports for the
+/// target: a depth-first walk from each module of `modules` in turn. Each
+/// comes with its whole syntax tree, since girard leaves out the other
+/// target's definitions itself and reports them as dropped.
+pub fn order(
+  project: Project,
+  modules: List(String),
+) -> List(#(String, glance.Module)) {
   let #(_entered, ordered) =
-    list.fold(project.lint_set, #(set.new(), []), fn(state, name) {
+    list.fold(modules, #(set.new(), []), fn(state, name) {
       walk(project.modules, name, state)
     })
   list.reverse(ordered)
