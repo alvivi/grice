@@ -1,4 +1,4 @@
-//// Tests for the library pack as a whole: its rule, running it beside the
+//// Tests for the library pack as a whole: its rules, running it beside the
 //// default set and the simplify pack, and hiding what it reports like any
 //// rule's.
 
@@ -11,11 +11,15 @@ import grice/testing
 
 // The pack
 
-pub fn library_has_its_rule_as_a_warning_test() {
+pub fn library_has_its_rules_as_warnings_test() {
   let codes = list.map(rules.library(), rule.code)
-  assert codes == ["grice_rules/internal-type-in-public-api"]
+  assert codes
+    == [
+      "grice_rules/internal-type-in-public-api",
+      "grice_rules/needlessly-public-function",
+    ]
   let found =
-    support.project_on_both_targets(toml, one_finding(app), rules.library())
+    support.project_on_both_targets(toml, one_finding_each(), rules.library())
     |> testing.diagnostics
   assert list.map(found, fn(found) { found.code }) == codes
   assert list.all(found, fn(found) { found.severity == diagnostic.Warning })
@@ -30,7 +34,7 @@ pub fn library_runs_beside_the_other_sets_test() {
     |> list.append(rules.library())
   let codes = list.map(all, rule.code)
   assert list.unique(codes) == codes
-  support.project_on_both_targets(toml, one_finding(app), all)
+  support.project_on_both_targets(toml, one_finding_each(), all)
   |> testing.expect_codes(list.map(rules.library(), rule.code))
 }
 
@@ -44,6 +48,18 @@ pub fn make() -> thing.Thing {
   thing.new()
 }
 "
+
+// A project with one finding of each rule of the pack, in the pack's order:
+// `app` names an internal type, and nothing refers to `thing.unused`.
+fn one_finding_each() -> List(#(String, String)) {
+  [
+    #("src/app.gleam", app),
+    #(
+      "src/app/internal/thing.gleam",
+      "pub type Thing {\n  Thing\n}\n\npub fn new() -> Thing {\n  Thing\n}\n\npub fn unused() -> Thing {\n  Thing\n}\n",
+    ),
+  ]
+}
 
 // A project whose `app` is `source`, beside the internal module it imports.
 fn one_finding(source: String) -> List(#(String, String)) {

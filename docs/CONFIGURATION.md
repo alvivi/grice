@@ -1,8 +1,8 @@
 # Configuration
 
-grice reads its configuration from the project's `gleam.toml`: three of
-the compiler's keys, `target`, `name` and `internal_modules`, and the
-`[tools.grice]` table. Every key is optional, and a project with no
+grice reads its configuration from the project's `gleam.toml`: four of
+the compiler's keys, `target`, `name`, `internal_modules` and
+`application_start_module` in `[erlang]`, and the `[tools.grice]` table. Every key is optional, and a project with no
 `[tools.grice]` table lints `src/` with every rule.
 
 ```toml
@@ -113,15 +113,39 @@ rare spellings differently from the compiler:
   `\u0061pp`, which isn't a package name, and a pattern written with one
   holds a `\`, which grice doesn't read. Both are errors, rather than
   values grice would read wrongly.
-- It doesn't decode the escapes of a quoted key, so a top-level key
-  written with a `\`, such as `"\u0069nternal_modules"`, is an error: grice
-  can't tell which key it is.
+- It doesn't decode the escapes of a quoted key, so a top-level key, or a
+  key of `[erlang]`, written with a `\`, such as
+  `"\u0069nternal_modules"`, is an error: grice can't tell which key it
+  is.
 - A multiline string that starts with two line breaks loses both, where
   the compiler keeps the second. Written that way, `a/*` matches nothing
   for the compiler, since no module name holds a line break, and the
   modules under `a` for grice. This goes for every string grice reads,
   globs included, and no check of the value can see it, so write each
   pattern on one line.
+
+## `application_start_module`
+
+The compiler's key, in the `[erlang]` table, that names the module whose
+`start` function the Erlang runtime calls when the application starts:
+
+```toml
+[erlang]
+application_start_module = "my_app/application"
+```
+
+grice reads it so that
+[needlessly-public-function](https://github.com/alvivi/grice/blob/main/docs/RULES.md#needlessly-public-function)
+leaves that `start` alone. It reads the key as the compiler does, without
+checking it: any string, which the compiler writes in the application file
+as an Erlang module name, with each `/` turned into `@`. So
+`my_app/application` and `my_app@application` both name the module
+`my_app/application`, and a value that names no Gleam module, such as a
+module of Erlang code, exempts no `start` function. grice doesn't decode
+the value's escapes, so one written with a `\` may name any module, and
+then every `start` is left alone. Only a value that isn't a string, or an
+`[erlang]` that isn't a table, is an error, as it is for the compiler.
+grice reads no other key of `[erlang]`.
 
 ## `[tools.grice]`
 

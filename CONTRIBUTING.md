@@ -91,7 +91,7 @@ it's exact, it's cited, it's clean on the core packages, and it finds real
 problems. A rule that passes all but the citation, since no Gleam source
 calls the code it flags wrong, goes in an opt-in pack such as `simplify()`,
 and a rule about what a package published to Hex offers its users goes in
-`library()`, whose rules read only `src/`. A rule `<name>`, with the code
+`library()`, whose rules report only on `src/`. A rule `<name>`, with the code
 `grice_rules/<name>`, comes with:
 
 - **Its module,** `src/grice/internal/rules/<name>.gleam`, with
@@ -190,8 +190,10 @@ any budget.
 
 The budgets are reductions, the runtime's count of work done, which
 barely move between runs and machines; milliseconds are printed but
-never checked. There's one budget for loading and one for each
-scenario's linting, set to a measurement plus 10%, as constants in
+never checked. There's a budget for loading the lint set, one for
+loading the whole project, which the scenarios whose rules see it use,
+and one for each scenario's linting, each set to a measurement plus 10%,
+as constants in
 `bench.gleam` with the OTP, Gleam and girard versions they were measured
 on. Move them in the same change that bumps any of those versions or the
 corpus, or that makes grice faster or slower on purpose. The benchmark

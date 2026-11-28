@@ -112,7 +112,7 @@ grice.run(list.append(rules.default(), rules.simplify()))
 ```
 
 The library pack is a third set, for a package published to Hex, whose
-rules read only `src/`:
+rules report only on `src/`:
 
 - `grice_rules/internal-type-in-public-api`: a public function, constant
   or constructor whose written signature names an internal type of the
@@ -120,6 +120,12 @@ rules read only `src/`:
   type of an internal module or marked `@internal`, or a type alias that
   isn't public API (private, marked `@internal` or in an internal module)
   whose definition names an internal type.
+- `grice_rules/needlessly-public-function`: a public function that isn't
+  public API, since its module is internal or it's marked `@internal`,
+  which no other Gleam module of the project refers to, tests included.
+  It reads the whole project;
+  [Built-in rules](https://github.com/alvivi/grice/blob/main/docs/RULES.md#needlessly-public-function)
+  says how it treats foreign code.
 
 grice knows the package's internal modules from `name` and
 `internal_modules` in its `gleam.toml`, in the part of the compiler's

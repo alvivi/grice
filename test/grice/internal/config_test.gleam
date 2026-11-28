@@ -1,6 +1,7 @@
-//// Tests for reading `[tools.grice]`, `target`, `name` and
-//// `internal_modules` from `gleam.toml`: the defaults, each key, and then
-//// each invalid case, whose diagnostics are compared as text.
+//// Tests for reading `[tools.grice]`, `target`, `name`,
+//// `internal_modules` and `[erlang]`'s `application_start_module` from
+//// `gleam.toml`: the defaults, each key, and then each invalid case, whose
+//// diagnostics are compared as text.
 
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -115,6 +116,29 @@ pub fn parse_reads_internal_modules_that_match_no_module_test() {
   let toml =
     "internal_modules = [\"a,b\", \"a-b\", \"A\", \"A*\", \"\", 'x?/*', \"caf\u{e9}\"]\n"
   assert package(toml) == #(None, ["a,b", "a-b", "A", "A*", "", "x?/*", "café"])
+}
+
+// The compiler reads the other keys of `[erlang]`; grice ignores them. It
+// writes the value in the application file without checking it, so grice
+// keeps any string as written: a Gleam module name, an Erlang name, or the
+// name of a module of Erlang code.
+pub fn parse_reads_the_application_start_module_test() {
+  let start = fn(toml) {
+    let assert Ok(parsed) = config.parse(toml)
+    parsed.application_start_module
+  }
+  assert start("name = \"app\"\n") == None
+  assert start("[erlang]\nextra_applications = [\"inets\"]\n") == None
+  assert start(
+      "[erlang]\napplication_start_module = \"my_app/application\"\nextra_applications = [\"ssl\"]\n",
+    )
+    == Some("my_app/application")
+  assert start("erlang.application_start_module = \"app\"\n") == Some("app")
+  assert start("[erlang]\napplication_start_module = \"mist@internal@clock\"\n")
+    == Some("mist@internal@clock")
+  assert start("[erlang]\napplication_start_module = \"My_app_sup\"\n")
+    == Some("My_app_sup")
+  assert start("[erlang]\napplication_start_module = \"\"\n") == Some("")
 }
 
 // The package's name and its internal module patterns, back as written.
@@ -337,6 +361,19 @@ pub fn parse_rejects_syntax_that_shares_a_grapheme_test() {
     ]
 }
 
+// As the compiler's own reading of `gleam.toml` does, grice refuses a
+// value that isn't a string, and an `erlang` that isn't a table.
+pub fn parse_rejects_an_application_start_module_of_the_wrong_type_test() {
+  assert problems("[erlang]\napplication_start_module = 1\n")
+    == [
+      "Wrong type in `gleam.toml`: `erlang.application_start_module` in `gleam.toml` must be a string, but it's an integer.",
+    ]
+  assert problems("erlang = 1\n")
+    == [
+      "Wrong type in `gleam.toml`: `erlang` in `gleam.toml` must be a table, but it's an integer.",
+    ]
+}
+
 // grice's TOML reader keeps the escapes of a quoted key as they're
 // written, so these keys, which the compiler reads as `internal_modules`
 // and `name`, would go unread.
@@ -344,6 +381,8 @@ pub fn parse_rejects_an_escaped_top_level_key_test() {
   assert problems("\"\\u0069nternal_modules\" = []\n")
     == [escaped("\\u0069nternal_modules")]
   assert problems("'\\u006eame' = \"app\"\n") == [escaped("\\u006eame")]
+  assert problems("[erlang]\n\"application_start\\u005fmodule\" = \"app\"\n")
+    == [escaped("erlang.application_start\\u005fmodule")]
 }
 
 // The package keys come first, in a fixed order, then `[tools.grice]`'s.
@@ -354,6 +393,10 @@ target = \"wasm\"
 internal_modules = [\"app/**\"]
 name = \"App\"
 \"\\u0069nternal_modules\" = []
+
+[erlang]
+\"\\u0061pplication_start_module\" = \"app\"
+application_start_module = 1
 
 [tools.grice]
 wibble = 1
@@ -366,11 +409,14 @@ wibble = 1
       "Unknown target in `gleam.toml`",
       "Invalid package name in `gleam.toml`",
       "Unsupported module pattern in `gleam.toml`",
+      "Wrong type in `gleam.toml`",
+      "Escaped key in `gleam.toml`",
       "Escaped key in `gleam.toml`",
       "Escaped key in `gleam.toml`",
       "Unknown key in `gleam.toml`",
     ]
-  let assert [_, _, _, internal, name, _] = problems(toml)
+  let assert [_, _, _, _, start, internal, name, _] = problems(toml)
+  assert start == escaped("erlang.\\u0061pplication_start_module")
   assert internal == escaped("\\u0069nternal_modules")
   assert name == escaped("\\u006eame")
 }

@@ -22,7 +22,7 @@ grice won't be on Hex until 1.0, so each 0.x release is a tag on GitHub
 only. Everything the table below marks **Exists** has landed, with the
 corpus gate over the core packages, the benchmark and the JavaScript
 target. The default rule set has four built-in rules, the opt-in simplify
-pack five and the opt-in library pack one, all under the `grice_rules/`
+pack five and the opt-in library pack two, all under the `grice_rules/`
 prefix.
 The type predicates (`grice/types`) and the diagnostic builders are still to
 come.
@@ -75,7 +75,7 @@ notice.
 | `src/grice/diagnostic.gleam` | **Exists:** the diagnostic model (`Diagnostic`, `Severity`, `Location`, `Label`, `Span`, `Fix`, `Edit`). Planned: report, label and fix builders |
 | `src/grice/testing.gleam` | **Exists:** the testing kit for rule authors: fixtures built in memory, with installed dependencies for typed runs, a run's render for snapshots, and assertions on its codes |
 | `src/grice/internal/glob.gleam` | **Exists:** the glob syntax of `include`, `exclude` and the `paths` of ignores, and path matching; the name patterns of their `definitions`; the module patterns of `internal_modules` |
-| `src/grice/internal/config.gleam` | **Exists:** `[tools.grice]`, `target`, `name` and `internal_modules` parsing and validation, with the `[[tools.grice.ignore]]` entries and the `suppression_comments` switch |
+| `src/grice/internal/config.gleam` | **Exists:** `[tools.grice]`, `target`, `name`, `internal_modules` and `[erlang]`'s `application_start_module` parsing and validation, with the `[[tools.grice.ignore]]` entries and the `suppression_comments` switch |
 | `src/grice/internal/loader.gleam` | **Exists:** discovery, the load set or the whole project with its foreign sources, reading, parsing and dependency sources, and the project's internal modules and types |
 | `src/grice/internal/type_names.gleam` | **Exists:** what a written type name resolves to, from the module's imports and types, and the index of the project's internal types |
 | `src/grice/internal/glance_spans.gleam` | **Exists:** the workaround for glance's string ends on JavaScript (lpil/glance#47): each parsed module's tree, corrected before anything reads it |

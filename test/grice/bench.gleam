@@ -67,8 +67,13 @@ const corpus_modules = 101
 // The newlines in every package's lint-set sources.
 const corpus_lines = 46_378
 
-// What every scenario's `load` may take.
+// What a scenario's `load` may take: one that loads the lint set, and one
+// that loads the whole project, which also reads every package's foreign
+// sources, for a rule that sees the whole project, as the built-in rules'
+// library pack has.
 const load_budget = 12_627_000
+
+const whole_project_load_budget = 13_971_000
 
 const none_lint_budget = 6_445_000
 
@@ -443,7 +448,7 @@ fn table(results: List(Measured), reductions reductions: Bool) -> String {
     list.map(results, fn(result) {
       let kred_cells = case reductions {
         True -> [
-          kred(result.load.reductions, load_budget),
+          kred(result.load.reductions, load_budget_of(result.scenario)),
           kred(result.lint.reductions, result.scenario.lint_budget),
         ]
         False -> []
@@ -475,11 +480,20 @@ fn kred(reductions: Option(Int), budget: Int) -> String {
   }
 }
 
+// The load budget for a scenario, by how much of each package its rules
+// need loaded.
+fn load_budget_of(scenario: Scenario) -> Int {
+  case runner.scope(scenario.rules) {
+    loader.LoadLintSet -> load_budget
+    loader.LoadWholeProject -> whole_project_load_budget
+  }
+}
+
 // A phase is over budget when it made more reductions than its budget, or
 // counted none.
 fn over_budget(result: Measured) -> List(String) {
   [
-    #("load", result.load.reductions, load_budget),
+    #("load", result.load.reductions, load_budget_of(result.scenario)),
     #("lint", result.lint.reductions, result.scenario.lint_budget),
   ]
   |> list.filter_map(fn(phase) {
@@ -511,10 +525,13 @@ fn over_budget(result: Measured) -> List(String) {
 // A phase that counted no reductions, which fails the run, counts as 0.
 fn constants(results: List(Measured)) -> String {
   let counted = fn(phase: Phase) { option.unwrap(phase.reductions, 0) }
-  let load =
-    list.fold(results, 0, fn(largest, result) {
+  let load = fn(scope) {
+    results
+    |> list.filter(fn(result) { runner.scope(result.scenario.rules) == scope })
+    |> list.fold(0, fn(largest, result) {
       int.max(largest, counted(result.load))
     })
+  }
   let lint =
     list.map(results, fn(result) {
       #(
@@ -525,7 +542,8 @@ fn constants(results: List(Measured)) -> String {
   [
     #("corpus_modules", corpus_modules),
     #("corpus_lines", corpus_lines),
-    #("load_budget", budget(load)),
+    #("load_budget", budget(load(loader.LoadLintSet))),
+    #("whole_project_load_budget", budget(load(loader.LoadWholeProject))),
     ..lint
   ]
   |> list.map(fn(constant) {

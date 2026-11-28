@@ -281,6 +281,13 @@ pub fn internal_sample(name: String) -> String {
   read_sample("test/grice/internal/rules/samples/" <> name <> ".gleam")
 }
 
+/// The foreign source `file`, such as `needlessly_public_function_ffi.erl`,
+/// read from `test/grice/rules/samples/`, beside the samples whose modules
+/// it calls.
+pub fn foreign_sample(file: String) -> String {
+  read_sample("test/grice/rules/samples/" <> file)
+}
+
 fn read_sample(path: String) -> String {
   let assert Ok(source) = simplifile.read(path) as { "can't read " <> path }
   source
