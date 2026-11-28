@@ -43,8 +43,10 @@ import grice/rule
 /// Drop the diagnostics that the ignores of `config` and the suppressions
 /// in the comments of `modules`, the linted modules, hide, and add a warning
 /// for each suppression that hid nothing or can't be used. `codes` are the
-/// codes of the run's rules. The diagnostics kept stay in order, and the
-/// warnings come after them.
+/// codes of the run's rules, and `skipped` those of its rules that didn't
+/// run, whose suppressions can't be told apart from unused ones, so they
+/// get no warning. The diagnostics kept stay in order, and the warnings
+/// come after them.
 ///
 /// Also returns how many of `diagnostics` were dropped. Two identical
 /// diagnostics count twice, and one covered by several suppressions or
@@ -54,6 +56,7 @@ pub fn apply(
   modules: List(ModuleFacts(Syntax)),
   config: Config,
   codes: Set(String),
+  skipped skipped: Set(String),
 ) -> #(List(Diagnostic), Int) {
   // Only rule diagnostics, which have a location, can be hidden.
   let by_path =
@@ -73,7 +76,7 @@ pub fn apply(
     |> list.map(fn(module_facts) {
       dict.get(by_path, facts.path(module_facts))
       |> result.unwrap([])
-      |> suppress_module(module_facts, config, codes)
+      |> suppress_module(module_facts, config, codes, skipped)
     })
     |> list.unzip
   let hidden = set.from_list(list.flatten(hidden))
@@ -94,6 +97,7 @@ fn suppress_module(
   module_facts: ModuleFacts(Syntax),
   config: Config,
   codes: Set(String),
+  skipped: Set(String),
 ) -> #(List(Diagnostic), List(Diagnostic)) {
   let path = facts.path(module_facts)
   let index = facts.line_index(module_facts)
@@ -121,15 +125,15 @@ fn suppress_module(
         warning(invalid, path, problem.0, invalid_text(problem.1))
       }),
       list.filter_map(covered, fn(entry) {
-        case entry {
-          #(suppression, []) ->
+        case entry, set.contains(skipped, { entry.0 }.code) {
+          #(suppression, []), False ->
             Ok(warning(
               unused,
               path,
               suppression.comment,
               unused_text(suppression, codes),
             ))
-          #(_, [_, ..]) -> Error(Nil)
+          #(_, []), True | #(_, [_, ..]), _ -> Error(Nil)
         }
       }),
     )

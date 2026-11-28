@@ -88,8 +88,9 @@ pub fn core_packages_are_clean_test() {
   let #(untyped, findings) =
     corpus.core
     |> parallel.map(fn(package) {
-      let project = corpus.load(package, installed)
-      let linted = corpus.lint(project, corpus.built_in_rules())
+      let rules = corpus.built_in_rules()
+      let project = corpus.load(package, installed, rules)
+      let linted = corpus.lint(project, rules)
       let coverage = linted.coverage
       let typed = Requested(full: coverage.modules, partial: 0, none: 0)
       let untyped = case coverage.types == typed {

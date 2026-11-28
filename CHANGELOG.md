@@ -37,6 +37,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `@internal` or in an internal module) whose definition names an internal
   type. Its answer is positive: `False` also covers what grice can't see,
   such as a dependency's types.
+- **Project rules that see the whole project.** A project rule built with
+  `rule.whole_project` is given every module of the project under `src/`,
+  `test/` and `dev/`, linted or not, so it can ask, for example, whether a
+  test uses a function. `facts.is_linted` tells which modules are linted,
+  and the rule's reports on the others are dropped. grice reads the rest of
+  the project, and its foreign sources (the compiler's native files there,
+  `.erl`, `.hrl`, `.ex`, `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`, `.mts`,
+  `.cts` and `.tsx`), only when such a rule runs, so every other run reads what it read before. When a module of the
+  project can't be read or doesn't parse, or a foreign source can't be
+  read, those rules don't run, their suppressions aren't reported as
+  unused, and a `grice/incomplete-project` note lists the files; the
+  coverage gets an `IncompleteProject` gap, `incomplete-project` in the
+  JSON document, which fails the run only with `--strict`. It's a new kind
+  of gap within version 1 of the JSON schema, so a decoder should take a
+  kind it doesn't know for a gap. With `rule.typed`, such a rule gets types
+  for every module, and girard's gaps in each are coverage gaps. The
+  library API loads a project for one with `grice.load_whole_project`, and
+  `grice.lint` refuses to run one on a project loaded with
+  `grice.load_project`, with a `grice/invalid-rule` error;
+  `rule.is_whole_project` tells a tool which to call. The command line and
+  `grice/testing` load as much as the rules need, and a fixture may hold
+  foreign sources.
 
 ### Changed
 

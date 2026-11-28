@@ -1,7 +1,7 @@
 //// Tests for the library API in `grice`, over fixture projects on disk:
 //// the root as given and made absolute, a root through a symbolic link,
-//// the load errors, the rule set's problems, and rendering, whose document
-//// is the command line's.
+//// the load errors, the rule set's problems, a rule that sees the whole
+//// project, and rendering, whose document is the command line's.
 
 import gleam/list
 import gleam/string
@@ -120,6 +120,46 @@ pub fn an_invalid_rule_set_runs_nothing_test() {
     grice.lint(project, [fixture_rules.no_echo(), fixture_rules.no_echo()])
   assert problem.code == "grice/invalid-rule"
   assert problem.title == "Rule code used more than once"
+  support.cleanup(directory)
+}
+
+// A rule that sees the whole project needs it loaded with
+// `load_whole_project`, which reads the test and dev modules and the
+// foreign sources. A foreign source is read for its ASCII words, so one
+// that isn't UTF-8 is read too; one that can't be read leaves the project
+// incomplete, which stops the rule rather than the load.
+pub fn a_whole_project_rule_needs_load_whole_project_test() {
+  let directory = support.fixture_directory("library-whole-project")
+  support.write_fixture(directory, [
+    #("dev/tool.gleam", "pub fn main() {\n  1\n}\n"),
+    #("src/app_ffi.erl", "-module(app_ffi).\n"),
+    #("test/app_test.gleam", "pub fn main_test() {\n  1\n}\n"),
+    ..app_files(app)
+  ])
+  support.write_not_utf8(directory <> "/src/blob.mjs")
+  let rules = [support.whole_project_view()]
+  let assert Ok(project) = grice.load_project(directory)
+  let assert Error([problem]) = grice.lint(project, rules)
+  assert problem.code == "grice/invalid-rule"
+  assert problem.title == "Rule needs the whole project"
+  let assert Ok(project) = grice.load_whole_project(directory)
+  let assert Ok(linted) = grice.lint(project, rules)
+  assert support.labels(grice.diagnostics(linted))
+    == ["tool (not linted), app, app_test (not linted)"]
+  support.with_file_mode(directory <> "/src/app_ffi.erl", 0o000, fn() {
+    let assert Ok(project) = grice.load_whole_project(directory)
+    let assert Ok(linted) = grice.lint(project, rules)
+    let assert coverage.Coverage(
+      gaps: [
+        coverage.IncompleteProject(
+          rules: ["fixture/whole-project-view"],
+          paths: ["src/app_ffi.erl"],
+        ),
+      ],
+      ..,
+    ) = grice.coverage(linted)
+    Nil
+  })
   support.cleanup(directory)
 }
 

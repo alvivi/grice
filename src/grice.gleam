@@ -37,9 +37,10 @@
 ////
 //// `load_project` reads everything a run needs from disk, and `lint` then
 //// works only on that value, so the same project and rules always give
-//// the same result, wherever it runs from. `diagnostics` and `coverage`
-//// give what the run found as values to pattern-match on; `render` gives
-//// the text grice prints.
+//// the same result, wherever it runs from. A rule built with
+//// `rule.whole_project` needs the project loaded with `load_whole_project`
+//// instead. `diagnostics` and `coverage` give what the run found as values
+//// to pattern-match on; `render` gives the text grice prints.
 
 import gleam/bool
 import gleam/io
@@ -109,7 +110,8 @@ pub fn run(rules: List(Rule)) -> Nil {
 // Loading
 //
 // Reading a project from disk: its configuration, the modules to lint and
-// every project module they import, and its dependencies' sources.
+// every project module they import, or the whole project, and its
+// dependencies' sources.
 
 /// A loaded project: what rules run on.
 pub opaque type Project {
@@ -132,7 +134,9 @@ pub type LoadError {
 /// Load the project whose `gleam.toml` is in the directory `root`.
 ///
 /// It reads `gleam.toml` and `manifest.toml`, the sources of every
-/// dependency, and the project modules the lint set needs. A relative
+/// dependency, and the project modules the lint set needs: enough for every
+/// rule but one built with `rule.whole_project`, which `lint` refuses to
+/// run on it (see `load_whole_project`). A relative
 /// `root` is joined to the working directory, read once here, and kept as
 /// an absolute path, so nothing later depends on where the program runs.
 /// Only `.` segments are dropped from it: a `..` stays, since after a
@@ -141,8 +145,30 @@ pub type LoadError {
 /// with the segment before it when it reads a path, so a root such as
 /// `link/../app` reads `app` beside `link`, not beside its target.
 pub fn load_project(root: String) -> Result(Project, LoadError) {
+  load(root, loader.LoadLintSet)
+}
+
+/// Load the project whose `gleam.toml` is in the directory `root`, as
+/// `load_project` does, and the rest of the project: every other module
+/// under `src/`, `test/` and `dev/`, and the foreign sources there, the
+/// compiler's native files, ending in `.erl`, `.hrl`, `.ex`, `.js`, `.mjs`,
+/// `.cjs`, `.jsx`, `.ts`, `.mts`, `.cts` or `.tsx`. A rule built with
+/// `rule.whole_project` needs a project loaded this way; a tool that loads
+/// with its rules in hand can check them with `rule.is_whole_project`.
+///
+/// A file the walk of those directories can't list, such as a dangling
+/// link, fails loading, as it does for `load_project`. Once they're listed,
+/// a file outside the lint set and what it imports that can't be read
+/// doesn't make loading fail. It's kept, with the modules that don't
+/// parse, and `lint` reports them in a `grice/incomplete-project` note
+/// instead of running the rules that see the whole project.
+pub fn load_whole_project(root: String) -> Result(Project, LoadError) {
+  load(root, loader.LoadWholeProject)
+}
+
+fn load(root: String, scope: loader.Load) -> Result(Project, LoadError) {
   use root <- result.try(absolute_root(root))
-  case loader.load_project(root) {
+  case loader.load_project(root, scope) {
     Ok(project) -> Ok(Project(project))
     Error(loader.InvalidConfig(diagnostics:)) ->
       Error(InvalidConfig(diagnostics:))
@@ -176,8 +202,9 @@ pub opaque type Linted {
 /// Run `rules` over `project`.
 ///
 /// `Error` holds every problem with the rule set, such as an invalid or
-/// repeated rule code, and with the rule codes the ignores in `gleam.toml`
-/// name, and means no rule ran.
+/// repeated rule code, or a rule built with `rule.whole_project` over a
+/// project loaded with `load_project`, and with the rule codes the ignores
+/// in `gleam.toml` name, and means no rule ran.
 pub fn lint(
   project: Project,
   rules: List(Rule),

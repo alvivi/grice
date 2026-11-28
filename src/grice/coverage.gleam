@@ -2,8 +2,10 @@
 ////
 //// grice never reports success over code it didn't analyse. A lint-set
 //// module that doesn't parse, a definition girard couldn't type, a module
-//// girard returned nothing for, an import it couldn't use, or a dependency
-//// whose sources are missing is a gap. Each gap matches one diagnostic of
+//// girard returned nothing for, an import it couldn't use, a dependency
+//// whose sources are missing, or a project that couldn't be read whole
+//// for the rules that see all of it is a gap. Each gap matches one
+//// diagnostic of
 //// the run, and `grice.coverage` gives them all in one value, so a tool can
 //// pattern-match on them instead of reading the diagnostics' text.
 
@@ -17,8 +19,10 @@ pub type Coverage {
     /// How much of the parsed lint-set modules girard typed.
     types: TypeCoverage,
     /// Everything the run couldn't analyse, each matching one diagnostic:
-    /// first the modules that don't parse, then the gaps of each module in
-    /// lint-set order, then the missing packages.
+    /// first the lint-set modules that don't parse, then the type gaps of
+    /// each module in path order (the lint set's, or every module's that a
+    /// typed rule built with `rule.whole_project` saw), then the missing
+    /// packages, then an incomplete project.
     gaps: List(Gap),
   )
 }
@@ -39,16 +43,22 @@ pub type Gap {
   UnparsedModule(path: String)
   /// A definition girard couldn't type: a `grice/untyped-definition`.
   UntypedDefinition(path: String, definition: String)
-  /// A lint-set module girard returned nothing for: a
-  /// `grice/uninferred-module`.
+  /// A module girard returned nothing for, of the lint set or seen by a
+  /// typed whole-project rule: a `grice/uninferred-module`.
   UninferredModule(path: String)
-  /// A module girard couldn't use, which the lint-set module at `path`
-  /// imports directly or reaches through other modules: a
-  /// `grice/unavailable-import`.
+  /// A module girard couldn't use, which the module at `path`, of the lint
+  /// set or seen by a typed whole-project rule, imports directly or reaches
+  /// through other modules: a `grice/unavailable-import`.
   UnavailableImport(path: String, module: String, cause: Cause)
   /// A manifest package whose sources are missing: a
   /// `grice/missing-package`.
   MissingPackage(package: String)
+  /// The rules built with `rule.whole_project`, by code in the order of the
+  /// rule set, which didn't run because the files at `paths` couldn't be
+  /// read, don't parse or couldn't be included: modules of the project,
+  /// linted or not, and foreign sources, sorted by path. A
+  /// `grice/incomplete-project`.
+  IncompleteProject(rules: List(String), paths: List(String))
 }
 
 /// Why girard couldn't use a module.

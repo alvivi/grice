@@ -28,7 +28,8 @@ pub type Phase {
 /// What a completed run cost, and how much it worked on.
 pub type Stats {
   Stats(
-    /// The number of project modules loaded: the load set.
+    /// The number of project modules loaded: the load set, or every module
+    /// of the project when a rule sees the whole project.
     loaded: Int,
     /// The number of dependency modules whose sources were read.
     dependencies: Int,

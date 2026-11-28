@@ -33,6 +33,18 @@ modules. Types that come from them may be incomplete.
 
 Hint: Run `gleam deps download`.
 
+note[grice/incomplete-project]: Can't see the whole project
+
+The rule `fixture/whole-project-view` sees every module of the project, but
+grice couldn't read all of it, so it didn't run: `src/broken.gleam` doesn't
+parse and `test/app_test.gleam` couldn't be read (No such file). A claim
+about the whole project can't rest on part of it.
+
+Hint: If `gleam build` accepts a module that doesn't parse, glance, which
+grice reads Gleam code with, doesn't support its syntax yet, so please
+report it to glance. Check that each file that couldn't be read is there
+and that you can read it; a Gleam module must also be UTF-8.
+
 warning[fixture/no-echo]: Echo left in the code
   ┌─ src/app.gleam:4:3
   │
@@ -109,10 +121,10 @@ get no answers in this module.
 Hint: Check the import. If the module belongs to a dependency, `gleam deps
 download` fetches its sources.
 
-1 error, 3 warnings and 5 notes in 5 modules, 1 hidden by ignores and
+1 error, 3 warnings and 6 notes in 5 modules, 1 hidden by ignores and
 suppressions.
 Coverage is incomplete: 1 module doesn't parse, 1 definition in 1 module
 couldn't be typed, 1 module got no types, 2 modules can't use the types of
-modules they import and 1 package is missing its sources, so rules didn't
-see all of the code.
+modules they import, 1 package is missing its sources and 1 rule that sees
+the whole project didn't run, so rules didn't see all of the code.
 

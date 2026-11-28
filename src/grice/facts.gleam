@@ -4,12 +4,14 @@
 //// describe the module as it's compiled for the project's target: a
 //// definition whose `@target` attribute names the other target isn't
 //// there, whatever its kind, and neither is an import marked that way.
-//// They also say which of the project's modules and types are internal.
+//// They also say which of the project's modules and types are internal,
+//// and whether the module is linted.
 ////
 //// The `kind` parameter says which facts a rule can ask for. Every rule
 //// gets `Syntax` facts: the module's name, path, source, comments and
-//// syntax tree, the project's target, and which of the project's modules
-//// and types are internal. A rule built with `rule.typed`
+//// syntax tree, the project's target, which of the project's modules
+//// and types are internal, and whether the module is linted. A rule built
+//// with `rule.typed`
 //// gets `Typed` facts, which also answer what girard, the type inference
 //// grice uses, found: the type of an expression, what a name or field
 //// access resolved to, and the type of a top-level definition. A typed
@@ -55,6 +57,12 @@ pub opaque type ModuleFacts(kind) {
     target: Target,
     internal_modules: Set(String),
     internal_types: Set(#(String, String)),
+    linted: Bool,
+    // The module as parsed, with every target's definitions, only when its
+    // view for the target leaves something out: otherwise it's `module`.
+    every_target: Option(glance.Module),
+    // The words of the project's foreign sources that name the module.
+    foreign_mentions: Set(String),
     // What girard found for the module: `None` when no rule asked for
     // types, or girard returned nothing for the module.
     types: Option(ModuleTypes),
@@ -121,6 +129,14 @@ pub fn is_internal_module(facts: ModuleFacts(kind), module: String) -> Bool {
   set.contains(facts.internal_modules, module)
 }
 
+/// Whether the module is in the lint set, so rules report on it. A rule
+/// built with `rule.whole_project` is also given the project's other
+/// modules, for which this is `False`, and its reports on them are dropped.
+/// Every other rule sees only linted modules.
+pub fn is_linted(facts: ModuleFacts(kind)) -> Bool {
+  facts.linted
+}
+
 /// Whether grice knows the type `name` of the project's module `module` to
 /// be internal: a public custom type of an internal module or marked
 /// `@internal`, or a type alias that isn't public API (private, marked
@@ -130,14 +146,15 @@ pub fn is_internal_module(facts: ModuleFacts(kind), module: String) -> Bool {
 /// doesn't count.
 ///
 /// The answer is positive: `True` means internal, and `False` means grice
-/// doesn't know the type to be internal. That's also the answer for a type
-/// of a module grice didn't load, neither linted nor imported by a linted
-/// module, of a module that doesn't parse, of a dependency, and for a name
-/// that isn't a type. A module that matches an `internal_modules` pattern
-/// doesn't make every type of it internal: an alias there that names only
-/// public types isn't. Like `is_internal_module`, it follows grice's
-/// reading of `gleam.toml`, and it reads the module as compiled for the
-/// project's target.
+/// doesn't know the type to be internal. It answers for the types of the
+/// modules the lint set loads, so it's also `False` for a type of any other
+/// module, neither linted nor imported by a linted module, even one a
+/// `rule.whole_project` rule sees, of a module that doesn't parse, of a
+/// dependency, and for a name that isn't a type. A module that matches an
+/// `internal_modules` pattern doesn't make every type of it internal: an
+/// alias there that names only public types isn't. Like
+/// `is_internal_module`, it follows grice's reading of `gleam.toml`, and it
+/// reads the module as compiled for the project's target.
 pub fn is_internal_type(
   facts: ModuleFacts(kind),
   module module: String,
@@ -148,24 +165,31 @@ pub fn is_internal_type(
 
 /// The facts of a loaded module of `project`, with what girard found for it
 /// when a rule asked for types, or an error when it doesn't parse, which
-/// the loader has already reported. Its comments are read here, so only
-/// modules that get facts are lexed for them.
+/// the loader has already reported for a linted module. Its comments are
+/// read here, so only modules that get facts are lexed for them. `linted`
+/// says whether it's in the lint set.
 @internal
 pub fn new(
   module: loader.Module,
   project: loader.Project,
   types: Option(ModuleTypes),
+  linted linted: Bool,
 ) -> Result(ModuleFacts(Syntax), Nil) {
   use syntax <- result.map(result.replace_error(module.parsed, Nil))
   let target = project.config.target
   let view = loader.for_target(syntax, target)
+  let dropped = dropped_spans(syntax, view)
+  let every_target = case dropped {
+    [] -> None
+    [_, ..] -> Some(loader.for_every_target(syntax))
+  }
   ModuleFacts(
     module_name: module.name,
     path: module.path,
     source: module.source,
     module: view,
     imports: module.imports,
-    comments: read_comments(module.source, syntax, view),
+    comments: read_comments(module.source, dropped),
     // The configuration can't use the public type, as this module imports
     // it.
     target: case target {
@@ -174,8 +198,33 @@ pub fn new(
     },
     internal_modules: project.internal_modules,
     internal_types: project.internal_types,
+    linted:,
+    every_target:,
+    foreign_mentions: case project.scope {
+      loader.WholeProject(foreign_mentions:, ..) ->
+        dict.get(foreign_mentions, module.name) |> result.unwrap(set.new())
+      loader.LintSet -> set.new()
+    },
     types:,
   )
+}
+
+/// The module's syntax tree with the definitions of every target, imports
+/// included, each list of definitions in source order: what the module
+/// holds before `@target` attributes leave anything out.
+@internal
+pub fn module_for_every_target(facts: ModuleFacts(kind)) -> glance.Module {
+  option.unwrap(facts.every_target, facts.module)
+}
+
+/// The words of the project's foreign sources that name the module, by its
+/// Erlang module name or its JavaScript file name, that are names of the
+/// project's functions, as `loader.foreign_mentions` reads them. Empty when
+/// no rule of the run sees the whole project, since only then are foreign
+/// sources read.
+@internal
+pub fn foreign_mentions(facts: ModuleFacts(kind)) -> Set(String) {
+  facts.foreign_mentions
 }
 
 /// The index of the module's source, which report spans are checked
@@ -249,16 +298,12 @@ pub fn comments(facts: ModuleFacts(kind)) -> List(Comment) {
   facts.comments
 }
 
-// The comments of `source`, except those inside a definition of `module`
-// that `view`, its target view, leaves out.
+// The comments of `source`, except those inside the spans of `dropped`,
+// the definitions the module's target view leaves out.
 fn read_comments(
   source: LineIndex,
-  module: glance.Module,
-  view: glance.Module,
+  dropped: List(glance.Span),
 ) -> List(Comment) {
-  let kept = set.from_list(definition_spans(view))
-  let dropped =
-    list.filter(definition_spans(module), fn(span) { !set.contains(kept, span) })
   let units = line_index.units(source)
   use #(token, glexer.Position(byte_offset: start)) <- list.filter_map(
     glexer.new(line_index.source(source))
@@ -285,6 +330,16 @@ fn comment_token(token: Token) -> Result(#(CommentKind, Int, String), Nil) {
     token.CommentModule(text) -> Ok(#(ModuleDoc, 4, text))
     _ -> Error(Nil)
   }
+}
+
+// The span of each top-level definition of `module`, imports included,
+// that `view`, its target view, leaves out.
+fn dropped_spans(
+  module: glance.Module,
+  view: glance.Module,
+) -> List(glance.Span) {
+  let kept = set.from_list(definition_spans(view))
+  list.filter(definition_spans(module), fn(span) { !set.contains(kept, span) })
 }
 
 // The span of every top-level definition of a module, imports included.

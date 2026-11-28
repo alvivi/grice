@@ -1,7 +1,7 @@
 // JavaScript code behind grice's `@external` functions. Node is the
 // runtime grice supports here; this uses only `globalThis.process` and
 // `performance`.
-import { Ok, Error } from "./gleam.mjs";
+import { Ok, Error, toList } from "./gleam.mjs";
 
 // Syntax trees
 //
@@ -24,6 +24,52 @@ export function catching_stack_overflow(run) {
     }
     throw error;
   }
+}
+
+// Foreign sources
+//
+// The words of a foreign source, for `grice/internal/loader`, split by the
+// runtime rather than byte by byte in Gleam: a source is often as large as
+// the project's Gleam code.
+
+// `[words, names]`: each longest run of ASCII letters, digits, `_` and `@`
+// in the bytes of `source`, and each such run that `.mjs` follows, each
+// once. Any other byte ends a run, whatever the source's encoding.
+export function foreign_words(source) {
+  const words = new Set();
+  const names = new Set();
+  let word = "";
+  for (let index = 0; index <= source.byteSize; index++) {
+    const byte = index < source.byteSize ? source.byteAt(index) : 0;
+    if (isWordByte(byte)) {
+      word += String.fromCharCode(byte);
+    } else if (word !== "") {
+      words.add(word);
+      if (followedByMjs(source, index)) names.add(word);
+      word = "";
+    }
+  }
+  return [toList(Array.from(words)), toList(Array.from(names))];
+}
+
+function isWordByte(byte) {
+  return (
+    (byte >= 97 && byte <= 122) ||
+    (byte >= 65 && byte <= 90) ||
+    (byte >= 48 && byte <= 57) ||
+    byte === 95 ||
+    byte === 64
+  );
+}
+
+// Whether the bytes from `index` are `.mjs`.
+function followedByMjs(source, index) {
+  return (
+    source.byteAt(index) === 46 &&
+    source.byteAt(index + 1) === 109 &&
+    source.byteAt(index + 2) === 106 &&
+    source.byteAt(index + 3) === 115
+  );
 }
 
 // Platform

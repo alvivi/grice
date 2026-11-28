@@ -191,7 +191,7 @@ fn run_package(
   package: String,
 ) -> Result(Pass, String) {
   let before = platform.sample()
-  let project = corpus.load(package, installed)
+  let project = corpus.load(package, installed, scenario.rules)
   let loaded = platform.sample()
   let linted = corpus.lint(project, scenario.rules)
   let done = platform.sample()

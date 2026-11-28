@@ -139,29 +139,37 @@ fn coverage_value(coverage: Coverage) -> Value {
   ])
 }
 
-// A gap is its kind and its fields, which are all strings.
+// A gap is its kind and its fields, which are strings or lists of strings.
 fn gap_value(gap: Gap) -> Value {
+  let texts = fn(items) { Array(list.map(items, Text)) }
   let #(kind, fields) = case gap {
-    coverage.UnparsedModule(path:) -> #("unparsed-module", [#("path", path)])
+    coverage.UnparsedModule(path:) -> #("unparsed-module", [
+      #("path", Text(path)),
+    ])
     coverage.UntypedDefinition(path:, definition:) -> #("untyped-definition", [
-      #("path", path),
-      #("definition", definition),
+      #("path", Text(path)),
+      #("definition", Text(definition)),
     ])
     coverage.UninferredModule(path:) -> #("uninferred-module", [
-      #("path", path),
+      #("path", Text(path)),
     ])
     coverage.UnavailableImport(path:, module:, cause:) -> #(
       "unavailable-import",
-      [#("path", path), #("module", module), #("cause", cause_name(cause))],
+      [
+        #("path", Text(path)),
+        #("module", Text(module)),
+        #("cause", Text(cause_name(cause))),
+      ],
     )
     coverage.MissingPackage(package:) -> #("missing-package", [
-      #("package", package),
+      #("package", Text(package)),
+    ])
+    coverage.IncompleteProject(rules:, paths:) -> #("incomplete-project", [
+      #("rules", texts(rules)),
+      #("paths", texts(paths)),
     ])
   }
-  Object([
-    #("kind", Text(kind)),
-    ..list.map(fields, fn(field) { #(field.0, Text(field.1)) })
-  ])
+  Object([#("kind", Text(kind)), ..fields])
 }
 
 fn cause_name(cause: Cause) -> String {

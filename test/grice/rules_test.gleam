@@ -199,6 +199,37 @@ fn javascript_function() { 3 }
     ]
 }
 
+// The tree with every target's definitions keeps what a `@target` marks
+// for the other target, imports included, and is the target view itself
+// when nothing is marked so.
+pub fn facts_hold_the_module_for_every_target_test() {
+  let project =
+    support.project(
+      "",
+      [
+        #(
+          "src/app.gleam",
+          "@target(javascript)\nimport app/other\nimport gleam/list\npub fn one() { 1 }\n@target(javascript)\npub fn two() { 2 }\n",
+        ),
+        #("src/app/other.gleam", "@target(erlang)\npub fn three() { 3 }\n"),
+      ],
+      [],
+    )
+  let names = fn(name) {
+    let assert Ok(module) = dict.get(project.modules, name)
+    let assert Ok(module_facts) =
+      facts.new(module, project, option.None, linted: True)
+    let every_target = facts.module_for_every_target(module_facts)
+    #(
+      list.map(every_target.imports, fn(import_) { import_.definition.module }),
+      list.map(every_target.functions, fn(function) { function.definition.name }),
+      every_target == facts.module(module_facts),
+    )
+  }
+  assert names("app") == #(["app/other", "gleam/list"], ["one", "two"], False)
+  assert names("app/other") == #([], ["three"], True)
+}
+
 // Target
 //
 // Rules see only the definitions compiled for the configured target, by
@@ -826,7 +857,8 @@ pub fn main() {
 pub fn discarded_result_is_silent_where_a_prelude_name_is_shadowed_test() {
   let project = support.project("", [#("src/app.gleam", shadowed)], [])
   let assert Ok(types) =
-    typing.infer(project, typing.resolver(project)) |> dict.get("app")
+    typing.infer(project, typing.resolver(project), project.lint_set)
+    |> dict.get("app")
   let assert Ok(girard.Named(module: "gleam", name: "Result", ..)) =
     dict.get(
       types.expressions,
@@ -846,10 +878,15 @@ fn answers(source: String, ask: fn(ModuleFacts(Typed)) -> a) -> a {
     support.project("", [#("src/app.gleam", source)], [
       #("dep/box", support.box),
     ])
-  let types = typing.infer(project, typing.resolver(project))
+  let types = typing.infer(project, typing.resolver(project), project.lint_set)
   let assert Ok(module) = dict.get(project.modules, "app")
   let assert Ok(module_facts) =
-    facts.new(module, project, option.from_result(dict.get(types, "app")))
+    facts.new(
+      module,
+      project,
+      option.from_result(dict.get(types, "app")),
+      linted: True,
+    )
   ask(facts.change_kind(module_facts))
 }
 
